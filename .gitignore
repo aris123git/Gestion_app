@@ -1,0 +1,29 @@
+# Environnements Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Bases de données locales / données de test
+*.db
+*.db-wal
+*.db-shm
+data/
+/tmp/gestion_*
+
+# Build PyInstaller
+build/
+dist/
+*.spec.bak
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Exports générés
+exports/
+tickets/
+backups/

@@ -1,0 +1,153 @@
+"""Page des rapports : synthèse par période et exports PDF/Excel."""
+
+from __future__ import annotations
+
+from datetime import date
+
+from PySide6.QtCore import QDate
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDateEdit,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app.controllers.report_controller import ReportController, period_bounds
+from app.reports.excel_report import export_report_excel
+from app.reports.pdf_report import export_report_pdf
+from app.services import settings_service
+from app.ui.state import AppState
+from app.ui.widgets.helpers import info, make_card, page_title, section_title
+from app.utils.helpers import format_money
+
+
+class ReportsPage(QWidget):
+    def __init__(self, state: AppState):
+        super().__init__()
+        self.state = state
+        self._report = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+        layout.addWidget(page_title("Rapports"))
+
+        controls = QHBoxLayout()
+        self.period = QComboBox()
+        self.period.addItems(["Journalier", "Hebdomadaire", "Mensuel", "Annuel", "Personnalisé"])
+        self.period.currentTextChanged.connect(self._period_changed)
+        self.start = QDateEdit(QDate.currentDate())
+        self.start.setCalendarPopup(True)
+        self.end = QDateEdit(QDate.currentDate())
+        self.end.setCalendarPopup(True)
+        generate = QPushButton("Générer")
+        generate.setObjectName("Primary")
+        generate.clicked.connect(self._generate)
+        controls.addWidget(QLabel("Période :"))
+        controls.addWidget(self.period)
+        controls.addWidget(QLabel("Du"))
+        controls.addWidget(self.start)
+        controls.addWidget(QLabel("Au"))
+        controls.addWidget(self.end)
+        controls.addWidget(generate)
+        controls.addStretch()
+        layout.addLayout(controls)
+        self._period_changed(self.period.currentText())
+
+        # Cartes de synthèse
+        self.summary_grid = QGridLayout()
+        self.summary_grid.setSpacing(12)
+        self.lbl_revenue = self._metric("Chiffre d'affaires")
+        self.lbl_sales = self._metric("Nombre de ventes")
+        self.lbl_profit = self._metric("Bénéfice brut")
+        self.lbl_expenses = self._metric("Dépenses")
+        self.lbl_net = self._metric("Bénéfice net")
+        for i, widget in enumerate(
+            [self.lbl_revenue, self.lbl_sales, self.lbl_profit, self.lbl_expenses, self.lbl_net]
+        ):
+            self.summary_grid.addWidget(widget["card"], 0, i)
+        layout.addLayout(self.summary_grid)
+
+        layout.addWidget(section_title("Top produits sur la période"))
+        self.top_table = QTableWidget(0, 3)
+        self.top_table.setHorizontalHeaderLabels(["Produit", "Quantité", "Chiffre d'affaires"])
+        self.top_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.top_table)
+
+        exports = QHBoxLayout()
+        exports.addStretch()
+        pdf = QPushButton("Exporter PDF")
+        pdf.clicked.connect(self._export_pdf)
+        excel = QPushButton("Exporter Excel")
+        excel.clicked.connect(self._export_excel)
+        exports.addWidget(pdf)
+        exports.addWidget(excel)
+        layout.addLayout(exports)
+
+    def _metric(self, title: str) -> dict:
+        wrap = QWidget()
+        inner = QVBoxLayout(wrap)
+        inner.setContentsMargins(4, 4, 4, 4)
+        caption = QLabel(title)
+        caption.setStyleSheet("color: #64748b; font-size: 12px;")
+        value = QLabel("—")
+        value.setStyleSheet("font-size: 20px; font-weight: 700;")
+        inner.addWidget(caption)
+        inner.addWidget(value)
+        return {"card": make_card(wrap), "value": value}
+
+    def _period_changed(self, kind: str) -> None:
+        custom = kind == "Personnalisé"
+        self.start.setEnabled(custom)
+        self.end.setEnabled(custom)
+        if not custom:
+            start, end = period_bounds(kind)
+            self.start.setDate(QDate(start.year, start.month, start.day))
+            self.end.setDate(QDate(end.year, end.month, end.day))
+
+    def _current_range(self):
+        s = self.start.date()
+        e = self.end.date()
+        return date(s.year(), s.month(), s.day()), date(e.year(), e.month(), e.day())
+
+    def _generate(self) -> None:
+        start, end = self._current_range()
+        self._report = ReportController.build(start, end)
+        currency = settings_service.get_currency()
+        self.lbl_revenue["value"].setText(format_money(self._report["revenue"], currency))
+        self.lbl_sales["value"].setText(str(self._report["sales_count"]))
+        self.lbl_profit["value"].setText(format_money(self._report["profit"], currency))
+        self.lbl_expenses["value"].setText(format_money(self._report["expenses"], currency))
+        self.lbl_net["value"].setText(format_money(self._report["net_profit"], currency))
+
+        top = self._report["top_products"]
+        self.top_table.setRowCount(len(top))
+        for row, (name, qty, total) in enumerate(top):
+            self.top_table.setItem(row, 0, QTableWidgetItem(name))
+            self.top_table.setItem(row, 1, QTableWidgetItem(f"{qty:g}"))
+            self.top_table.setItem(row, 2, QTableWidgetItem(format_money(total, currency)))
+
+    def refresh(self) -> None:
+        self._generate()
+
+    def _export_pdf(self) -> None:
+        if not self._report:
+            self._generate()
+        path = export_report_pdf(self._report)
+        info(self, f"Rapport PDF généré :\n{path}")
+
+    def _export_excel(self) -> None:
+        if not self._report:
+            self._generate()
+        start, end = self._current_range()
+        rows = ReportController.sales_rows(start, end)
+        path = export_report_excel(self._report, rows)
+        info(self, f"Rapport Excel généré :\n{path}")
