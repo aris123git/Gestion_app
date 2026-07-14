@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.state import AppState
+from app.ui.widgets.helpers import activate_and_center
 
 
 class LoginDialog(QDialog):
@@ -72,6 +73,11 @@ class LoginDialog(QDialog):
         layout.addWidget(self.hint)
 
         outer.addWidget(card)
+
+    def showEvent(self, event) -> None:  # noqa: N802 - signature Qt
+        super().showEvent(event)
+        activate_and_center(self)
+        self.password.setFocus()
 
     def _attempt_login(self) -> None:
         username = self.username.text().strip()

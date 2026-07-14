@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from app import config
 from app.services import settings_service
+from app.ui.widgets.helpers import activate_and_center
 
 SHOP_TYPES = [
     "Boutique",
@@ -98,6 +99,10 @@ class SetupWizard(QDialog):
         save.clicked.connect(self._save)
         buttons.addWidget(save)
         layout.addLayout(buttons)
+
+    def showEvent(self, event) -> None:  # noqa: N802 - signature Qt
+        super().showEvent(event)
+        activate_and_center(self)
 
     def _pick_logo(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

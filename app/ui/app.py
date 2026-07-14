@@ -41,6 +41,11 @@ class AppController:
         if not settings_service.is_configured():
             wizard = SetupWizard()
             wizard.exec()
+            # On s'assure que la fenêtre de l'assistant est bien détruite avant
+            # d'ouvrir la connexion (évite tout conflit de focus sur certains
+            # gestionnaires de fenêtres).
+            wizard.deleteLater()
+            self.app.processEvents()
 
     def show_login(self) -> bool:
         """Affiche la connexion. Retourne True si l'utilisateur s'est connecté."""

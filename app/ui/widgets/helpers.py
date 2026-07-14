@@ -2,7 +2,24 @@
 
 from __future__ import annotations
 
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QVBoxLayout, QWidget
+
+
+def activate_and_center(widget: QWidget) -> None:
+    """Place une fenêtre au centre de l'écran et lui donne le focus.
+
+    Utile pour les boîtes de dialogue affichées séquentiellement (assistant puis
+    connexion) : certains gestionnaires de fenêtres légers (VNC) n'activent pas
+    automatiquement la nouvelle fenêtre, ce qui la rendait non réactive.
+    """
+    widget.raise_()
+    widget.activateWindow()
+    screen = QGuiApplication.primaryScreen()
+    if screen is not None:
+        geometry = widget.frameGeometry()
+        geometry.moveCenter(screen.availableGeometry().center())
+        widget.move(geometry.topLeft())
 
 
 def make_card(child: QWidget | None = None) -> QFrame:
