@@ -7,14 +7,17 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -26,7 +29,15 @@ from app import config
 from app.services import audit_service, backup_service, settings_service
 from app.ui.setup_wizard import CURRENCIES, SHOP_TYPES
 from app.ui.state import AppState
-from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
+from app.ui.widgets.helpers import (
+    confirm,
+    error,
+    info,
+    make_card,
+    page_title,
+    section_title,
+    warn,
+)
 from app.utils.helpers import format_datetime
 
 
@@ -174,57 +185,207 @@ class SettingsPage(QWidget):
     def _build_backup_tab(self) -> QWidget:
         wrap = QWidget()
         layout = QVBoxLayout(wrap)
+        layout.setSpacing(12)
 
+        # Bloc d'information sur la dernière sauvegarde.
+        info_widget = QWidget()
+        info_layout = QVBoxLayout(info_widget)
+        info_layout.setContentsMargins(4, 4, 4, 4)
+        info_layout.addWidget(section_title("Dernière sauvegarde"))
+        self.last_backup_label = QLabel("Aucune sauvegarde pour le moment.")
+        self.last_backup_label.setWordWrap(True)
+        info_layout.addWidget(self.last_backup_label)
+        layout.addWidget(make_card(info_widget))
+
+        # Actions principales.
         buttons = QHBoxLayout()
-        create = QPushButton("Sauvegarde manuelle")
+        create = QPushButton("Créer une sauvegarde")
         create.setObjectName("Primary")
         create.clicked.connect(self._create_backup)
-        restore = QPushButton("Restaurer la sélection")
-        restore.setObjectName("Danger")
-        restore.clicked.connect(self._restore_backup)
+        create_here = QPushButton("Sauvegarde rapide (dossier par défaut)")
+        create_here.clicked.connect(self._create_backup_default)
+        restore_file = QPushButton("Restaurer une sauvegarde…")
+        restore_file.setObjectName("Danger")
+        restore_file.clicked.connect(self._restore_from_file)
         buttons.addWidget(create)
-        buttons.addWidget(restore)
+        buttons.addWidget(create_here)
+        buttons.addWidget(restore_file)
         buttons.addStretch()
         layout.addLayout(buttons)
 
-        self.backup_table = QTableWidget(0, 2)
-        self.backup_table.setHorizontalHeaderLabels(["Fichier", "Date"])
+        # Options de sauvegarde automatique et de rétention.
+        auto_widget = QWidget()
+        auto_form = QFormLayout(auto_widget)
+        auto_form.setSpacing(10)
+        self.auto_enabled = QCheckBox("Activer la sauvegarde automatique")
+        self.auto_frequency = QComboBox()
+        self.auto_frequency.addItems(["Quotidienne", "Hebdomadaire", "Mensuelle"])
+        self.retention = QSpinBox()
+        self.retention.setRange(1, 200)
+        self.retention.setValue(backup_service.DEFAULT_RETENTION)
+        self.retention.setSuffix(" sauvegardes conservées")
+        auto_form.addRow(self.auto_enabled)
+        auto_form.addRow("Fréquence", self.auto_frequency)
+        auto_form.addRow("Rétention", self.retention)
+        save_auto = QPushButton("Enregistrer les options")
+        save_auto.setObjectName("Primary")
+        save_auto.clicked.connect(self._save_auto_options)
+        auto_form.addRow(save_auto)
+        layout.addWidget(make_card(auto_widget))
+
+        # Liste des sauvegardes du dossier géré.
+        layout.addWidget(section_title("Sauvegardes disponibles"))
+        self.backup_table = QTableWidget(0, 3)
+        self.backup_table.setHorizontalHeaderLabels(["Fichier", "Date", "Taille"])
         self.backup_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.backup_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.backup_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.backup_table)
+
+        table_actions = QHBoxLayout()
+        table_actions.addStretch()
+        restore_selected = QPushButton("Restaurer la sélection")
+        restore_selected.setObjectName("Danger")
+        restore_selected.clicked.connect(self._restore_selected)
+        table_actions.addWidget(restore_selected)
+        layout.addLayout(table_actions)
         return wrap
 
+    def _default_documents_dir(self) -> str:
+        documents = Path.home() / "Documents"
+        return str(documents if documents.exists() else Path.home())
+
     def _create_backup(self) -> None:
-        path = backup_service.create_backup(manual=True)
-        info(self, f"Sauvegarde créée :\n{path}")
+        """Crée une sauvegarde à l'emplacement choisi par l'utilisateur."""
+        default_name = f"Sauvegarde_{__import__('datetime').datetime.now():%Y-%m-%d_%H-%M-%S}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Enregistrer la sauvegarde",
+            str(Path(self._default_documents_dir()) / default_name),
+            "Archives ZIP (*.zip)",
+        )
+        if not path:
+            return
+        target = Path(path)
+        try:
+            result = backup_service.create_full_backup(
+                destination_dir=target.parent, manual=True
+            )
+            # Renomme si l'utilisateur a choisi un nom personnalisé.
+            if target.name and target.name != result.name:
+                final = target.with_suffix(".zip")
+                result.replace(final)
+                result = final
+        except backup_service.BackupError as exc:
+            error(self, str(exc), "Sauvegarde")
+            return
+        audit_service.log_action(
+            "Sauvegarde", "Backup", str(result),
+            self.state.user_id, getattr(self.state.current_user, "username", ""),
+        )
+        info(self, f"Sauvegarde créée :\n{result}")
         self._reload_backups()
 
-    def _restore_backup(self) -> None:
-        row = self.backup_table.currentRow()
-        if row < 0 or row >= len(self._backup_paths):
-            warn(self, "Sélectionnez une sauvegarde.")
+    def _create_backup_default(self) -> None:
+        """Sauvegarde rapide dans le dossier géré (BACKUP_DIR)."""
+        try:
+            result = backup_service.create_full_backup(manual=True)
+        except backup_service.BackupError as exc:
+            error(self, str(exc), "Sauvegarde")
             return
+        audit_service.log_action(
+            "Sauvegarde", "Backup", str(result),
+            self.state.user_id, getattr(self.state.current_user, "username", ""),
+        )
+        info(self, f"Sauvegarde créée :\n{result}")
+        self._reload_backups()
+
+    def _perform_restore(self, zip_path) -> None:
         if not self.state.is_admin:
             warn(self, "Seul un administrateur peut restaurer une sauvegarde.")
             return
-        if confirm(
+        if not confirm(
             self,
-            "Restaurer cette sauvegarde remplacera les données actuelles.\n"
-            "Redémarrez l'application après la restauration. Continuer ?",
+            "Restaurer cette sauvegarde remplacera TOUTES les données actuelles "
+            "(base, logos, tickets, exports).\n\nUne sauvegarde de sécurité de "
+            "l'état actuel sera créée automatiquement.\n\nContinuer ?",
         ):
-            backup_service.restore_backup(self._backup_paths[row])
-            info(self, "Restauration effectuée. Veuillez redémarrer l'application.")
+            return
+        try:
+            backup_service.restore_backup(zip_path)
+        except backup_service.BackupError as exc:
+            error(self, str(exc), "Restauration")
+            return
+        audit_service.log_action(
+            "Restauration", "Backup", str(zip_path),
+            self.state.user_id, getattr(self.state.current_user, "username", ""),
+        )
+        info(
+            self,
+            "Restauration effectuée avec succès.\n\n"
+            "Veuillez redémarrer l'application pour appliquer les changements.",
+            "Restauration terminée",
+        )
+        self._reload_backups()
+
+    def _restore_from_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choisir une sauvegarde à restaurer",
+            self._default_documents_dir(),
+            "Archives ZIP (*.zip)",
+        )
+        if path:
+            self._perform_restore(path)
+
+    def _restore_selected(self) -> None:
+        row = self.backup_table.currentRow()
+        if row < 0 or row >= len(self._backup_paths):
+            warn(self, "Sélectionnez une sauvegarde dans la liste.")
+            return
+        self._perform_restore(self._backup_paths[row])
+
+    def _save_auto_options(self) -> None:
+        settings_service.set_setting(
+            backup_service.SETTING_AUTO_ENABLED,
+            "1" if self.auto_enabled.isChecked() else "0",
+        )
+        settings_service.set_setting(
+            backup_service.SETTING_AUTO_FREQUENCY,
+            self.auto_frequency.currentText().lower(),
+        )
+        settings_service.set_setting(
+            backup_service.SETTING_RETENTION, str(self.retention.value())
+        )
+        backup_service.prune_backups(self.retention.value())
+        info(self, "Options de sauvegarde enregistrées.")
+        self._reload_backups()
+
+    def _load_auto_options(self) -> None:
+        self.auto_enabled.setChecked(backup_service.is_auto_enabled())
+        self.auto_frequency.setCurrentText(backup_service.get_frequency().capitalize())
+        self.retention.setValue(backup_service.get_retention())
 
     def _reload_backups(self) -> None:
-        self._backup_paths = backup_service.list_backups()
-        self.backup_table.setRowCount(len(self._backup_paths))
-        for row, path in enumerate(self._backup_paths):
-            from datetime import datetime
+        infos = backup_service.backup_infos()
+        self._backup_paths = [i.path for i in infos]
+        self.backup_table.setRowCount(len(infos))
+        for row, item in enumerate(infos):
+            self.backup_table.setItem(row, 0, QTableWidgetItem(item.path.name))
+            self.backup_table.setItem(
+                row, 1, QTableWidgetItem(format_datetime(item.created_at))
+            )
+            self.backup_table.setItem(row, 2, QTableWidgetItem(item.size_human))
 
-            moment = datetime.fromtimestamp(path.stat().st_mtime)
-            self.backup_table.setItem(row, 0, QTableWidgetItem(path.name))
-            self.backup_table.setItem(row, 1, QTableWidgetItem(format_datetime(moment)))
+        last = backup_service.latest_backup()
+        if last:
+            self.last_backup_label.setText(
+                f"Date : {format_datetime(last.created_at)}\n"
+                f"Emplacement : {last.path}\n"
+                f"Taille : {last.size_human}"
+            )
+        else:
+            self.last_backup_label.setText("Aucune sauvegarde pour le moment.")
 
     # --- Onglet journal ----------------------------------------------------
     def _build_audit_tab(self) -> QWidget:
@@ -248,6 +409,7 @@ class SettingsPage(QWidget):
 
     def _on_tab(self, index: int) -> None:
         if index == 2:
+            self._load_auto_options()
             self._reload_backups()
         elif index == 3:
             self._reload_audit()
@@ -271,4 +433,5 @@ class SettingsPage(QWidget):
             settings_service.get_setting("ticket_format", "80mm")
         )
         self.printer.setText(settings_service.get_setting("printer_name", ""))
+        self._load_auto_options()
         self._reload_backups()

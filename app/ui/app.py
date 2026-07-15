@@ -77,7 +77,7 @@ def run() -> int:
     init_database()
     seed_all()
     try:
-        backup_service.auto_backup_if_needed()
+        backup_service.run_startup_auto_backup()
     except Exception:
         pass  # Une sauvegarde automatique ne doit jamais bloquer le démarrage.
 
