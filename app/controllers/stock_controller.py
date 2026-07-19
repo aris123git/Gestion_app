@@ -55,6 +55,7 @@ class StockController:
         user_id: Optional[int] = None,
     ) -> None:
         quantity = to_float(quantity)
+        unit_cost = to_float(unit_cost)
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:
@@ -68,6 +69,10 @@ class StockController:
                 unit_cost,
                 user_id,
             )
+            # Le coût unitaire saisi lors de l'entrée met à jour le prix d'achat
+            # du produit (dernier prix d'achat connu).
+            if unit_cost > 0:
+                product.purchase_price = unit_cost
 
     @classmethod
     def stock_out(

@@ -30,8 +30,8 @@ from app.ui.state import AppState
 
 # (libellé, icône, classe de page, réservé aux admins)
 NAV_ITEMS = [
-    ("Tableau de bord", "📊", DashboardPage, False),
     ("Caisse", "🛒", POSPage, False),
+    ("Tableau de bord", "📊", DashboardPage, False),
     ("Produits", "📦", ProductsPage, False),
     ("Catégories", "🏷️", CategoriesPage, False),
     ("Stock", "📥", StockPage, False),

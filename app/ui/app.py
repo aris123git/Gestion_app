@@ -12,7 +12,8 @@ from PySide6.QtWidgets import QApplication
 
 from app.database.connection import init_database
 from app.database.seed import seed_all
-from app.services import backup_service
+from app.services import activation_service, backup_service
+from app.ui.activation_dialog import ActivationDialog
 from app.ui.login_dialog import LoginDialog
 from app.ui.main_window import MainWindow
 from app.ui.setup_wizard import SetupWizard
@@ -34,6 +35,18 @@ class AppController:
 
     def _on_theme_changed(self, dark: bool) -> None:
         apply_theme(self.app, dark)
+
+    def ensure_activated(self) -> bool:
+        """Affiche l'activation au premier démarrage. Retourne True si activé."""
+        if activation_service.is_activated():
+            return True
+        dialog = ActivationDialog()
+        dialog.exec()
+        if dialog.activated:
+            dialog.deleteLater()
+            self.app.processEvents()
+            return True
+        return False
 
     def run_first_start_if_needed(self) -> None:
         from app.services import settings_service
@@ -85,6 +98,11 @@ def run() -> int:
     app.setApplicationName("Gestion Commerciale")
 
     _controller = AppController(app)
+
+    # Activation obligatoire au premier démarrage (hors ligne).
+    if not _controller.ensure_activated():
+        return 0
+
     _controller.run_first_start_if_needed()
 
     if not _controller.show_login():

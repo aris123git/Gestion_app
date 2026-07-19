@@ -20,12 +20,13 @@ from PySide6.QtWidgets import (
 )
 
 from app.controllers.report_controller import ReportController, period_bounds
+from app.controllers.sale_controller import SaleController
 from app.reports.excel_report import export_report_excel
 from app.reports.pdf_report import export_report_pdf
 from app.services import settings_service
 from app.ui.state import AppState
 from app.ui.widgets.helpers import info, make_card, page_title, section_title
-from app.utils.helpers import format_money
+from app.utils.helpers import format_datetime, format_money
 
 
 class ReportsPage(QWidget):
@@ -82,6 +83,18 @@ class ReportsPage(QWidget):
         self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.top_table)
 
+        # Historique détaillé des ventes (avec date et heure).
+        layout.addWidget(section_title("Historique des ventes (date et heure)"))
+        self.history_table = QTableWidget(0, 5)
+        self.history_table.setHorizontalHeaderLabels(
+            ["Ticket", "Date et heure", "Caissier", "Paiement", "Total"]
+        )
+        self.history_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        layout.addWidget(self.history_table)
+
         exports = QHBoxLayout()
         exports.addStretch()
         pdf = QPushButton("Exporter PDF")
@@ -105,10 +118,11 @@ class ReportsPage(QWidget):
         return {"card": make_card(wrap), "value": value}
 
     def _period_changed(self, kind: str) -> None:
-        custom = kind == "Personnalisé"
-        self.start.setEnabled(custom)
-        self.end.setEnabled(custom)
-        if not custom:
+        # Les champs de date restent toujours modifiables : on peut donc choisir
+        # librement le jour (ou la plage) à consulter, même avec un préréglage.
+        self.start.setEnabled(True)
+        self.end.setEnabled(True)
+        if kind != "Personnalisé":
             start, end = period_bounds(kind)
             self.start.setDate(QDate(start.year, start.month, start.day))
             self.end.setDate(QDate(end.year, end.month, end.day))
@@ -134,6 +148,19 @@ class ReportsPage(QWidget):
             self.top_table.setItem(row, 0, QTableWidgetItem(name))
             self.top_table.setItem(row, 1, QTableWidgetItem(f"{qty:g}"))
             self.top_table.setItem(row, 2, QTableWidgetItem(format_money(total, currency)))
+
+        # Historique des ventes de la période (le plus récent d'abord).
+        sales = SaleController.list(start=start, end=end, limit=1000)
+        self.history_table.setRowCount(len(sales))
+        for row, sale in enumerate(sales):
+            self.history_table.setItem(row, 0, QTableWidgetItem(sale.ticket_number))
+            self.history_table.setItem(row, 1, QTableWidgetItem(format_datetime(sale.date)))
+            self.history_table.setItem(row, 2, QTableWidgetItem(sale.cashier_name))
+            self.history_table.setItem(row, 3, QTableWidgetItem(sale.payment_summary))
+            total_item = QTableWidgetItem(format_money(sale.total, currency))
+            if sale.status == "cancelled":
+                total_item.setText(format_money(sale.total, currency) + " (annulée)")
+            self.history_table.setItem(row, 4, total_item)
 
     def refresh(self) -> None:
         self._generate()

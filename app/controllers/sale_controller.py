@@ -204,7 +204,9 @@ class SaleController:
     ) -> List[Sale]:
         with session_scope() as session:
             query = select(Sale).options(
-                joinedload(Sale.user), joinedload(Sale.client)
+                joinedload(Sale.user),
+                joinedload(Sale.client),
+                joinedload(Sale.payments),
             )
             if search:
                 query = query.where(Sale.ticket_number.ilike(f"%{search}%"))
