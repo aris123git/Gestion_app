@@ -48,9 +48,9 @@ class LoginDialog(QDialog):
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("color: #64748b;")
 
-        # Sélection de l'utilisateur dans une liste déroulante.
+        # Sélection de l'utilisateur dans une liste déroulante (clic + choix).
         self.user_combo = QComboBox()
-        self.user_combo.setEditable(True)  # Permet aussi de taper le nom.
+        self.user_combo.setMinimumHeight(38)
         self._load_users()
 
         # Mot de passe avec possibilité d'afficher / masquer le code.

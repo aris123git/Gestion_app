@@ -99,7 +99,20 @@ def build_stylesheet(dark: bool = False) -> str:
     QDateEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
         border: 1px solid {PRIMARY};
     }}
-    QComboBox::drop-down {{ border: none; width: 22px; }}
+    QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: center right;
+        border: none;
+        width: 24px;
+    }}
+    QComboBox::down-arrow {{
+        width: 0;
+        height: 0;
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid {c['muted']};
+        margin-right: 8px;
+    }}
 
     /* Boutons */
     QPushButton {{
