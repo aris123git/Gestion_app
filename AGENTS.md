@@ -33,3 +33,9 @@ séparé de l'UI : `models/` (ORM) → `controllers/` (logique) → `ui/` (PySid
 - Pas de suite de tests automatisés pour l'instant ; la validation se fait en
   lançant l'app et en déroulant un flux caisse (créer un produit, encaisser une
   vente, vérifier le tableau de bord).
+- **Activation au premier démarrage** : l'app exige un code d'activation maître
+  (voir `app/services/activation_service.py`, constante `MASTER_KEY`, surchargée
+  par la variable d'env `NEXAPOS_ACTIVATION_KEY`). Un fichier `activation.dat`
+  est écrit dans `DATA_DIR` après activation. Pour les tests automatisés /
+  headless, définir `NEXAPOS_SKIP_ACTIVATION=1` pour contourner l'écran
+  d'activation.
