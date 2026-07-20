@@ -112,6 +112,9 @@ class CategoriesPage(QWidget):
         if not cat_id:
             warn(self, "Sélectionnez une catégorie.")
             return
+        if not self.state.is_admin:
+            warn(self, "Seul un administrateur peut supprimer une catégorie.")
+            return
         if confirm(self, "Supprimer cette catégorie ? Les produits seront conservés."):
             CategoryController.delete(cat_id)
             self.refresh()
@@ -155,6 +158,9 @@ class CategoriesPage(QWidget):
         row = self.unit_table.currentRow()
         if row < 0 or row >= len(self._unit_ids):
             warn(self, "Sélectionnez une unité.")
+            return
+        if not self.state.is_admin:
+            warn(self, "Seul un administrateur peut supprimer une unité.")
             return
         UnitController.delete(self._unit_ids[row])
         self.refresh()

@@ -125,6 +125,9 @@ class ClientsPage(QWidget):
         if not client_id:
             warn(self, "Sélectionnez un client.")
             return
+        if not self.state.is_admin:
+            warn(self, "Seul un administrateur peut supprimer un client.")
+            return
         if confirm(self, "Supprimer ce client ?"):
             ClientController.delete(client_id)
             self.refresh()

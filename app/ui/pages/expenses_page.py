@@ -98,6 +98,9 @@ class ExpensesPage(QWidget):
         if row < 0 or row >= len(self._ids):
             warn(self, "Sélectionnez une dépense.")
             return
+        if not self.state.is_admin:
+            warn(self, "Seul un administrateur peut supprimer une dépense.")
+            return
         if confirm(self, "Supprimer cette dépense ?"):
             ExpenseController.delete(self._ids[row])
             self.refresh()

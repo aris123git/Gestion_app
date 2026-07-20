@@ -103,6 +103,9 @@ class SuppliersPage(QWidget):
         if not supplier_id:
             warn(self, "Sélectionnez un fournisseur.")
             return
+        if not self.state.is_admin:
+            warn(self, "Seul un administrateur peut supprimer un fournisseur.")
+            return
         if confirm(self, "Supprimer ce fournisseur ?"):
             SupplierController.delete(supplier_id)
             self.refresh()

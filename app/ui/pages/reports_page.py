@@ -23,9 +23,16 @@ from app.controllers.report_controller import ReportController, period_bounds
 from app.controllers.sale_controller import SaleController
 from app.reports.excel_report import export_report_excel
 from app.reports.pdf_report import export_report_pdf
-from app.services import settings_service
+from app.services import audit_service, settings_service
 from app.ui.state import AppState
-from app.ui.widgets.helpers import info, make_card, page_title, section_title
+from app.ui.widgets.helpers import (
+    confirm,
+    info,
+    make_card,
+    page_title,
+    section_title,
+    warn,
+)
 from app.utils.helpers import format_datetime, format_money
 
 
@@ -34,6 +41,7 @@ class ReportsPage(QWidget):
         super().__init__()
         self.state = state
         self._report = None
+        self._sale_ids: list[int] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -95,6 +103,15 @@ class ReportsPage(QWidget):
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.history_table)
 
+        # Annulation d'une vente : réservée à l'administrateur (remise en stock).
+        history_actions = QHBoxLayout()
+        history_actions.addStretch()
+        self.cancel_sale_button = QPushButton("Annuler la vente sélectionnée")
+        self.cancel_sale_button.setObjectName("Danger")
+        self.cancel_sale_button.clicked.connect(self._cancel_selected_sale)
+        history_actions.addWidget(self.cancel_sale_button)
+        layout.addLayout(history_actions)
+
         exports = QHBoxLayout()
         exports.addStretch()
         pdf = QPushButton("Exporter PDF")
@@ -151,6 +168,7 @@ class ReportsPage(QWidget):
 
         # Historique des ventes de la période (le plus récent d'abord).
         sales = SaleController.list(start=start, end=end, limit=1000)
+        self._sale_ids = [s.id for s in sales]
         self.history_table.setRowCount(len(sales))
         for row, sale in enumerate(sales):
             self.history_table.setItem(row, 0, QTableWidgetItem(sale.ticket_number))
@@ -161,6 +179,34 @@ class ReportsPage(QWidget):
             if sale.status == "cancelled":
                 total_item.setText(format_money(sale.total, currency) + " (annulée)")
             self.history_table.setItem(row, 4, total_item)
+
+    def _cancel_selected_sale(self) -> None:
+        """Annule la vente sélectionnée (admin uniquement) et remet en stock."""
+        row = self.history_table.currentRow()
+        if row < 0 or row >= len(self._sale_ids):
+            warn(self, "Sélectionnez une vente dans l'historique.")
+            return
+        if not self.state.is_admin:
+            warn(self, "Seul un administrateur peut annuler une vente.")
+            return
+        sale_id = self._sale_ids[row]
+        ticket = self.history_table.item(row, 0)
+        ticket_number = ticket.text() if ticket else str(sale_id)
+        if not confirm(
+            self,
+            f"Annuler la vente {ticket_number} ?\n\n"
+            "Les articles seront remis en stock et la vente ne comptera plus "
+            "dans le chiffre d'affaires. Cette action est tracée dans le journal.",
+        ):
+            return
+        SaleController.cancel_sale(sale_id, restock=True)
+        audit_service.log_action(
+            "Annulation vente", "Sale", ticket_number,
+            self.state.user_id, getattr(self.state.current_user, "username", ""),
+        )
+        info(self, f"Vente {ticket_number} annulée et articles remis en stock.")
+        self._generate()
+        self.state.notify_data_changed()
 
     def refresh(self) -> None:
         self._generate()
