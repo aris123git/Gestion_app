@@ -66,6 +66,15 @@ class LoginDialog(QDialog):
         self.login_button.setObjectName("Primary")
         self.login_button.clicked.connect(self._attempt_login)
 
+        # Lien de récupération de mot de passe (via le code d'activation maître).
+        self.forgot_button = QPushButton("Mot de passe oublié ?")
+        self.forgot_button.setFlat(True)
+        self.forgot_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.forgot_button.setStyleSheet(
+            "QPushButton { border: none; color: #2563eb; background: transparent; }"
+        )
+        self.forgot_button.clicked.connect(self._open_forgot_password)
+
         self.hint = QLabel("Astuce : compte par défaut admin / admin")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hint.setStyleSheet("color: #94a3b8; font-size: 12px;")
@@ -80,6 +89,7 @@ class LoginDialog(QDialog):
         layout.addWidget(self.show_password)
         layout.addSpacing(6)
         layout.addWidget(self.login_button)
+        layout.addWidget(self.forgot_button)
         layout.addWidget(self.hint)
 
         outer.addWidget(card)
@@ -110,6 +120,16 @@ class LoginDialog(QDialog):
         self.password.setEchoMode(
             QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         )
+
+    def _open_forgot_password(self) -> None:
+        # Import local pour éviter tout import circulaire au chargement.
+        from app.ui.forgot_password_dialog import ForgotPasswordDialog
+
+        dialog = ForgotPasswordDialog(self)
+        if dialog.exec():
+            # Recharge la liste des comptes après une éventuelle réinitialisation.
+            self._load_users()
+            self.password.setFocus()
 
     def showEvent(self, event) -> None:  # noqa: N802 - signature Qt
         super().showEvent(event)
