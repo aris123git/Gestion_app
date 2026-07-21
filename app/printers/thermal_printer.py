@@ -241,6 +241,13 @@ def print_ticket(
     """
     path = save_ticket_file(sale, shop, paper)
     content = render_ticket_text(sale, shop, paper)
+    result = _send_content(content, printer_name)
+    result.file_path = path
+    return result
+
+
+def _send_content(content: str, printer_name: Optional[str] = None) -> PrintResult:
+    """Envoie un contenu déjà formaté à l'imprimante selon les réglages courants."""
     printer_name = (
         printer_name
         if printer_name is not None
@@ -265,7 +272,27 @@ def print_ticket(
     else:
         result = _print_posix(raw, printer_name)
 
-    result.file_path = path
     if not result.printed and not result.message:
         result.message = "Aucune imprimante configurée."
     return result
+
+
+def print_test_page(printer_name: Optional[str] = None) -> PrintResult:
+    """Imprime une page de test (pour régler avance papier / coupe par modèle)."""
+    shop = settings_service.get_shop_info()
+    paper = settings_service.get_setting("ticket_format", "80mm")
+    width = WIDTH_CHARS.get(paper, 48)
+
+    lines = [
+        _center(shop.name or "Gestion Commerciale", width),
+        _line("=", width),
+        _center("PAGE DE TEST", width),
+        _center(f"Format {paper}", width),
+        _line("-", width),
+        "Si vous lisez ces lignes entièrement",
+        "et que le papier est coupé,",
+        "l'imprimante est bien configurée.",
+        _line("-", width),
+        _center(datetime.now().strftime("%d/%m/%Y %H:%M"), width),
+    ]
+    return _send_content("\n".join(lines), printer_name)

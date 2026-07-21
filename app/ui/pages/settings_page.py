@@ -180,14 +180,36 @@ class SettingsPage(QWidget):
         form.addRow("Message du ticket", self.footer)
         outer.addWidget(make_card(form_widget))
 
+        actions = QHBoxLayout()
         save = QPushButton("Appliquer")
         save.setObjectName("Primary")
         save.clicked.connect(self._save_appearance)
-        outer.addWidget(save)
+        test_print = QPushButton("Imprimer une page de test")
+        test_print.clicked.connect(self._print_test_page)
+        actions.addWidget(save)
+        actions.addWidget(test_print)
+        actions.addStretch()
+        outer.addLayout(actions)
         outer.addStretch()
         return wrap
 
-    def _save_appearance(self) -> None:
+    def _print_test_page(self) -> None:
+        # Applique d'abord les réglages saisis pour tester la configuration réelle.
+        self._save_appearance(silent=True)
+        from app.printers import thermal_printer
+
+        result = thermal_printer.print_test_page()
+        if result.printed:
+            info(self, f"Page de test envoyée.\n{result.message}", "Test d'impression")
+        else:
+            warn(
+                self,
+                f"Impression de test impossible.\n{result.message}\n\n"
+                "Vérifiez le nom de l'imprimante et les réglages ci-dessus.",
+                "Test d'impression",
+            )
+
+    def _save_appearance(self, silent: bool = False) -> None:
         dark = self.theme.currentText() == "Sombre"
         self.state.set_dark(dark)
         settings_service.set_setting("ticket_format", self.ticket_format.currentText())
@@ -195,7 +217,8 @@ class SettingsPage(QWidget):
         settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
         settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
         settings_service.save_shop_info(ticket_footer=self.footer.text().strip())
-        info(self, "Préférences appliquées.")
+        if not silent:
+            info(self, "Préférences appliquées.")
 
     # --- Onglet sauvegarde -------------------------------------------------
     def _build_backup_tab(self) -> QWidget:
