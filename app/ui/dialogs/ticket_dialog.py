@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from app.printers import thermal_printer
 from app.services import settings_service
-from app.ui.widgets.helpers import info
+from app.ui.widgets.helpers import info, warn
 
 
 class TicketDialog(QDialog):
@@ -66,9 +66,20 @@ class TicketDialog(QDialog):
         self.preview.setPlainText(text)
 
     def _print(self) -> None:
-        path = thermal_printer.print_ticket(self.sale, paper=self.paper.currentText())
-        info(
-            self,
-            f"Ticket envoyé à l'impression.\nCopie enregistrée :\n{path}",
-            "Impression",
+        result = thermal_printer.print_ticket(
+            self.sale, paper=self.paper.currentText()
         )
+        if result.printed:
+            info(
+                self,
+                f"{result.message}\nCopie enregistrée :\n{result.file_path}",
+                "Impression",
+            )
+        else:
+            warn(
+                self,
+                f"Le ticket n'a pas pu être imprimé.\n{result.message}\n\n"
+                f"Une copie a été enregistrée :\n{result.file_path}\n\n"
+                "Configurez l'imprimante dans Paramètres → Apparence & Ticket.",
+                "Impression impossible",
+            )

@@ -16,7 +16,7 @@ from PyInstaller.utils.hooks import collect_submodules
 hidden_imports = (
     collect_submodules("app")
     + collect_submodules("escpos")
-    + ["reportlab.graphics.barcode"]
+    + ["reportlab.graphics.barcode", "win32print", "win32ui"]
 )
 
 block_cipher = None
