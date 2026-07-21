@@ -157,12 +157,26 @@ class SettingsPage(QWidget):
         self.ticket_format = QComboBox()
         self.ticket_format.addItems(["80mm", "58mm"])
         self.printer = QLineEdit()
-        self.printer.setPlaceholderText("Nom / chemin de l'imprimante (ex: /dev/usb/lp0)")
+        self.printer.setPlaceholderText(
+            "Nom d'imprimante (Windows) ou chemin (ex: /dev/usb/lp0) — vide = par défaut"
+        )
         self.footer = QLineEdit()
+
+        # Réglages d'avance papier et de coupe (dépannage « le ticket ne coupe
+        # pas / ne sort pas entièrement »).
+        self.feed_lines = QSpinBox()
+        self.feed_lines.setRange(0, 20)
+        self.feed_lines.setSuffix(" lignes d'avance avant coupe")
+        self.cut_mode = QComboBox()
+        self.cut_mode.addItem("Coupe complète", "full")
+        self.cut_mode.addItem("Coupe partielle", "partial")
+        self.cut_mode.addItem("Pas de coupe (déchirer)", "none")
 
         form.addRow("Thème", self.theme)
         form.addRow("Format du ticket", self.ticket_format)
         form.addRow("Imprimante", self.printer)
+        form.addRow("Avance papier", self.feed_lines)
+        form.addRow("Coupe", self.cut_mode)
         form.addRow("Message du ticket", self.footer)
         outer.addWidget(make_card(form_widget))
 
@@ -178,6 +192,8 @@ class SettingsPage(QWidget):
         self.state.set_dark(dark)
         settings_service.set_setting("ticket_format", self.ticket_format.currentText())
         settings_service.set_setting("printer_name", self.printer.text().strip())
+        settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
+        settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
         settings_service.save_shop_info(ticket_footer=self.footer.text().strip())
         info(self, "Préférences appliquées.")
 
@@ -433,5 +449,14 @@ class SettingsPage(QWidget):
             settings_service.get_setting("ticket_format", "80mm")
         )
         self.printer.setText(settings_service.get_setting("printer_name", ""))
+        try:
+            self.feed_lines.setValue(int(settings_service.get_setting("ticket_feed_lines", "5")))
+        except (TypeError, ValueError):
+            self.feed_lines.setValue(5)
+        cut_index = self.cut_mode.findData(
+            settings_service.get_setting("ticket_cut_mode", "full")
+        )
+        if cut_index >= 0:
+            self.cut_mode.setCurrentIndex(cut_index)
         self._load_auto_options()
         self._reload_backups()

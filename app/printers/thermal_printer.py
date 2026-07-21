@@ -119,22 +119,52 @@ def save_ticket_file(sale, shop=None, paper: str = "80mm") -> Path:
     return path
 
 
-def _build_escpos_bytes(content: str) -> bytes:
-    """Génère le flux ESC/POS (texte + coupe) sans matériel, via un tampon."""
+# Nombre de lignes d'avance papier par défaut avant la coupe. Nécessaire pour
+# que la fin du ticket dépasse la tête d'impression et le massicot.
+DEFAULT_FEED_LINES = 5
+# Mode de coupe par défaut : "full" (complète), "partial" (partielle) ou "none".
+DEFAULT_CUT_MODE = "full"
+
+_CUT_MODES = {"full": "FULL", "partial": "PART"}
+
+
+def _build_escpos_bytes(
+    content: str,
+    feed_lines: int = DEFAULT_FEED_LINES,
+    cut_mode: str = DEFAULT_CUT_MODE,
+) -> bytes:
+    """Génère le flux ESC/POS : texte + avance papier + coupe.
+
+    - ``feed_lines`` : lignes vides ajoutées après le contenu pour faire sortir
+      entièrement le ticket au-delà du massicot / de la barre de découpe ;
+    - ``cut_mode`` : ``"full"``, ``"partial"`` ou ``"none"``.
+    """
+    feed_lines = max(0, int(feed_lines))
     try:
         from escpos.printer import Dummy
 
         dummy = Dummy()
-        dummy.text(content + "\n")
-        try:
-            dummy.cut()
-        except Exception:
-            # Certaines configurations n'autorisent pas la commande de coupe.
-            pass
+        dummy.text(content)
+        if feed_lines:
+            dummy.text("\n" * feed_lines)
+        if cut_mode != "none":
+            escpos_mode = _CUT_MODES.get(cut_mode, "FULL")
+            try:
+                dummy.cut(mode=escpos_mode)
+            except Exception:
+                # Repli : coupe par défaut si le mode demandé n'est pas supporté.
+                try:
+                    dummy.cut()
+                except Exception:
+                    pass
         return dummy.output
     except Exception:
-        # Repli : envoi du texte brut si python-escpos est indisponible.
-        return (content + "\n").encode("utf-8", errors="replace")
+        # Repli complet : texte brut + avance + commande de coupe ESC/POS brute.
+        data = content.encode("utf-8", errors="replace")
+        data += b"\n" * feed_lines
+        if cut_mode != "none":
+            data += b"\x1d\x56\x00"  # GS V 0 : coupe complète
+        return data
 
 
 def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no cover
@@ -217,7 +247,18 @@ def print_ticket(
         else settings_service.get_setting("printer_name", "")
     ).strip()
 
-    raw = _build_escpos_bytes(content)
+    # Réglages d'avance papier / coupe (configurables dans les Paramètres).
+    try:
+        feed_lines = int(
+            settings_service.get_setting("ticket_feed_lines", str(DEFAULT_FEED_LINES))
+        )
+    except (TypeError, ValueError):
+        feed_lines = DEFAULT_FEED_LINES
+    cut_mode = settings_service.get_setting("ticket_cut_mode", DEFAULT_CUT_MODE)
+    if cut_mode not in ("full", "partial", "none"):
+        cut_mode = DEFAULT_CUT_MODE
+
+    raw = _build_escpos_bytes(content, feed_lines=feed_lines, cut_mode=cut_mode)
 
     if sys.platform.startswith("win"):
         result = _print_windows(raw, printer_name)
