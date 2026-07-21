@@ -128,6 +128,48 @@ DEFAULT_CUT_MODE = "full"
 _CUT_MODES = {"full": "FULL", "partial": "PART"}
 
 
+def list_printers() -> list[str]:
+    """Retourne la liste des imprimantes installées sur le poste.
+
+    - Windows : via ``win32print`` (imprimantes locales et partagées) ;
+    - Linux/macOS : via ``lpstat`` (CUPS).
+    En cas d'échec ou d'absence d'outil, retourne une liste vide.
+    """
+    if sys.platform.startswith("win"):  # pragma: no cover - dépend de Windows
+        try:
+            import win32print
+
+            flags = (
+                win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+            )
+            return [printer[2] for printer in win32print.EnumPrinters(flags)]
+        except Exception:
+            return []
+    try:
+        proc = subprocess.run(
+            ["lpstat", "-a"], capture_output=True, timeout=5, text=True, check=False
+        )
+        return [
+            line.split()[0]
+            for line in proc.stdout.splitlines()
+            if line.strip()
+        ]
+    except Exception:
+        return []
+
+
+def default_printer() -> str:
+    """Retourne le nom de l'imprimante par défaut (Windows), sinon chaîne vide."""
+    if sys.platform.startswith("win"):  # pragma: no cover - dépend de Windows
+        try:
+            import win32print
+
+            return win32print.GetDefaultPrinter() or ""
+        except Exception:
+            return ""
+    return ""
+
+
 def _build_escpos_bytes(
     content: str,
     feed_lines: int = DEFAULT_FEED_LINES,

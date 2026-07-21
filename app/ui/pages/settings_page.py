@@ -40,6 +40,9 @@ from app.ui.widgets.helpers import (
 )
 from app.utils.helpers import format_datetime
 
+# Libellé de l'entrée « imprimante par défaut du système » dans la liste.
+DEFAULT_PRINTER_LABEL = "(Imprimante par défaut)"
+
 
 class SettingsPage(QWidget):
     def __init__(self, state: AppState):
@@ -156,10 +159,17 @@ class SettingsPage(QWidget):
         self.theme.addItems(["Clair", "Sombre"])
         self.ticket_format = QComboBox()
         self.ticket_format.addItems(["80mm", "58mm"])
-        self.printer = QLineEdit()
-        self.printer.setPlaceholderText(
-            "Nom d'imprimante (Windows) ou chemin (ex: /dev/usb/lp0) — vide = par défaut"
-        )
+        # Liste déroulante des imprimantes détectées (éditable pour saisir un
+        # chemin de périphérique si besoin) + bouton d'actualisation.
+        self.printer = QComboBox()
+        self.printer.setEditable(True)
+        self.printer.setMinimumWidth(260)
+        refresh_printers = QPushButton("Actualiser")
+        refresh_printers.clicked.connect(lambda: self._reload_printers())
+        printer_row = QHBoxLayout()
+        printer_row.addWidget(self.printer, 1)
+        printer_row.addWidget(refresh_printers)
+
         self.footer = QLineEdit()
 
         # Réglages d'avance papier et de coupe (dépannage « le ticket ne coupe
@@ -174,7 +184,7 @@ class SettingsPage(QWidget):
 
         form.addRow("Thème", self.theme)
         form.addRow("Format du ticket", self.ticket_format)
-        form.addRow("Imprimante", self.printer)
+        form.addRow("Imprimante", printer_row)
         form.addRow("Avance papier", self.feed_lines)
         form.addRow("Coupe", self.cut_mode)
         form.addRow("Message du ticket", self.footer)
@@ -209,11 +219,37 @@ class SettingsPage(QWidget):
                 "Test d'impression",
             )
 
+    def _reload_printers(self, select=None) -> None:
+        """Détecte les imprimantes installées et remplit la liste déroulante."""
+        from app.printers import thermal_printer
+
+        if select is None:
+            select = self._printer_value()
+        self.printer.blockSignals(True)
+        self.printer.clear()
+        self.printer.addItem(DEFAULT_PRINTER_LABEL, "")
+        for name in thermal_printer.list_printers():
+            self.printer.addItem(name, name)
+        if select:
+            index = self.printer.findData(select)
+            if index >= 0:
+                self.printer.setCurrentIndex(index)
+            else:
+                self.printer.setEditText(select)
+        else:
+            self.printer.setCurrentIndex(0)
+        self.printer.blockSignals(False)
+
+    def _printer_value(self) -> str:
+        """Valeur d'imprimante à enregistrer ('' = imprimante par défaut)."""
+        text = self.printer.currentText().strip()
+        return "" if text == DEFAULT_PRINTER_LABEL else text
+
     def _save_appearance(self, silent: bool = False) -> None:
         dark = self.theme.currentText() == "Sombre"
         self.state.set_dark(dark)
         settings_service.set_setting("ticket_format", self.ticket_format.currentText())
-        settings_service.set_setting("printer_name", self.printer.text().strip())
+        settings_service.set_setting("printer_name", self._printer_value())
         settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
         settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
         settings_service.save_shop_info(ticket_footer=self.footer.text().strip())
@@ -471,7 +507,7 @@ class SettingsPage(QWidget):
         self.ticket_format.setCurrentText(
             settings_service.get_setting("ticket_format", "80mm")
         )
-        self.printer.setText(settings_service.get_setting("printer_name", ""))
+        self._reload_printers(select=settings_service.get_setting("printer_name", ""))
         try:
             self.feed_lines.setValue(int(settings_service.get_setting("ticket_feed_lines", "5")))
         except (TypeError, ValueError):
