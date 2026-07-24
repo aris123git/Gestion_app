@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -14,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import __version__
+from app.services import permissions as perms
 from app.services import settings_service
 from app.ui.pages.categories_page import CategoriesPage
 from app.ui.pages.clients_page import ClientsPage
@@ -28,19 +31,19 @@ from app.ui.pages.suppliers_page import SuppliersPage
 from app.ui.pages.users_page import UsersPage
 from app.ui.state import AppState
 
-# (libellé, icône, classe de page, réservé aux admins)
+# (libellé, icône, classe de page, permission requise ou None = tous les rôles)
 NAV_ITEMS = [
-    ("Caisse", "🛒", POSPage, False),
-    ("Tableau de bord", "📊", DashboardPage, False),
-    ("Produits", "📦", ProductsPage, False),
-    ("Catégories", "🏷️", CategoriesPage, False),
-    ("Stock", "📥", StockPage, False),
-    ("Clients", "👥", ClientsPage, False),
-    ("Fournisseurs", "🚚", SuppliersPage, False),
-    ("Dépenses", "💸", ExpensesPage, False),
-    ("Rapports", "📈", ReportsPage, False),
-    ("Utilisateurs", "🔐", UsersPage, True),
-    ("Paramètres", "⚙️", SettingsPage, False),
+    ("Caisse", "🛒", POSPage, perms.SELL),
+    ("Tableau de bord", "📊", DashboardPage, perms.VIEW_DASHBOARD),
+    ("Produits", "📦", ProductsPage, perms.VIEW_PRODUCTS),
+    ("Catégories", "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
+    ("Stock", "📥", StockPage, perms.MANAGE_STOCK),
+    ("Clients", "👥", ClientsPage, perms.MANAGE_CLIENTS),
+    ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
+    ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
+    ("Rapports", "📈", ReportsPage, perms.VIEW_REPORTS),
+    ("Utilisateurs", "🔐", UsersPage, perms.MANAGE_USERS),
+    ("Paramètres", "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
 ]
 
 
@@ -51,8 +54,8 @@ class MainWindow(QWidget):
         self.setWindowTitle("Gestion Commerciale")
         self.resize(1280, 800)
 
-        self.pages: list[QWidget] = []
-        self._nav_buttons: list[QPushButton] = []
+        self.pages: list[Optional[QWidget]] = []
+        self._nav_buttons: list[Optional[QPushButton]] = []
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -66,6 +69,11 @@ class MainWindow(QWidget):
         self._build_pages()
         self.state.data_changed.connect(self._refresh_current)
         self.select_page(0)
+
+    def _allowed(self, permission: Optional[str]) -> bool:
+        if permission is None:
+            return True
+        return self.state.can(permission)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -90,8 +98,8 @@ class MainWindow(QWidget):
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
 
-        for index, (label, icon, _page, admin_only) in enumerate(NAV_ITEMS):
-            if admin_only and not self.state.is_admin:
+        for index, (label, icon, _page, permission) in enumerate(NAV_ITEMS):
+            if not self._allowed(permission):
                 self._nav_buttons.append(None)
                 continue
             button = QPushButton(f"{icon}  {label}")
@@ -124,8 +132,8 @@ class MainWindow(QWidget):
         return sidebar
 
     def _build_pages(self) -> None:
-        for label, _icon, page_class, admin_only in NAV_ITEMS:
-            if admin_only and not self.state.is_admin:
+        for label, _icon, page_class, permission in NAV_ITEMS:
+            if not self._allowed(permission):
                 self.pages.append(None)
                 continue
             page = page_class(self.state)

@@ -71,3 +71,28 @@ def init_database() -> None:
 
     config.ensure_directories()
     Base.metadata.create_all(engine)
+    _migrate_schema()
+
+
+def _migrate_schema() -> None:
+    """Ajoute les colonnes manquantes sur les bases SQLite déjà créées."""
+    from sqlalchemy import text
+
+    alterations = {
+        "stock_movements": {
+            "comment": "TEXT DEFAULT ''",
+            "invoice_number": "VARCHAR(80) DEFAULT ''",
+            "supplier_id": "INTEGER",
+        },
+    }
+    with engine.begin() as conn:
+        for table, columns in alterations.items():
+            existing = {
+                row[1]
+                for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            }
+            for name, definition in columns.items():
+                if name not in existing:
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                    )

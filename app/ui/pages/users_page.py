@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import config
+from app.services import permissions as perms
 from app.services.auth_service import AuthService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, page_title, warn
@@ -134,7 +135,7 @@ class UsersPage(QWidget):
         layout.addLayout(actions)
 
     def _guard_admin(self) -> bool:
-        if not self.state.is_admin:
+        if not self.state.can(perms.MANAGE_USERS):
             warn(self, "Seul un administrateur peut gérer les utilisateurs.")
             return False
         return True

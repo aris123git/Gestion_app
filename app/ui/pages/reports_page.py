@@ -23,7 +23,8 @@ from app.controllers.report_controller import ReportController, period_bounds
 from app.controllers.sale_controller import SaleController
 from app.reports.excel_report import export_report_excel
 from app.reports.pdf_report import export_report_pdf
-from app.services import audit_service, settings_service
+from app.services import audit_service, permissions as perms, settings_service
+from app.ui.dialogs.authorize_dialog import require_admin_authorization
 from app.ui.state import AppState
 from app.ui.widgets.helpers import (
     confirm,
@@ -103,7 +104,7 @@ class ReportsPage(QWidget):
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.history_table)
 
-        # Annulation d'une vente : réservée à l'administrateur (remise en stock).
+        # Annulation : admin direct, gestionnaire avec autorisation admin.
         history_actions = QHBoxLayout()
         history_actions.addStretch()
         self.cancel_sale_button = QPushButton("Annuler la vente sélectionnée")
@@ -121,6 +122,14 @@ class ReportsPage(QWidget):
         exports.addWidget(pdf)
         exports.addWidget(excel)
         layout.addLayout(exports)
+        self._apply_permissions()
+
+    def _apply_permissions(self) -> None:
+        show_profits = self.state.can(perms.VIEW_PROFITS)
+        self.lbl_profit["card"].setVisible(show_profits)
+        self.lbl_expenses["card"].setVisible(show_profits)
+        self.lbl_net["card"].setVisible(show_profits)
+        self.cancel_sale_button.setVisible(perms.can_cancel_sale(self.state.current_user))
 
     def _metric(self, title: str) -> dict:
         wrap = QWidget()
@@ -150,14 +159,16 @@ class ReportsPage(QWidget):
         return date(s.year(), s.month(), s.day()), date(e.year(), e.month(), e.day())
 
     def _generate(self) -> None:
+        self._apply_permissions()
         start, end = self._current_range()
         self._report = ReportController.build(start, end)
         currency = settings_service.get_currency()
         self.lbl_revenue["value"].setText(format_money(self._report["revenue"], currency))
         self.lbl_sales["value"].setText(str(self._report["sales_count"]))
-        self.lbl_profit["value"].setText(format_money(self._report["profit"], currency))
-        self.lbl_expenses["value"].setText(format_money(self._report["expenses"], currency))
-        self.lbl_net["value"].setText(format_money(self._report["net_profit"], currency))
+        if self.state.can(perms.VIEW_PROFITS):
+            self.lbl_profit["value"].setText(format_money(self._report["profit"], currency))
+            self.lbl_expenses["value"].setText(format_money(self._report["expenses"], currency))
+            self.lbl_net["value"].setText(format_money(self._report["net_profit"], currency))
 
         top = self._report["top_products"]
         self.top_table.setRowCount(len(top))
@@ -181,14 +192,24 @@ class ReportsPage(QWidget):
             self.history_table.setItem(row, 4, total_item)
 
     def _cancel_selected_sale(self) -> None:
-        """Annule la vente sélectionnée (admin uniquement) et remet en stock."""
+        """Annule la vente sélectionnée et remet en stock.
+
+        Administrateur : immédiat. Gestionnaire : mot de passe admin requis.
+        """
         row = self.history_table.currentRow()
         if row < 0 or row >= len(self._sale_ids):
             warn(self, "Sélectionnez une vente dans l'historique.")
             return
-        if not self.state.is_admin:
-            warn(self, "Seul un administrateur peut annuler une vente.")
+        if not perms.can_cancel_sale(self.state.current_user):
+            warn(self, "Vous n'avez pas l'autorisation d'annuler une vente.")
             return
+        if perms.requires_auth_to_cancel(self.state.current_user):
+            if not require_admin_authorization(
+                self,
+                "L'annulation d'une vente nécessite l'autorisation "
+                "d'un administrateur.",
+            ):
+                return
         sale_id = self._sale_ids[row]
         ticket = self.history_table.item(row, 0)
         ticket_number = ticket.text() if ticket else str(sale_id)

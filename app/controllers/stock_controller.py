@@ -29,6 +29,10 @@ class StockController:
         reason: str,
         unit_cost: float,
         user_id: Optional[int],
+        *,
+        supplier_id: Optional[int] = None,
+        invoice_number: str = "",
+        comment: str = "",
     ) -> None:
         before = float(product.quantity)
         product.quantity = new_quantity
@@ -41,6 +45,9 @@ class StockController:
                 quantity_after=new_quantity,
                 unit_cost=to_float(unit_cost),
                 reason=reason,
+                comment=(comment or "").strip(),
+                invoice_number=(invoice_number or "").strip(),
+                supplier_id=supplier_id,
                 user_id=user_id,
             )
         )
@@ -53,6 +60,10 @@ class StockController:
         unit_cost: float = 0,
         reason: str = "",
         user_id: Optional[int] = None,
+        *,
+        supplier_id: Optional[int] = None,
+        invoice_number: str = "",
+        comment: str = "",
     ) -> None:
         quantity = to_float(quantity)
         unit_cost = to_float(unit_cost)
@@ -68,6 +79,9 @@ class StockController:
                 reason or "Entrée de stock",
                 unit_cost,
                 user_id,
+                supplier_id=supplier_id,
+                invoice_number=invoice_number,
+                comment=comment,
             )
             # Le coût unitaire saisi lors de l'entrée met à jour le prix d'achat
             # du produit (dernier prix d'achat connu).
@@ -81,6 +95,8 @@ class StockController:
         quantity: float,
         reason: str = "",
         user_id: Optional[int] = None,
+        *,
+        comment: str = "",
     ) -> None:
         quantity = to_float(quantity)
         with session_scope() as session:
@@ -95,6 +111,7 @@ class StockController:
                 reason or "Sortie de stock",
                 0,
                 user_id,
+                comment=comment,
             )
 
     @classmethod
@@ -104,6 +121,8 @@ class StockController:
         counted_quantity: float,
         reason: str = "",
         user_id: Optional[int] = None,
+        *,
+        comment: str = "",
     ) -> None:
         """Fixe la quantité réelle constatée lors d'un inventaire."""
         with session_scope() as session:
@@ -118,6 +137,7 @@ class StockController:
                 reason or "Inventaire",
                 0,
                 user_id,
+                comment=comment,
             )
 
     @classmethod
@@ -127,7 +147,10 @@ class StockController:
         new_quantity: float,
         reason: str = "",
         user_id: Optional[int] = None,
+        *,
+        comment: str = "",
     ) -> None:
+        """Ajustement de stock (correction d'erreur) — toujours tracé."""
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:
@@ -137,15 +160,20 @@ class StockController:
                 product,
                 MOVEMENT_CORRECTION,
                 to_float(new_quantity),
-                reason or "Correction",
+                reason or "Ajustement / correction",
                 0,
                 user_id,
+                comment=comment,
             )
 
     @staticmethod
     def history(product_id: Optional[int] = None, limit: int = 500) -> List[StockMovement]:
         with session_scope() as session:
-            query = select(StockMovement).options(joinedload(StockMovement.product))
+            query = select(StockMovement).options(
+                joinedload(StockMovement.product),
+                joinedload(StockMovement.user),
+                joinedload(StockMovement.supplier),
+            )
             if product_id:
                 query = query.where(StockMovement.product_id == product_id)
             query = query.order_by(StockMovement.date.desc()).limit(limit)

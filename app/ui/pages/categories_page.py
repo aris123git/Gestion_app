@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from app.controllers.category_controller import CategoryController
 from app.controllers.unit_controller import UnitController
+from app.services import permissions as perms
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, make_card, page_title, section_title, warn
 
@@ -112,8 +113,8 @@ class CategoriesPage(QWidget):
         if not cat_id:
             warn(self, "Sélectionnez une catégorie.")
             return
-        if not self.state.is_admin:
-            warn(self, "Seul un administrateur peut supprimer une catégorie.")
+        if not self.state.can(perms.MANAGE_CATEGORIES):
+            warn(self, "Vous n'avez pas l'autorisation de supprimer une catégorie.")
             return
         if confirm(self, "Supprimer cette catégorie ? Les produits seront conservés."):
             CategoryController.delete(cat_id)
@@ -159,8 +160,8 @@ class CategoriesPage(QWidget):
         if row < 0 or row >= len(self._unit_ids):
             warn(self, "Sélectionnez une unité.")
             return
-        if not self.state.is_admin:
-            warn(self, "Seul un administrateur peut supprimer une unité.")
+        if not self.state.can(perms.MANAGE_CATEGORIES):
+            warn(self, "Vous n'avez pas l'autorisation de supprimer une unité.")
             return
         UnitController.delete(self._unit_ids[row])
         self.refresh()

@@ -72,4 +72,4 @@ EXPENSE_CATEGORIES = [
     "Autres",
 ]
 
-ROLES = ["Administrateur", "Caissier"]
+ROLES = ["Administrateur", "Gestionnaire", "Caissier"]

@@ -32,6 +32,10 @@ class AppState(QObject):
     def is_admin(self) -> bool:
         return self.auth.require_admin()
 
+    def can(self, permission: str) -> bool:
+        """Vérifie une permission du rôle de l'utilisateur connecté."""
+        return self.auth.can(permission)
+
     @property
     def dark(self) -> bool:
         return self._dark

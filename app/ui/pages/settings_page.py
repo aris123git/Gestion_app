@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import config
-from app.services import audit_service, backup_service, settings_service
+from app.services import audit_service, backup_service, permissions as perms, settings_service
 from app.ui.setup_wizard import CURRENCIES, SHOP_TYPES
 from app.ui.state import AppState
 from app.ui.widgets.helpers import (
@@ -376,7 +376,7 @@ class SettingsPage(QWidget):
         self._reload_backups()
 
     def _perform_restore(self, zip_path) -> None:
-        if not self.state.is_admin:
+        if not self.state.can(perms.MANAGE_SETTINGS):
             warn(self, "Seul un administrateur peut restaurer une sauvegarde.")
             return
         if not confirm(

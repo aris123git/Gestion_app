@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 from app import config
 from app.controllers.expense_controller import ExpenseController
-from app.services import audit_service, settings_service
+from app.services import audit_service, permissions as perms, settings_service
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_money
@@ -98,8 +98,8 @@ class ExpensesPage(QWidget):
         if row < 0 or row >= len(self._ids):
             warn(self, "Sélectionnez une dépense.")
             return
-        if not self.state.is_admin:
-            warn(self, "Seul un administrateur peut supprimer une dépense.")
+        if not self.state.can(perms.MANAGE_EXPENSES):
+            warn(self, "Vous n'avez pas l'autorisation de supprimer une dépense.")
             return
         if confirm(self, "Supprimer cette dépense ?"):
             ExpenseController.delete(self._ids[row])

@@ -29,7 +29,7 @@ from app.controllers.sale_controller import (
     InsufficientStockError,
     SaleController,
 )
-from app.services import audit_service, settings_service
+from app.services import audit_service, permissions as perms, settings_service
 from app.ui.dialogs.payment_dialog import PaymentDialog
 from app.ui.dialogs.price_change_dialog import PriceChangeDialog
 from app.ui.dialogs.ticket_dialog import TicketDialog
@@ -287,6 +287,8 @@ class POSPage(QWidget):
 
             price_item = QTableWidgetItem(f"{float(line.unit_price):g}")
             price_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if not self.state.can(perms.MANAGE_PRICES):
+                price_item.setFlags(price_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
             total_item = QTableWidgetItem(format_money(line.total, currency))
             total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -346,6 +348,10 @@ class POSPage(QWidget):
             self._render_cart()
 
         elif item.column() == self.COL_PRICE:
+            if not self.state.can(perms.MANAGE_PRICES):
+                warn(self, "Vous n'avez pas l'autorisation de modifier les prix.")
+                self._render_cart()
+                return
             new_price = to_float(item.text())
             if new_price <= 0:
                 self._render_cart()

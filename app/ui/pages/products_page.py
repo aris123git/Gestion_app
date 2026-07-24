@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from app.controllers.category_controller import CategoryController
 from app.controllers.product_controller import ProductController
 from app.reports.excel_report import export_products_excel
-from app.services import audit_service, settings_service
+from app.services import audit_service, permissions as perms, settings_service
 from app.ui.dialogs.product_dialog import ProductDialog
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
@@ -41,13 +41,13 @@ class ProductsPage(QWidget):
         header = QHBoxLayout()
         header.addWidget(page_title("Produits"))
         header.addStretch()
-        export_button = QPushButton("Exporter Excel")
-        export_button.clicked.connect(self._export)
-        add_button = QPushButton("+ Nouveau produit")
-        add_button.setObjectName("Primary")
-        add_button.clicked.connect(self._add)
-        header.addWidget(export_button)
-        header.addWidget(add_button)
+        self.export_button = QPushButton("Exporter Excel")
+        self.export_button.clicked.connect(self._export)
+        self.add_button = QPushButton("+ Nouveau produit")
+        self.add_button.setObjectName("Primary")
+        self.add_button.clicked.connect(self._add)
+        header.addWidget(self.export_button)
+        header.addWidget(self.add_button)
         layout.addLayout(header)
 
         filters = QHBoxLayout()
@@ -72,16 +72,26 @@ class ProductsPage(QWidget):
 
         actions = QHBoxLayout()
         actions.addStretch()
-        edit_button = QPushButton("Modifier")
-        edit_button.clicked.connect(self._edit)
-        delete_button = QPushButton("Supprimer")
-        delete_button.setObjectName("Danger")
-        delete_button.clicked.connect(self._delete)
-        actions.addWidget(edit_button)
-        actions.addWidget(delete_button)
+        self.edit_button = QPushButton("Modifier")
+        self.edit_button.clicked.connect(self._edit)
+        self.delete_button = QPushButton("Supprimer")
+        self.delete_button.setObjectName("Danger")
+        self.delete_button.clicked.connect(self._delete)
+        actions.addWidget(self.edit_button)
+        actions.addWidget(self.delete_button)
         layout.addLayout(actions)
+        self._apply_permissions()
+
+    def _apply_permissions(self) -> None:
+        can_manage = self.state.can(perms.MANAGE_PRODUCTS)
+        can_delete = self.state.can(perms.DELETE_PRODUCTS)
+        self.add_button.setVisible(can_manage)
+        self.edit_button.setVisible(can_manage)
+        self.delete_button.setVisible(can_delete)
+        self.export_button.setVisible(self.state.can(perms.VIEW_PROFITS) or can_manage)
 
     def refresh(self) -> None:
+        self._apply_permissions()
         self._reload_categories()
         products = ProductController.list(
             search=self.search.text().strip(),
@@ -124,6 +134,9 @@ class ProductsPage(QWidget):
         return self._ids[row]
 
     def _add(self) -> None:
+        if not self.state.can(perms.MANAGE_PRODUCTS):
+            warn(self, "Vous n'avez pas l'autorisation d'ajouter un produit.")
+            return
         dialog = ProductDialog(parent=self)
         if dialog.exec() and dialog.data:
             product = ProductController.create(dialog.data)
@@ -135,6 +148,8 @@ class ProductsPage(QWidget):
             self.state.notify_data_changed()
 
     def _edit(self) -> None:
+        if not self.state.can(perms.MANAGE_PRODUCTS):
+            return
         product_id = self._selected_id()
         if not product_id:
             warn(self, "Veuillez sélectionner un produit.")
@@ -155,8 +170,8 @@ class ProductsPage(QWidget):
         if not product_id:
             warn(self, "Veuillez sélectionner un produit.")
             return
-        if not self.state.is_admin:
-            warn(self, "Seul un administrateur peut supprimer un produit.")
+        if not self.state.can(perms.DELETE_PRODUCTS):
+            warn(self, "Vous n'avez pas l'autorisation de supprimer un produit.")
             return
         if confirm(self, "Supprimer définitivement ce produit ?"):
             ProductController.delete(product_id)

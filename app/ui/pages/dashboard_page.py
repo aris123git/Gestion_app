@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from app.controllers.dashboard_controller import DashboardController
 from app.controllers.product_controller import ProductController
-from app.services import settings_service
+from app.services import permissions as perms, settings_service
 from app.ui.state import AppState
 from app.ui.theme import DANGER, PRIMARY, SUCCESS, WARNING
 from app.ui.widgets.helpers import make_card, page_title, section_title
@@ -71,6 +71,8 @@ class DashboardPage(QWidget):
         for index, card in enumerate(cards):
             grid.addWidget(card, index // 4, index % 4)
         layout.addLayout(grid)
+        self._cards_grid = grid
+        self._apply_permissions()
 
         # --- Listes : top produits + alertes ------------------------------
         lists = QHBoxLayout()
@@ -105,14 +107,21 @@ class DashboardPage(QWidget):
         layout.addLayout(lists)
         layout.addStretch()
 
+    def _apply_permissions(self) -> None:
+        show_profits = self.state.can(perms.VIEW_PROFITS)
+        self.card_profit.setVisible(show_profits)
+        self.card_expenses.setVisible(show_profits)
+
     def refresh(self) -> None:
+        self._apply_permissions()
         currency = settings_service.get_currency()
         data = DashboardController.summary()
         self.card_revenue_today.set_value(format_money(data["revenue_today"], currency))
         self.card_revenue_month.set_value(format_money(data["revenue_month"], currency))
         self.card_sales.set_value(str(data["sales_today"]))
-        self.card_profit.set_value(format_money(data["profit_today"], currency))
-        self.card_expenses.set_value(format_money(data["expenses_today"], currency))
+        if self.state.can(perms.VIEW_PROFITS):
+            self.card_profit.set_value(format_money(data["profit_today"], currency))
+            self.card_expenses.set_value(format_money(data["expenses_today"], currency))
         self.card_low.set_value(str(data["low_stock"]))
         self.card_out.set_value(str(data["out_of_stock"]))
         self.card_products.set_value(str(data["total_products"]))
