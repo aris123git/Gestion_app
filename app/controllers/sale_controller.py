@@ -54,6 +54,10 @@ class InsufficientPaymentError(Exception):
     """Levée lorsque le paiement ne couvre pas le total sans crédit autorisé."""
 
 
+class InsufficientStockError(Exception):
+    """Levée lorsqu'une vente dépasserait le stock disponible."""
+
+
 class SaleController:
     @staticmethod
     def _next_ticket_number(session) -> str:
@@ -108,6 +112,24 @@ class SaleController:
             )
             session.add(sale)
             session.flush()
+
+            # Vérifie le stock avant toute sortie (agrège les lignes du même produit).
+            required: dict[int, float] = {}
+            for line in lines:
+                if line.product_id:
+                    required[line.product_id] = (
+                        required.get(line.product_id, 0.0) + float(line.quantity)
+                    )
+            for product_id, needed in required.items():
+                product = session.get(Product, product_id)
+                if product is None:
+                    continue
+                available = float(product.quantity)
+                if available <= 0 or available < needed:
+                    raise InsufficientStockError(
+                        f"Stock insuffisant pour « {product.name} » : "
+                        f"disponible {available:g}, demandé {needed:g}."
+                    )
 
             for line in lines:
                 product = (
