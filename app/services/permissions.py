@@ -1,9 +1,10 @@
 """Matrice des permissions par rôle (Administrateur / Gestionnaire / Caissier).
 
-Le caissier se limite à la vente et à la consultation utile en caisse.
-Le gestionnaire gère stocks, produits, prix et rapports, mais pas les
+V1 — petits commerces : le caissier peut réceptionner du stock (tout mouvement
+est historisé avec utilisateur, date, motif). En revanche la modification des
+prix reste réservée au gestionnaire / administrateur (risque de fraude).
+Le gestionnaire gère aussi produits, rapports et bénéfices, mais pas les
 paramètres critiques ni les comptes utilisateurs.
-L'administrateur a le contrôle total.
 """
 
 from __future__ import annotations
@@ -84,6 +85,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             SELL,
             PRINT_TICKET,
             VIEW_PRODUCTS,
+            MANAGE_STOCK,  # V1 : réception autorisée, tout est historisé
             MANAGE_CLIENTS,
             VIEW_REPORTS,
             VIEW_DASHBOARD,
