@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.controllers.client_controller import ClientController
-from app.services import settings_service
+from app.services import permissions as perms, settings_service
 from app.ui.dialogs.contact_dialog import ContactDialog
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
@@ -125,8 +125,9 @@ class ClientsPage(QWidget):
         if not client_id:
             warn(self, "Sélectionnez un client.")
             return
-        if not self.state.is_admin:
-            warn(self, "Seul un administrateur peut supprimer un client.")
+        # Les caissiers peuvent gérer les clients mais pas les supprimer.
+        if not (self.state.is_admin or self.state.can(perms.MANAGE_PRODUCTS)):
+            warn(self, "Vous n'avez pas l'autorisation de supprimer un client.")
             return
         if confirm(self, "Supprimer ce client ?"):
             ClientController.delete(client_id)

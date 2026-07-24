@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from app.controllers.product_controller import ProductController
 from app.controllers.stock_controller import StockController
-from app.services import audit_service
+from app.services import audit_service, permissions as perms
 from app.ui.state import AppState
 from app.ui.widgets.helpers import info, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_quantity
@@ -103,7 +103,15 @@ class StockPage(QWidget):
     def _current_product_id(self):
         return self.product_combo.currentData()
 
+    def _ensure_stock_permission(self) -> bool:
+        if self.state.can(perms.MANAGE_STOCK):
+            return True
+        warn(self, "Vous n'avez pas l'autorisation de modifier le stock.")
+        return False
+
     def _stock_in(self) -> None:
+        if not self._ensure_stock_permission():
+            return
         pid = self._current_product_id()
         if not pid or self.quantity.value() <= 0:
             warn(self, "Choisissez un produit et une quantité.")
@@ -115,6 +123,8 @@ class StockPage(QWidget):
         self._after_movement("Entrée de stock", pid)
 
     def _stock_out(self) -> None:
+        if not self._ensure_stock_permission():
+            return
         pid = self._current_product_id()
         if not pid or self.quantity.value() <= 0:
             warn(self, "Choisissez un produit et une quantité.")
@@ -125,6 +135,8 @@ class StockPage(QWidget):
         self._after_movement("Sortie de stock", pid)
 
     def _inventory(self) -> None:
+        if not self._ensure_stock_permission():
+            return
         pid = self._current_product_id()
         if not pid:
             warn(self, "Choisissez un produit.")
@@ -135,6 +147,8 @@ class StockPage(QWidget):
         self._after_movement("Inventaire", pid)
 
     def _correction(self) -> None:
+        if not self._ensure_stock_permission():
+            return
         pid = self._current_product_id()
         if not pid:
             warn(self, "Choisissez un produit.")

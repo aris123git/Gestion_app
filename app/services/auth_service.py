@@ -54,6 +54,27 @@ class AuthService:
     def require_admin(self) -> bool:
         return bool(self._current_user and self._current_user.is_admin)
 
+    def can(self, permission: str) -> bool:
+        """Vérifie une permission du rôle de l'utilisateur connecté."""
+        from app.services import permissions as perms
+
+        return perms.can(self._current_user, permission)
+
+    @staticmethod
+    def verify_admin_password(username: str, password: str) -> bool:
+        """Valide les identifiants d'un compte Administrateur actif."""
+        from app.services import permissions as perms
+
+        with session_scope() as session:
+            user = session.scalar(
+                select(User).where(func.lower(User.username) == username.lower())
+            )
+            if not user or not user.is_active:
+                return False
+            if user.role != perms.ROLE_ADMIN:
+                return False
+            return verify_password(password, user.password_hash)
+
     # --- CRUD utilisateurs -------------------------------------------------
     @staticmethod
     def count_users() -> int:

@@ -1,4 +1,4 @@
-"""Utilisateurs de l'application (administrateur / caissier)."""
+"""Utilisateurs de l'application (administrateur / gestionnaire / caissier)."""
 
 from __future__ import annotations
 
@@ -24,6 +24,19 @@ class User(Base, TimestampMixin):
     @property
     def is_admin(self) -> bool:
         return self.role == "Administrateur"
+
+    @property
+    def is_manager(self) -> bool:
+        return self.role == "Gestionnaire"
+
+    @property
+    def is_cashier(self) -> bool:
+        return self.role == "Caissier"
+
+    def can(self, permission: str) -> bool:
+        from app.services import permissions as perms
+
+        return perms.can(self, permission)
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<User {self.username!r} ({self.role})>"

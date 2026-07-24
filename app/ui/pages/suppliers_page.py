@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.controllers.supplier_controller import SupplierController
+from app.services import permissions as perms
 from app.ui.dialogs.contact_dialog import ContactDialog
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, page_title, warn
@@ -103,8 +104,8 @@ class SuppliersPage(QWidget):
         if not supplier_id:
             warn(self, "Sélectionnez un fournisseur.")
             return
-        if not self.state.is_admin:
-            warn(self, "Seul un administrateur peut supprimer un fournisseur.")
+        if not self.state.can(perms.MANAGE_SUPPLIERS):
+            warn(self, "Vous n'avez pas l'autorisation de supprimer un fournisseur.")
             return
         if confirm(self, "Supprimer ce fournisseur ?"):
             SupplierController.delete(supplier_id)
