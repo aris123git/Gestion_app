@@ -26,6 +26,7 @@ from app.controllers.product_controller import ProductController
 from app.controllers.sale_controller import (
     CartLine,
     InsufficientPaymentError,
+    InsufficientStockError,
     SaleController,
 )
 from app.services import audit_service, permissions as perms, settings_service
@@ -235,7 +236,27 @@ class POSPage(QWidget):
         if product:
             self._add_product(product)
 
+    def _available_stock(self, product_id: int, exclude_cart: bool = False) -> float:
+        """Stock restant pour un produit, en tenant compte du panier courant."""
+        product = ProductController.get(product_id)
+        if not product:
+            return 0.0
+        available = float(product.quantity)
+        if not exclude_cart:
+            for line in self.cart:
+                if line.product_id == product_id:
+                    available -= float(line.quantity)
+        return available
+
     def _add_product(self, product) -> None:
+        available = self._available_stock(product.id)
+        if available <= 0:
+            warn(
+                self,
+                f"Stock insuffisant : « {product.name} » est en rupture de stock.",
+                "Stock insuffisant",
+            )
+            return
         for line in self.cart:
             if line.product_id == product.id:
                 line.quantity += 1
@@ -304,6 +325,25 @@ class POSPage(QWidget):
             if qty <= 0:
                 self._remove_line(row)
                 return
+            if line.product_id:
+                stock = self._available_stock(line.product_id, exclude_cart=True)
+                if stock <= 0:
+                    warn(
+                        self,
+                        f"Stock insuffisant : « {line.name} » est en rupture de stock.",
+                        "Stock insuffisant",
+                    )
+                    self._render_cart()
+                    return
+                if qty > stock:
+                    warn(
+                        self,
+                        f"Stock insuffisant pour « {line.name} » : "
+                        f"disponible {format_quantity(stock)}, demandé {format_quantity(qty)}.",
+                        "Stock insuffisant",
+                    )
+                    self._render_cart()
+                    return
             line.quantity = qty
             self._render_cart()
 
@@ -366,6 +406,10 @@ class POSPage(QWidget):
             )
         except InsufficientPaymentError as exc:
             warn(self, str(exc), "Paiement insuffisant")
+            return
+        except InsufficientStockError as exc:
+            warn(self, str(exc), "Stock insuffisant")
+            self._reload_products()
             return
         except ValueError as exc:
             warn(self, str(exc))
