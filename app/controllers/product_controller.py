@@ -91,30 +91,64 @@ class ProductController:
             return product
 
     @staticmethod
-    def update(product_id: int, data: dict) -> None:
+    def update(
+        product_id: int,
+        data: dict,
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> None:
+        from app.services.price_history_service import PriceHistoryService
+
+        new_price = to_float(data.get("sale_price"))
+        price_changed = False
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:
                 return
+            old_price = float(product.sale_price)
             product.name = str(data.get("name", product.name)).strip()
             product.barcode = str(data.get("barcode", product.barcode)).strip()
             product.reference = str(data.get("reference", product.reference)).strip()
             product.category_id = data.get("category_id")
             product.unit_id = data.get("unit_id")
             product.purchase_price = to_float(data.get("purchase_price"))
-            product.sale_price = to_float(data.get("sale_price"))
+            # Le prix de vente est mis à jour via PriceHistoryService si modifié.
             product.min_price = to_float(data.get("min_price"))
             product.quantity = to_float(data.get("quantity"))
             product.min_stock = to_float(data.get("min_stock"))
             product.is_active = bool(data.get("is_active", True))
+            price_changed = abs(old_price - new_price) >= 0.001
+            if not price_changed:
+                product.sale_price = new_price
+        if price_changed:
+            PriceHistoryService.record_change(
+                product_id,
+                new_price,
+                reason="Fiche produit",
+                user_id=user_id,
+                username=username,
+                apply=True,
+            )
 
     @staticmethod
-    def update_price(product_id: int, new_price: float) -> None:
-        """Met à jour définitivement le prix de vente d'un produit (POS)."""
-        with session_scope() as session:
-            product = session.get(Product, product_id)
-            if product:
-                product.sale_price = to_float(new_price)
+    def update_price(
+        product_id: int,
+        new_price: float,
+        reason: str = "Modification POS",
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> None:
+        """Met à jour définitivement le prix de vente (avec historique)."""
+        from app.services.price_history_service import PriceHistoryService
+
+        PriceHistoryService.record_change(
+            product_id,
+            new_price,
+            reason=reason,
+            user_id=user_id,
+            username=username,
+            apply=True,
+        )
 
     @staticmethod
     def delete(product_id: int) -> None:

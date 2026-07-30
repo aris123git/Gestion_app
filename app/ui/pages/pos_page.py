@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -50,6 +51,7 @@ class POSPage(QWidget):
         self.cart: List[CartLine] = []
         self._updating = False
         self._client_map: Dict[int, int] = {}
+        self._pending_sale_id: Optional[int] = None
 
         root = QHBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
@@ -157,6 +159,15 @@ class POSPage(QWidget):
         self.total_label.setStyleSheet("font-size: 26px; font-weight: 800;")
         self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.total_label)
+
+        pending_row = QHBoxLayout()
+        hold_btn = QPushButton("Mettre en attente")
+        hold_btn.clicked.connect(self._hold_sale)
+        resume_btn = QPushButton("Reprendre…")
+        resume_btn.clicked.connect(self._resume_pending)
+        pending_row.addWidget(hold_btn)
+        pending_row.addWidget(resume_btn)
+        layout.addLayout(pending_row)
 
         pay_button = QPushButton("Encaisser (Payer)")
         pay_button.setObjectName("Success")
@@ -382,6 +393,50 @@ class POSPage(QWidget):
     def _clear_cart(self) -> None:
         self.cart.clear()
         self.discount_input.setValue(0)
+        self._pending_sale_id = None
+        self._render_cart()
+
+    def _hold_sale(self) -> None:
+        if not self.cart:
+            warn(self, "Le panier est vide.")
+            return
+        try:
+            sale = SaleController.hold_sale(
+                list(self.cart),
+                discount=self.discount_input.value(),
+                client_id=self.client_combo.currentData(),
+                user_id=self.state.user_id,
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        info(self, f"Vente mise en attente : {sale.ticket_number}")
+        self._clear_cart()
+        self._reload_products()
+
+    def _resume_pending(self) -> None:
+        pending = SaleController.list_pending()
+        if not pending:
+            warn(self, "Aucune vente en attente.")
+            return
+        labels = [
+            f"{s.ticket_number} — {float(s.total):g} ({len(s.items)} article(s))"
+            for s in pending
+        ]
+        choice, ok = QInputDialog.getItem(
+            self, "Reprendre une vente", "Vente en attente :", labels, 0, False
+        )
+        if not ok:
+            return
+        sale = pending[labels.index(choice)]
+        lines, discount, client_id = SaleController.pending_to_cart(sale.id)
+        self.cart = lines
+        self.discount_input.setValue(discount)
+        self._pending_sale_id = sale.id
+        if client_id is not None:
+            idx = self.client_combo.findData(client_id)
+            if idx >= 0:
+                self.client_combo.setCurrentIndex(idx)
         self._render_cart()
 
     # --- Encaissement ------------------------------------------------------
@@ -414,6 +469,12 @@ class POSPage(QWidget):
         except ValueError as exc:
             warn(self, str(exc))
             return
+
+        if self._pending_sale_id:
+            SaleController.delete_pending(
+                self._pending_sale_id, user_id=self.state.user_id
+            )
+            self._pending_sale_id = None
 
         audit_service.log_action(
             "Vente",

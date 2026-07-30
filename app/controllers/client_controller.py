@@ -50,6 +50,7 @@ class ClientController:
             client = Client(
                 name=str(data.get("name", "")).strip(),
                 phone=str(data.get("phone", "")).strip(),
+                phone2=str(data.get("phone2", "")).strip(),
                 address=str(data.get("address", "")).strip(),
                 email=str(data.get("email", "")).strip(),
                 debt=0,
@@ -81,6 +82,7 @@ class ClientController:
                 return
             client.name = str(data.get("name", client.name)).strip()
             client.phone = str(data.get("phone", client.phone)).strip()
+            client.phone2 = str(data.get("phone2", getattr(client, "phone2", ""))).strip()
             client.address = str(data.get("address", client.address)).strip()
             client.email = str(data.get("email", client.email)).strip()
             client.notes = str(data.get("notes", client.notes)).strip()

@@ -17,6 +17,23 @@ MOVEMENT_INVENTORY = "inventaire"
 MOVEMENT_CORRECTION = "correction"
 MOVEMENT_SALE = "vente"
 
+# Motifs normalisés de perte / sortie (Sprint 4).
+LOSS_REASON_BREAKAGE = "casse"
+LOSS_REASON_THEFT = "vol"
+LOSS_REASON_EXPIRY = "péremption"
+LOSS_REASON_INTERNAL = "consommation interne"
+LOSS_REASON_GIFT = "don"
+LOSS_REASON_OTHER = "autre"
+
+LOSS_REASONS = [
+    LOSS_REASON_BREAKAGE,
+    LOSS_REASON_THEFT,
+    LOSS_REASON_EXPIRY,
+    LOSS_REASON_INTERNAL,
+    LOSS_REASON_GIFT,
+    LOSS_REASON_OTHER,
+]
+
 
 class StockMovement(Base):
     """Trace un changement de quantité d'un produit (historique auditable)."""

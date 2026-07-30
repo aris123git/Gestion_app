@@ -216,7 +216,122 @@ class SaleController:
                 user_id,
                 "",
             )
+
+        # Fidélité + CRM
+        if client_id:
+            from app.services.customer_service import CustomerService
+            from app.services.loyalty_service import LoyaltyService
+
+            LoyaltyService.add_points_for_sale(
+                client_id, result.total, sale_id=result.sale_id, user_id=user_id
+            )
+            CustomerService.mark_visit(client_id)
         return result
+
+    # --- Ventes en attente (Sprint 5) --------------------------------------
+    @classmethod
+    def hold_sale(
+        cls,
+        lines: List[CartLine],
+        *,
+        discount: float = 0,
+        client_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        note: str = "",
+    ) -> Sale:
+        """Met une vente en attente (sans déstocker ni encaisser)."""
+        if not lines:
+            raise ValueError("Le panier est vide.")
+        subtotal = round(sum(line.total for line in lines), 2)
+        discount = max(0.0, to_float(discount))
+        total = round(subtotal - discount, 2)
+        with session_scope() as session:
+            ticket_number = cls._next_ticket_number(session)
+            sale = Sale(
+                ticket_number=ticket_number,
+                date=datetime.now(),
+                user_id=user_id,
+                client_id=client_id,
+                subtotal=subtotal,
+                discount=discount,
+                total=total,
+                amount_received=0,
+                change_due=0,
+                status="pending",
+            )
+            session.add(sale)
+            session.flush()
+            for line in lines:
+                session.add(
+                    SaleItem(
+                        sale_id=sale.id,
+                        product_id=line.product_id,
+                        product_name=line.name,
+                        unit_price=line.unit_price,
+                        purchase_price=line.purchase_price,
+                        quantity=line.quantity,
+                        line_total=line.total,
+                    )
+                )
+            sale_id = sale.id
+        from app.services import audit_service
+
+        audit_service.log_action(
+            "Vente en attente",
+            "Sale",
+            f"{ticket_number} {note}".strip(),
+            user_id,
+            "",
+        )
+        return cls.get(sale_id)  # type: ignore[return-value]
+
+    @staticmethod
+    def list_pending(limit: int = 100) -> List[Sale]:
+        with session_scope() as session:
+            rows = session.scalars(
+                select(Sale)
+                .options(joinedload(Sale.items), joinedload(Sale.client))
+                .where(Sale.status == "pending")
+                .order_by(Sale.date.desc())
+                .limit(limit)
+            ).unique().all()
+            session.expunge_all()
+            return list(rows)
+
+    @staticmethod
+    def pending_to_cart(sale_id: int) -> tuple[List[CartLine], float, Optional[int]]:
+        """Retourne (lignes, remise, client_id) d'une vente en attente."""
+        sale = SaleController.get(sale_id)
+        if not sale or sale.status != "pending":
+            raise ValueError("Vente en attente introuvable.")
+        lines = [
+            CartLine(
+                product_id=item.product_id,
+                name=item.product_name,
+                unit_price=float(item.unit_price),
+                quantity=float(item.quantity),
+                purchase_price=float(item.purchase_price),
+            )
+            for item in sale.items
+        ]
+        return lines, float(sale.discount), sale.client_id
+
+    @staticmethod
+    def delete_pending(sale_id: int, user_id: Optional[int] = None) -> None:
+        with session_scope() as session:
+            sale = session.scalar(
+                select(Sale)
+                .options(joinedload(Sale.items), joinedload(Sale.payments))
+                .where(Sale.id == sale_id)
+            )
+            if not sale or sale.status != "pending":
+                return
+            session.delete(sale)
+        from app.services import audit_service
+
+        audit_service.log_action(
+            "Suppression vente en attente", "Sale", str(sale_id), user_id, ""
+        )
 
     @staticmethod
     def get(sale_id: int) -> Optional[Sale]:
@@ -274,7 +389,8 @@ class SaleController:
             )
             if not sale or sale.status == "cancelled":
                 return
-            if restock:
+            # Les ventes « pending » n'ont jamais déstocké.
+            if restock and sale.status == "completed":
                 for item in sale.items:
                     if item.product_id:
                         product = session.get(Product, item.product_id)

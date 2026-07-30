@@ -36,6 +36,7 @@ class ContactDialog(QDialog):
 
         self.name = QLineEdit()
         self.phone = QLineEdit()
+        self.phone2 = QLineEdit()
         self.address = QLineEdit()
         self.email = QLineEdit()
         self.notes = QPlainTextEdit()
@@ -43,6 +44,7 @@ class ContactDialog(QDialog):
 
         form.addRow("Nom *", self.name)
         form.addRow("Téléphone", self.phone)
+        form.addRow("Téléphone 2", self.phone2)
         form.addRow("Adresse", self.address)
         form.addRow("Email", self.email)
 
@@ -78,6 +80,7 @@ class ContactDialog(QDialog):
     def _fill(self, contact) -> None:
         self.name.setText(contact.name)
         self.phone.setText(contact.phone)
+        self.phone2.setText(getattr(contact, "phone2", "") or "")
         self.address.setText(contact.address)
         self.email.setText(contact.email)
         self.notes.setPlainText(contact.notes)
@@ -91,6 +94,7 @@ class ContactDialog(QDialog):
         self.data = {
             "name": self.name.text().strip(),
             "phone": self.phone.text().strip(),
+            "phone2": self.phone2.text().strip(),
             "address": self.address.text().strip(),
             "email": self.email.text().strip(),
             "notes": self.notes.toPlainText().strip(),

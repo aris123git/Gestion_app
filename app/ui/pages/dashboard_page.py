@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 from app.controllers.dashboard_controller import DashboardController
 from app.controllers.product_controller import ProductController
 from app.services import permissions as perms, settings_service
+from app.services.dashboard_service import DashboardService
+from app.services.inventory_service import InventoryService
 from app.ui.state import AppState
 from app.ui.theme import DANGER, PRIMARY, SUCCESS, WARNING
 from app.ui.widgets.helpers import make_card, page_title, section_title
@@ -57,13 +59,21 @@ class DashboardPage(QWidget):
         self.card_low = StatCard("Stock faible", "0", "#ea580c", "⚠️")
         self.card_out = StatCard("Ruptures", "0", DANGER, "⛔")
         self.card_products = StatCard("Produits", "0", "#475569", "📦")
+        self.card_treasury = StatCard("Trésorerie (jour)", "0", "#0f766e", "🏦")
+        self.card_client_debts = StatCard("Dettes clients", "0", "#b45309", "👤")
+        self.card_supplier_debts = StatCard("Dettes fournisseurs", "0", "#7c2d12", "🚚")
+        self.card_net = StatCard("Bénéfice net", "0", "#4c1d95", "💹")
 
         cards = [
             self.card_revenue_today,
             self.card_revenue_month,
             self.card_sales,
             self.card_profit,
+            self.card_net,
             self.card_expenses,
+            self.card_treasury,
+            self.card_client_debts,
+            self.card_supplier_debts,
             self.card_low,
             self.card_out,
             self.card_products,
@@ -94,9 +104,11 @@ class DashboardPage(QWidget):
         alert_wrap = QWidget()
         alert_layout = QVBoxLayout(alert_wrap)
         alert_layout.setContentsMargins(0, 0, 0, 0)
-        alert_layout.addWidget(section_title("Alertes de stock"))
-        self.alert_table = QTableWidget(0, 3)
-        self.alert_table.setHorizontalHeaderLabels(["Produit", "Stock", "Seuil"])
+        alert_layout.addWidget(section_title("Alertes de stock / prévisions"))
+        self.alert_table = QTableWidget(0, 4)
+        self.alert_table.setHorizontalHeaderLabels(
+            ["Produit", "Stock", "Seuil", "Rupture estimée"]
+        )
         self.alert_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
@@ -105,23 +117,72 @@ class DashboardPage(QWidget):
         lists.addWidget(make_card(alert_wrap))
 
         layout.addLayout(lists)
+
+        self.insights = section_title("Insights")
+        layout.addWidget(self.insights)
+        self.insights_label = QLabel("")
+        self.insights_label.setWordWrap(True)
+        layout.addWidget(self.insights_label)
         layout.addStretch()
 
     def _apply_permissions(self) -> None:
         show_profits = self.state.can(perms.VIEW_PROFITS)
         self.card_profit.setVisible(show_profits)
         self.card_expenses.setVisible(show_profits)
+        self.card_treasury.setVisible(show_profits)
+        self.card_client_debts.setVisible(show_profits)
+        self.card_supplier_debts.setVisible(show_profits)
+        self.card_net.setVisible(show_profits)
+        self.insights.setVisible(show_profits)
+        self.insights_label.setVisible(show_profits)
 
     def refresh(self) -> None:
         self._apply_permissions()
         currency = settings_service.get_currency()
         data = DashboardController.summary()
+        fin = DashboardService.financial_summary()
         self.card_revenue_today.set_value(format_money(data["revenue_today"], currency))
         self.card_revenue_month.set_value(format_money(data["revenue_month"], currency))
         self.card_sales.set_value(str(data["sales_today"]))
         if self.state.can(perms.VIEW_PROFITS):
             self.card_profit.set_value(format_money(data["profit_today"], currency))
             self.card_expenses.set_value(format_money(data["expenses_today"], currency))
+            self.card_treasury.set_value(format_money(fin["treasury"], currency))
+            self.card_client_debts.set_value(
+                format_money(fin["client_debts"], currency)
+            )
+            self.card_supplier_debts.set_value(
+                format_money(fin["supplier_debts"], currency)
+            )
+            self.card_net.set_value(format_money(fin["profit_net_today"], currency))
+            best = DashboardService.best_clients_periods()
+            top_qty = DashboardService.top_product_by_qty()
+            top_profit = DashboardService.top_product_by_profit()
+            dormant = DashboardService.dormant_products(limit=3)
+            lines = []
+            for label, key in (
+                ("jour", "day"),
+                ("semaine", "week"),
+                ("mois", "month"),
+                ("année", "year"),
+            ):
+                item = best.get(key)
+                if item:
+                    lines.append(
+                        f"Meilleur client ({label}) : {item[0]} "
+                        f"({format_money(item[1], currency)})"
+                    )
+            if top_qty:
+                lines.append(f"Produit le plus vendu : {top_qty[0]} ({top_qty[1]:g})")
+            if top_profit:
+                lines.append(
+                    f"Produit le plus rentable : {top_profit[0]} "
+                    f"({format_money(top_profit[1], currency)})"
+                )
+            if dormant:
+                names = ", ".join(n for n, _ in dormant)
+                lines.append(f"Produits dormants : {names}")
+            self.insights_label.setText("\n".join(lines) or "Pas encore assez de données.")
         self.card_low.set_value(str(data["low_stock"]))
         self.card_out.set_value(str(data["out_of_stock"]))
         self.card_products.set_value(str(data["total_products"]))
@@ -136,6 +197,9 @@ class DashboardPage(QWidget):
         alerts = ProductController.low_stock(limit=50)
         self.alert_table.setRowCount(len(alerts))
         for row, product in enumerate(alerts):
+            forecast = InventoryService.stockout_forecast(product.id)
+            days = forecast.get("days_left")
+            eta = "—" if days is None else f"{days} j"
             self.alert_table.setItem(row, 0, QTableWidgetItem(product.name))
             self.alert_table.setItem(
                 row, 1, QTableWidgetItem(format_quantity(product.quantity))
@@ -143,3 +207,4 @@ class DashboardPage(QWidget):
             self.alert_table.setItem(
                 row, 2, QTableWidgetItem(format_quantity(product.min_stock))
             )
+            self.alert_table.setItem(row, 3, QTableWidgetItem(eta))

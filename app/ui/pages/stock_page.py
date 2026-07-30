@@ -22,6 +22,7 @@ from app.controllers.product_controller import ProductController
 from app.controllers.stock_controller import StockController
 from app.controllers.supplier_controller import SupplierController
 from app.services import audit_service, permissions as perms
+from app.services.inventory_service import InventoryService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import info, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_quantity
@@ -78,6 +79,8 @@ class StockPage(QWidget):
         self.invoice_number.setPlaceholderText("Facultatif")
         self.reason = QLineEdit()
         self.reason.setPlaceholderText("Ex. : Livraison fournisseur")
+        self.loss_reason = QComboBox()
+        self.loss_reason.addItems(InventoryService.loss_reasons())
         self.comment = QLineEdit()
         self.comment.setPlaceholderText("Facultatif")
 
@@ -87,6 +90,7 @@ class StockPage(QWidget):
         form.addRow("Quantité", self.quantity)
         form.addRow("Coût unitaire (entrée)", self.unit_cost)
         form.addRow("Motif", self.reason)
+        form.addRow("Motif de perte", self.loss_reason)
         form.addRow("Commentaire", self.comment)
         layout.addWidget(make_card(form_widget))
 
@@ -94,6 +98,7 @@ class StockPage(QWidget):
         for label, handler, obj in [
             ("Entrée (+)", self._stock_in, "Success"),
             ("Sortie (-)", self._stock_out, "Danger"),
+            ("Perte (motif)", self._record_loss, "Danger"),
             ("Inventaire (=)", self._inventory, "Primary"),
             ("Ajustement / correction", self._correction, ""),
         ]:
@@ -170,6 +175,27 @@ class StockPage(QWidget):
             comment=self.comment.text(),
         )
         self._after_movement("Sortie de stock", pid)
+
+    def _record_loss(self) -> None:
+        if not self._ensure_stock_permission():
+            return
+        pid = self._current_product_id()
+        if not pid or self.quantity.value() <= 0:
+            warn(self, "Choisissez un produit et une quantité.")
+            return
+        try:
+            InventoryService.record_loss(
+                pid,
+                self.quantity.value(),
+                self.loss_reason.currentText(),
+                comment=self.comment.text(),
+                user_id=self.state.user_id,
+                username=getattr(self.state.current_user, "username", ""),
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        self._after_movement("Perte de stock", pid)
 
     def _inventory(self) -> None:
         if not self._ensure_stock_permission():

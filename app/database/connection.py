@@ -98,6 +98,11 @@ def _migrate_schema() -> None:
             "invoice_number": "VARCHAR(80) DEFAULT ''",
             "supplier_id": "INTEGER",
         },
+        "clients": {
+            "phone2": "VARCHAR(80) DEFAULT ''",
+            "last_visit": "VARCHAR(40) DEFAULT ''",
+            "purchase_count": "INTEGER DEFAULT 0",
+        },
     }
     with engine.begin() as conn:
         for table, columns in alterations.items():
