@@ -50,7 +50,13 @@ class ContactDialog(QDialog):
             self.debt = QDoubleSpinBox()
             self.debt.setRange(0, 1_000_000_000)
             self.debt.setDecimals(0)
-            form.addRow("Dette actuelle", self.debt)
+            # En modification : solde en lecture seule (cache DebtService).
+            # En création : solde d'ouverture → crée une dette au save.
+            label = "Solde d'ouverture" if contact is None else "Solde dû (lecture seule)"
+            form.addRow(label, self.debt)
+            if contact is not None:
+                self.debt.setReadOnly(True)
+                self.debt.setEnabled(False)
 
         form.addRow("Notes", self.notes)
         layout.addLayout(form)
@@ -89,6 +95,7 @@ class ContactDialog(QDialog):
             "email": self.email.text().strip(),
             "notes": self.notes.toPlainText().strip(),
         }
-        if self.with_debt:
+        # Dette saisissable uniquement à la création (solde d'ouverture).
+        if self.with_debt and self.debt.isEnabled():
             self.data["debt"] = self.debt.value()
         self.accept()
