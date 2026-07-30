@@ -35,6 +35,8 @@ VIEW_PROFITS = "view_profits"
 VIEW_DASHBOARD = "view_dashboard"
 MANAGE_SETTINGS = "manage_settings"
 MANAGE_USERS = "manage_users"
+MANAGE_PURCHASES = "manage_purchases"
+VIEW_ASSISTANT = "view_assistant"
 
 _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
     {
@@ -56,6 +58,8 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         VIEW_DASHBOARD,
         MANAGE_SETTINGS,
         MANAGE_USERS,
+        MANAGE_PURCHASES,
+        VIEW_ASSISTANT,
     }
 )
 
@@ -78,6 +82,8 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             VIEW_REPORTS,
             VIEW_PROFITS,
             VIEW_DASHBOARD,
+            MANAGE_PURCHASES,
+            VIEW_ASSISTANT,
         }
     ),
     ROLE_CASHIER: frozenset(

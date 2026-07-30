@@ -73,3 +73,23 @@ EXPENSE_CATEGORIES = [
 ]
 
 ROLES = ["Administrateur", "Gestionnaire", "Caissier"]
+
+# Fidélité : points gagnés par unité monétaire dépensée (ex. 100 FCFA → 1 pt).
+LOYALTY_POINTS_PER_CURRENCY = 0.01
+# Coût en points d'une récompense unitaire (échange).
+LOYALTY_REDEEM_COST = 100.0
+
+# Motifs de perte / sortie de stock (affichage UI).
+STOCK_LOSS_REASONS = [
+    "casse",
+    "vol",
+    "péremption",
+    "consommation interne",
+    "don",
+    "autre",
+]
+
+# Statuts de vente.
+SALE_STATUS_COMPLETED = "completed"
+SALE_STATUS_CANCELLED = "cancelled"
+SALE_STATUS_PENDING = "pending"
