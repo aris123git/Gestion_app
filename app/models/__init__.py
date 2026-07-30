@@ -3,6 +3,7 @@
 from app.models.audit import AuditLog
 from app.models.category import Category
 from app.models.client import Client
+from app.models.debt import Debt, DebtPayment
 from app.models.expense import Expense
 from app.models.product import Product
 from app.models.sale import Payment, Sale, SaleItem
@@ -16,6 +17,8 @@ __all__ = [
     "AuditLog",
     "Category",
     "Client",
+    "Debt",
+    "DebtPayment",
     "Expense",
     "Payment",
     "Product",

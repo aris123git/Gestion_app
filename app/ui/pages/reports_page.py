@@ -220,7 +220,12 @@ class ReportsPage(QWidget):
             "dans le chiffre d'affaires. Cette action est tracée dans le journal.",
         ):
             return
-        SaleController.cancel_sale(sale_id, restock=True)
+        SaleController.cancel_sale(
+            sale_id,
+            restock=True,
+            user_id=self.state.user_id,
+            username=getattr(self.state.current_user, "username", ""),
+        )
         audit_service.log_action(
             "Annulation vente", "Sale", ticket_number,
             self.state.user_id, getattr(self.state.current_user, "username", ""),

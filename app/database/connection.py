@@ -11,7 +11,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -72,12 +72,26 @@ def init_database() -> None:
     config.ensure_directories()
     Base.metadata.create_all(engine)
     _migrate_schema()
+    _backfill_client_debts()
+
+
+def _table_exists(conn, table: str) -> bool:
+    row = conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table' AND name=:t"),
+        {"t": table},
+    ).fetchone()
+    return row is not None
+
+
+def _existing_columns(conn, table: str) -> set[str]:
+    return {
+        row[1]
+        for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+    }
 
 
 def _migrate_schema() -> None:
-    """Ajoute les colonnes manquantes sur les bases SQLite déjà créées."""
-    from sqlalchemy import text
-
+    """Ajoute les colonnes manquantes (idempotent, sans perte de données)."""
     alterations = {
         "stock_movements": {
             "comment": "TEXT DEFAULT ''",
@@ -87,12 +101,47 @@ def _migrate_schema() -> None:
     }
     with engine.begin() as conn:
         for table, columns in alterations.items():
-            existing = {
-                row[1]
-                for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
-            }
+            if not _table_exists(conn, table):
+                continue
+            existing = _existing_columns(conn, table)
             for name, definition in columns.items():
                 if name not in existing:
                     conn.execute(
                         text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                     )
+
+
+def _backfill_client_debts() -> None:
+    """Crée une dette d'ouverture pour les soldes ``Client.debt`` sans ledger.
+
+    Idempotent : ne crée rien si le client a déjà au moins une dette, ou si
+    le solde est nul.
+    """
+    from sqlalchemy import func, select
+
+    from app.models.client import Client
+    from app.models.debt import STATUS_OPEN, Debt
+
+    with session_scope() as session:
+        if not _table_exists(session.connection(), "debts"):
+            return
+        clients = list(session.scalars(select(Client)).all())
+        for client in clients:
+            balance = float(client.debt or 0)
+            if balance <= 0:
+                continue
+            existing = session.scalar(
+                select(func.count()).select_from(Debt).where(Debt.client_id == client.id)
+            )
+            if existing:
+                continue
+            session.add(
+                Debt(
+                    client_id=client.id,
+                    sale_id=None,
+                    amount_initial=balance,
+                    amount_remaining=balance,
+                    status=STATUS_OPEN,
+                    note="Solde repris à la migration (Sprint 1)",
+                )
+            )

@@ -95,6 +95,7 @@ class SaleController:
 
         change_due = round(max(0.0, to_float(amount_received) - total), 2)
         profit = 0.0
+        credit_amount = 0.0
 
         with session_scope() as session:
             ticket_number = cls._next_ticket_number(session)
@@ -180,13 +181,19 @@ class SaleController:
 
             sale.profit = round(profit - discount, 2)
 
-            # Crédit : la partie non payée est ajoutée à la dette du client.
+            # Crédit : crée une dette (ledger) et synchronise le cache Client.debt.
             if paid < total and client_id:
-                from app.models.client import Client
+                from app.services.debt_service import DebtService
 
-                client = session.get(Client, client_id)
-                if client:
-                    client.debt = float(client.debt) + (total - paid)
+                credit_amount = round(total - paid, 2)
+                DebtService.create_debt(
+                    client_id,
+                    credit_amount,
+                    sale_id=sale.id,
+                    note=f"Crédit vente {ticket_number}",
+                    user_id=user_id,
+                    session=session,
+                )
 
             session.flush()
             result = SaleResult(
@@ -197,6 +204,17 @@ class SaleController:
                 change_due=change_due,
                 lines=list(lines),
                 payments=[PaymentLine(p.method, to_float(p.amount)) for p in payments],
+            )
+
+        if credit_amount > 0 and client_id:
+            from app.services import audit_service
+
+            audit_service.log_action(
+                "Création dette",
+                "Debt",
+                f"client={client_id} montant={credit_amount} sale={result.sale_id}",
+                user_id,
+                "",
             )
         return result
 
@@ -242,8 +260,14 @@ class SaleController:
             return list(rows)
 
     @staticmethod
-    def cancel_sale(sale_id: int, restock: bool = True) -> None:
-        """Annule une vente (réservé aux administrateurs) et restocke."""
+    def cancel_sale(
+        sale_id: int,
+        restock: bool = True,
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> None:
+        """Annule une vente, restocke et annule les dettes liées."""
+        cancelled_debts = 0
         with session_scope() as session:
             sale = session.scalar(
                 select(Sale).options(joinedload(Sale.items)).where(Sale.id == sale_id)
@@ -258,4 +282,22 @@ class SaleController:
                             product.quantity = float(product.quantity) + float(
                                 item.quantity
                             )
+            from app.services.debt_service import DebtService
+
+            cancelled_debts = DebtService.cancel_debts_for_sale(
+                sale_id,
+                user_id=user_id,
+                username=username,
+                session=session,
+            )
             sale.status = "cancelled"
+        if cancelled_debts:
+            from app.services import audit_service
+
+            audit_service.log_action(
+                "Annulation dette",
+                "Debt",
+                f"sale={sale_id} dettes_annulées={cancelled_debts}",
+                user_id,
+                username,
+            )

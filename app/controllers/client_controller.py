@@ -1,4 +1,8 @@
-"""Contrôleur des clients (CRUD, recherche, gestion des dettes)."""
+"""Contrôleur des clients (CRUD, recherche).
+
+La gestion des dettes (création, remboursement, cache) est déléguée à
+``DebtService`` — source de vérité métier.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,7 @@ from sqlalchemy import or_, select
 from app.database.connection import session_scope
 from app.models.client import Client
 from app.models.sale import Sale
+from app.services.debt_service import DebtService
 from app.utils.helpers import to_float
 
 
@@ -35,23 +40,41 @@ class ClientController:
             return client
 
     @staticmethod
-    def create(data: dict) -> Client:
+    def create(
+        data: dict,
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> Client:
+        opening_debt = to_float(data.get("debt"))
         with session_scope() as session:
             client = Client(
                 name=str(data.get("name", "")).strip(),
                 phone=str(data.get("phone", "")).strip(),
                 address=str(data.get("address", "")).strip(),
                 email=str(data.get("email", "")).strip(),
-                debt=to_float(data.get("debt")),
+                debt=0,
                 notes=str(data.get("notes", "")).strip(),
             )
             session.add(client)
             session.flush()
-            session.expunge(client)
-            return client
+            client_id = client.id
+        if opening_debt > 0:
+            DebtService.create_debt(
+                client_id,
+                opening_debt,
+                note="Solde d'ouverture",
+                user_id=user_id,
+                username=username,
+            )
+        return ClientController.get(client_id)  # type: ignore[return-value]
 
     @staticmethod
     def update(client_id: int, data: dict) -> None:
+        """Met à jour la fiche client.
+
+        Le champ ``debt`` du formulaire est ignoré : le solde est un cache
+        géré exclusivement par ``DebtService``.
+        """
         with session_scope() as session:
             client = session.get(Client, client_id)
             if not client:
@@ -61,8 +84,6 @@ class ClientController:
             client.address = str(data.get("address", client.address)).strip()
             client.email = str(data.get("email", client.email)).strip()
             client.notes = str(data.get("notes", client.notes)).strip()
-            if "debt" in data:
-                client.debt = to_float(data.get("debt"))
 
     @staticmethod
     def delete(client_id: int) -> None:
@@ -72,19 +93,44 @@ class ClientController:
                 session.delete(client)
 
     @staticmethod
-    def add_debt(client_id: int, amount: float) -> None:
-        with session_scope() as session:
-            client = session.get(Client, client_id)
-            if client:
-                client.debt = float(client.debt) + to_float(amount)
+    def add_debt(
+        client_id: int,
+        amount: float,
+        *,
+        note: str = "",
+        due_date=None,
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> None:
+        """Crée une dette manuelle (hors vente)."""
+        DebtService.create_debt(
+            client_id,
+            amount,
+            due_date=due_date,
+            note=note or "Dette manuelle",
+            user_id=user_id,
+            username=username,
+        )
 
     @staticmethod
-    def settle_debt(client_id: int, amount: float) -> None:
-        """Enregistre un remboursement de dette (borné à zéro)."""
-        with session_scope() as session:
-            client = session.get(Client, client_id)
-            if client:
-                client.debt = max(0.0, float(client.debt) - to_float(amount))
+    def settle_debt(
+        client_id: int,
+        amount: float,
+        *,
+        payment_method: str = "Espèces",
+        note: str = "",
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> None:
+        """Enregistre un remboursement (répartition FIFO sur les dettes actives)."""
+        DebtService.pay_client(
+            client_id,
+            amount,
+            payment_method=payment_method,
+            note=note,
+            user_id=user_id,
+            username=username,
+        )
 
     @staticmethod
     def history(client_id: int) -> List[Sale]:
