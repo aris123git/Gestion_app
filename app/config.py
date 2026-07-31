@@ -63,6 +63,10 @@ PAYMENT_METHODS = [
     "Virement",
 ]
 
+# Mode spécial à l'encaissement : porte le montant sur la dette client (ticket).
+# Ne figure pas dans PAYMENT_METHODS (réservé aux vrais encaissements / remboursements).
+PAYMENT_METHOD_CREDIT = "Dette"
+
 EXPENSE_CATEGORIES = [
     "Loyer",
     "Salaire",

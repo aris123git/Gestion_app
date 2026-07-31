@@ -9,6 +9,7 @@ from typing import List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
+from app import config
 from app.database.connection import session_scope
 from app.models.product import Product
 from app.models.sale import Payment, Sale, SaleItem
@@ -78,7 +79,8 @@ class SaleController:
         """Enregistre une vente complète, met à jour le stock et les paiements.
 
         - ``amount_received`` : espèces remises par le client (pour la monnaie).
-        - ``allow_credit`` : autorise un paiement partiel porté à la dette client.
+        - ``allow_credit`` : autorise un paiement partiel / total porté à la dette
+          client (méthode ``PAYMENT_METHOD_CREDIT`` / « Dette » sur le ticket).
         """
         if not lines:
             raise ValueError("Le panier est vide.")
@@ -86,16 +88,47 @@ class SaleController:
         subtotal = round(sum(line.total for line in lines), 2)
         discount = max(0.0, to_float(discount))
         total = round(subtotal - discount, 2)
-        paid = round(sum(to_float(p.amount) for p in payments), 2)
 
-        if paid < total and not allow_credit:
+        credit_method = config.PAYMENT_METHOD_CREDIT
+        cash_paid = round(
+            sum(
+                to_float(p.amount)
+                for p in payments
+                if p.method != credit_method
+            ),
+            2,
+        )
+        credit_marked = round(
+            sum(
+                to_float(p.amount)
+                for p in payments
+                if p.method == credit_method
+            ),
+            2,
+        )
+        covered = round(cash_paid + credit_marked, 2)
+
+        if covered < total and not allow_credit:
             raise InsufficientPaymentError(
-                f"Paiement insuffisant : {paid:,.0f} reçu pour un total de {total:,.0f}."
+                f"Paiement insuffisant : {cash_paid:,.0f} reçu pour un total de {total:,.0f}."
+            )
+        if credit_marked > 0 and not client_id:
+            raise ValueError(
+                "Impossible de porter une vente en dette sans client sélectionné."
+            )
+        if covered < total and allow_credit and client_id:
+            # Reste non saisi → complété automatiquement en dette (ticket).
+            credit_marked = round(total - cash_paid, 2)
+
+        # Montant réellement porté au ledger dette (= non encaissé).
+        credit_amount = round(max(0.0, total - cash_paid), 2)
+        if credit_amount > 0 and not client_id:
+            raise InsufficientPaymentError(
+                f"Paiement insuffisant : {cash_paid:,.0f} reçu pour un total de {total:,.0f}."
             )
 
         change_due = round(max(0.0, to_float(amount_received) - total), 2)
         profit = 0.0
-        credit_amount = 0.0
 
         with session_scope() as session:
             ticket_number = cls._next_ticket_number(session)
@@ -169,23 +202,37 @@ class SaleController:
                         )
                     )
 
+            # Paiements encaissés (hors dette) + ligne « Dette » pour le ticket.
+            stored_payments: List[PaymentLine] = []
             for pay in payments:
-                if to_float(pay.amount) != 0:
-                    session.add(
-                        Payment(
-                            sale_id=sale.id,
-                            method=pay.method,
-                            amount=to_float(pay.amount),
-                        )
+                amount = to_float(pay.amount)
+                if amount == 0 or pay.method == credit_method:
+                    continue
+                session.add(
+                    Payment(
+                        sale_id=sale.id,
+                        method=pay.method,
+                        amount=amount,
                     )
+                )
+                stored_payments.append(PaymentLine(pay.method, amount))
+
+            if credit_amount > 0:
+                session.add(
+                    Payment(
+                        sale_id=sale.id,
+                        method=credit_method,
+                        amount=credit_amount,
+                    )
+                )
+                stored_payments.append(PaymentLine(credit_method, credit_amount))
 
             sale.profit = round(profit - discount, 2)
 
             # Crédit : crée une dette (ledger) et synchronise le cache Client.debt.
-            if paid < total and client_id:
+            if credit_amount > 0 and client_id:
                 from app.services.debt_service import DebtService
 
-                credit_amount = round(total - paid, 2)
                 DebtService.create_debt(
                     client_id,
                     credit_amount,
@@ -203,7 +250,7 @@ class SaleController:
                 amount_received=to_float(amount_received),
                 change_due=change_due,
                 lines=list(lines),
-                payments=[PaymentLine(p.method, to_float(p.amount)) for p in payments],
+                payments=stored_payments,
             )
 
         if credit_amount > 0 and client_id:
