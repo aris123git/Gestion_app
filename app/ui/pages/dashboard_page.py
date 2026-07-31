@@ -82,7 +82,6 @@ class DashboardPage(QWidget):
             grid.addWidget(card, index // 4, index % 4)
         layout.addLayout(grid)
         self._cards_grid = grid
-        self._apply_permissions()
 
         # --- Listes : top produits + alertes ------------------------------
         lists = QHBoxLayout()
@@ -124,6 +123,7 @@ class DashboardPage(QWidget):
         self.insights_label.setWordWrap(True)
         layout.addWidget(self.insights_label)
         layout.addStretch()
+        self._apply_permissions()
 
     def _apply_permissions(self) -> None:
         show_profits = self.state.can(perms.VIEW_PROFITS)
