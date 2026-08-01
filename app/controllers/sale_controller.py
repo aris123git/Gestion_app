@@ -13,7 +13,8 @@ from app.database.connection import session_scope
 from app.models.product import Product
 from app.models.sale import Payment, Sale, SaleItem
 from app.models.stock import MOVEMENT_SALE, StockMovement
-from app.utils.helpers import generate_ticket_number, to_float
+from app.services import settings_service
+from app.utils.helpers import format_quantity, generate_ticket_number, to_float
 
 
 @dataclass
@@ -52,6 +53,15 @@ class SaleResult:
 
 class InsufficientPaymentError(Exception):
     """Levée lorsque le paiement ne couvre pas le total sans crédit autorisé."""
+
+
+class OutOfStockError(Exception):
+    """Levée quand une vente dépasserait le stock disponible (blocage activé)."""
+
+
+def stock_blocking_enabled() -> bool:
+    """Indique si la vente doit être bloquée en cas de stock insuffisant."""
+    return settings_service.get_setting("block_out_of_stock", "1") == "1"
 
 
 class SaleController:
@@ -93,6 +103,25 @@ class SaleController:
         profit = 0.0
 
         with session_scope() as session:
+            # Contrôle du stock : on empêche toute vente qui ferait passer un
+            # produit en dessous de zéro (si le blocage est activé).
+            if stock_blocking_enabled():
+                problems = []
+                for line in lines:
+                    if not line.product_id:
+                        continue
+                    product = session.get(Product, line.product_id)
+                    if product and line.quantity > float(product.quantity):
+                        problems.append(
+                            f"{product.name} (disponible : "
+                            f"{format_quantity(product.quantity)}, demandé : "
+                            f"{format_quantity(line.quantity)})"
+                        )
+                if problems:
+                    raise OutOfStockError(
+                        "Stock insuffisant pour :\n- " + "\n- ".join(problems)
+                    )
+
             ticket_number = cls._next_ticket_number(session)
             sale = Sale(
                 ticket_number=ticket_number,

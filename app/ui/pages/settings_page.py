@@ -182,11 +182,17 @@ class SettingsPage(QWidget):
         self.cut_mode.addItem("Coupe partielle", "partial")
         self.cut_mode.addItem("Pas de coupe (déchirer)", "none")
 
+        # Règle de vente : bloquer la vente d'un produit en rupture de stock.
+        self.block_stock = QCheckBox(
+            "Empêcher la vente d'un produit en rupture de stock"
+        )
+
         form.addRow("Thème", self.theme)
         form.addRow("Format du ticket", self.ticket_format)
         form.addRow("Imprimante", printer_row)
         form.addRow("Avance papier", self.feed_lines)
         form.addRow("Coupe", self.cut_mode)
+        form.addRow("Ventes", self.block_stock)
         form.addRow("Message du ticket", self.footer)
         outer.addWidget(make_card(form_widget))
 
@@ -252,6 +258,9 @@ class SettingsPage(QWidget):
         settings_service.set_setting("printer_name", self._printer_value())
         settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
         settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
+        settings_service.set_setting(
+            "block_out_of_stock", "1" if self.block_stock.isChecked() else "0"
+        )
         settings_service.save_shop_info(ticket_footer=self.footer.text().strip())
         if not silent:
             info(self, "Préférences appliquées.")
@@ -517,5 +526,8 @@ class SettingsPage(QWidget):
         )
         if cut_index >= 0:
             self.cut_mode.setCurrentIndex(cut_index)
+        self.block_stock.setChecked(
+            settings_service.get_setting("block_out_of_stock", "1") == "1"
+        )
         self._load_auto_options()
         self._reload_backups()
