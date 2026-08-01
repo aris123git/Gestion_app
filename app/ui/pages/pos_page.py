@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import config
 from app.controllers.client_controller import ClientController
 from app.controllers.product_controller import ProductController
 from app.controllers.sale_controller import (
@@ -457,7 +458,11 @@ class POSPage(QWidget):
                 discount=self.discount_input.value(),
                 client_id=client_id,
                 user_id=self.state.user_id,
-                allow_credit=dialog.use_credit,
+                allow_credit=dialog.use_credit
+                or any(
+                    p.method == config.PAYMENT_METHOD_CREDIT
+                    for p in dialog.result_payments
+                ),
             )
         except InsufficientPaymentError as exc:
             warn(self, str(exc), "Paiement insuffisant")
