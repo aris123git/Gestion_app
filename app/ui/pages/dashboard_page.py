@@ -60,10 +60,9 @@ class DashboardPage(QWidget):
         self.card_out = StatCard("Ruptures", "0", DANGER, "⛔")
         self.card_products = StatCard("Produits", "0", "#475569", "📦")
         self.card_treasury = StatCard("Trésorerie (jour)", "0", "#0f766e", "🏦")
-        self.card_client_debts = StatCard("Dettes clients", "0", "#b45309", "👤")
-        self.card_supplier_debts = StatCard("Dettes fournisseurs", "0", "#7c2d12", "🚚")
         self.card_net = StatCard("Bénéfice net", "0", "#4c1d95", "💹")
 
+        # Les dettes se gèrent uniquement dans Clients / Fournisseurs (menu gauche).
         cards = [
             self.card_revenue_today,
             self.card_revenue_month,
@@ -72,8 +71,6 @@ class DashboardPage(QWidget):
             self.card_net,
             self.card_expenses,
             self.card_treasury,
-            self.card_client_debts,
-            self.card_supplier_debts,
             self.card_low,
             self.card_out,
             self.card_products,
@@ -130,8 +127,6 @@ class DashboardPage(QWidget):
         self.card_profit.setVisible(show_profits)
         self.card_expenses.setVisible(show_profits)
         self.card_treasury.setVisible(show_profits)
-        self.card_client_debts.setVisible(show_profits)
-        self.card_supplier_debts.setVisible(show_profits)
         self.card_net.setVisible(show_profits)
         self.insights.setVisible(show_profits)
         self.insights_label.setVisible(show_profits)
@@ -148,12 +143,6 @@ class DashboardPage(QWidget):
             self.card_profit.set_value(format_money(data["profit_today"], currency))
             self.card_expenses.set_value(format_money(data["expenses_today"], currency))
             self.card_treasury.set_value(format_money(fin["treasury"], currency))
-            self.card_client_debts.set_value(
-                format_money(fin["client_debts"], currency)
-            )
-            self.card_supplier_debts.set_value(
-                format_money(fin["supplier_debts"], currency)
-            )
             self.card_net.set_value(format_money(fin["profit_net_today"], currency))
             best = DashboardService.best_clients_periods()
             top_qty = DashboardService.top_product_by_qty()
