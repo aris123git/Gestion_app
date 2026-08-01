@@ -186,13 +186,40 @@ def default_printer() -> str:
     return ""
 
 
+# Largeur d'impression (points) selon le papier, pour redimensionner le logo.
+_LOGO_WIDTH_DOTS = {"58mm": 384, "80mm": 576}
+
+
+def _load_logo_image(logo_path: Optional[str], paper: str):
+    """Charge et redimionne le logo pour l'impression (retourne une image PIL)."""
+    if not logo_path:
+        return None
+    path = Path(str(logo_path))
+    if not path.exists():
+        return None
+    try:
+        from PIL import Image
+
+        image = Image.open(path).convert("L")  # niveaux de gris
+        max_width = _LOGO_WIDTH_DOTS.get(paper, 576)
+        if image.width > max_width:
+            ratio = max_width / float(image.width)
+            image = image.resize((max_width, max(1, int(image.height * ratio))))
+        return image
+    except Exception:
+        return None
+
+
 def _build_escpos_bytes(
     content: str,
     feed_lines: int = DEFAULT_FEED_LINES,
     cut_mode: str = DEFAULT_CUT_MODE,
+    logo_path: Optional[str] = None,
+    paper: str = "80mm",
 ) -> bytes:
-    """Génère le flux ESC/POS : texte + avance papier + coupe.
+    """Génère le flux ESC/POS : logo + texte + avance papier + coupe.
 
+    - ``logo_path`` : image du logo à imprimer en tête (facultatif) ;
     - ``feed_lines`` : lignes vides ajoutées après le contenu pour faire sortir
       entièrement le ticket au-delà du massicot / de la barre de découpe ;
     - ``cut_mode`` : ``"full"``, ``"partial"`` ou ``"none"``.
@@ -202,6 +229,15 @@ def _build_escpos_bytes(
         from escpos.printer import Dummy
 
         dummy = Dummy()
+        # Logo centré en haut du ticket (best-effort : ignoré si non imprimable).
+        logo = _load_logo_image(logo_path, paper)
+        if logo is not None:
+            try:
+                dummy.set(align="center")
+                dummy.image(logo)
+                dummy.set(align="left")
+            except Exception:
+                pass
         dummy.text(content)
         if feed_lines:
             dummy.text("\n" * feed_lines)
@@ -299,12 +335,20 @@ def print_ticket(
     """
     path = save_ticket_file(sale, shop, paper)
     content = render_ticket_text(sale, shop, paper)
-    result = _send_content(content, printer_name)
+    shop = shop or settings_service.get_shop_info()
+    result = _send_content(
+        content, printer_name, logo_path=shop.logo_path, paper=paper
+    )
     result.file_path = path
     return result
 
 
-def _send_content(content: str, printer_name: Optional[str] = None) -> PrintResult:
+def _send_content(
+    content: str,
+    printer_name: Optional[str] = None,
+    logo_path: Optional[str] = None,
+    paper: str = "80mm",
+) -> PrintResult:
     """Envoie un contenu déjà formaté à l'imprimante selon les réglages courants."""
     printer_name = (
         printer_name
@@ -323,7 +367,13 @@ def _send_content(content: str, printer_name: Optional[str] = None) -> PrintResu
     if cut_mode not in ("full", "partial", "none"):
         cut_mode = DEFAULT_CUT_MODE
 
-    raw = _build_escpos_bytes(content, feed_lines=feed_lines, cut_mode=cut_mode)
+    raw = _build_escpos_bytes(
+        content,
+        feed_lines=feed_lines,
+        cut_mode=cut_mode,
+        logo_path=logo_path,
+        paper=paper,
+    )
 
     if sys.platform.startswith("win"):
         result = _print_windows(raw, printer_name)
@@ -353,4 +403,6 @@ def print_test_page(printer_name: Optional[str] = None) -> PrintResult:
         _line("-", width),
         _center(datetime.now().strftime("%d/%m/%Y %H:%M"), width),
     ]
-    return _send_content("\n".join(lines), printer_name)
+    return _send_content(
+        "\n".join(lines), printer_name, logo_path=shop.logo_path, paper=paper
+    )
