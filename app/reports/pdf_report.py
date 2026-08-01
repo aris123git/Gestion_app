@@ -42,7 +42,9 @@ def _table(data, col_widths=None):
     return table
 
 
-def export_report_pdf(report: dict, path: str | Path | None = None) -> Path:
+def export_report_pdf(
+    report: dict, path: str | Path | None = None, include_profits: bool = True
+) -> Path:
     """Génère un PDF récapitulatif pour la période du rapport."""
     config.ensure_directories()
     shop = settings_service.get_shop_info()
@@ -70,18 +72,37 @@ def export_report_pdf(report: dict, path: str | Path | None = None) -> Path:
 
     summary = [
         ["Indicateur", "Valeur"],
-        ["Chiffre d'affaires", format_money(report["revenue"], currency)],
+        ["CA encaissé", format_money(report["cash_revenue"], currency)],
+        ["Total ventes TTC", format_money(report["total_sales"], currency)],
         ["Nombre de ventes", str(report["sales_count"])],
-        ["Bénéfice brut", format_money(report["profit"], currency)],
-        ["Dépenses", format_money(report["expenses"], currency)],
-        ["Bénéfice net", format_money(report["net_profit"], currency)],
+        ["Remboursements clients", format_money(report["debt_repayments"], currency)],
+        [
+            "Paiements dettes fournisseurs",
+            format_money(report["supplier_debt_payments"], currency),
+        ],
+        ["Trésorerie période", format_money(report["treasury"], currency)],
     ]
+    if include_profits:
+        summary.extend(
+            [
+                ["Bénéfice brut", format_money(report["profit"], currency)],
+                ["Dépenses", format_money(report["expenses"], currency)],
+                ["Bénéfice net", format_money(report["net_profit"], currency)],
+            ]
+        )
+    if report.get("vat_rate", 0) > 0:
+        summary.append(
+            [
+                f"dont TVA {report['vat_rate']:g}%",
+                format_money(report.get("vat_included", 0), currency),
+            ]
+        )
     story.append(_table(summary, col_widths=[90 * mm, 70 * mm]))
     story.append(Spacer(1, 14))
 
     if report["top_products"]:
         story.append(Paragraph("<b>Produits les plus vendus</b>", styles["Heading3"]))
-        rows = [["Produit", "Quantité", "CA"]]
+        rows = [["Produit", "Quantité", "Total ventes"]]
         for name, qty, total in report["top_products"]:
             rows.append([name, f"{qty:g}", format_money(total, currency)])
         story.append(_table(rows, col_widths=[90 * mm, 30 * mm, 40 * mm]))
@@ -95,7 +116,16 @@ def export_report_pdf(report: dict, path: str | Path | None = None) -> Path:
         story.append(_table(rows, col_widths=[90 * mm, 70 * mm]))
         story.append(Spacer(1, 14))
 
-    if report["expense_breakdown"]:
+    if report.get("credit_sales", 0) > 0:
+        story.append(Paragraph("<b>Crédit client non encaissé</b>", styles["Heading3"]))
+        rows = [
+            ["Libellé", "Montant"],
+            ["Dette", format_money(report["credit_sales"], currency)],
+        ]
+        story.append(_table(rows, col_widths=[90 * mm, 70 * mm]))
+        story.append(Spacer(1, 14))
+
+    if include_profits and report["expense_breakdown"]:
         story.append(Paragraph("<b>Dépenses par catégorie</b>", styles["Heading3"]))
         rows = [["Catégorie", "Montant"]]
         for cat, amount in report["expense_breakdown"]:

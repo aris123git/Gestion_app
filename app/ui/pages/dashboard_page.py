@@ -51,16 +51,16 @@ class DashboardPage(QWidget):
         # --- Cartes d'indicateurs -----------------------------------------
         grid = QGridLayout()
         grid.setSpacing(16)
-        self.card_revenue_today = StatCard("CA du jour", "0", PRIMARY, "💰")
-        self.card_revenue_month = StatCard("CA du mois", "0", "#0891b2", "📅")
+        self.card_revenue_today = StatCard("CA encaissé jour", "0", PRIMARY, "💰")
+        self.card_revenue_month = StatCard("CA encaissé mois", "0", "#0891b2", "📅")
         self.card_sales = StatCard("Ventes du jour", "0", SUCCESS, "🧾")
-        self.card_profit = StatCard("Bénéfice estimé", "0", "#7c3aed", "📈")
+        self.card_profit = StatCard("Bénéfice estimé ventes", "0", "#7c3aed", "📈")
         self.card_expenses = StatCard("Dépenses du jour", "0", WARNING, "💸")
         self.card_low = StatCard("Stock faible", "0", "#ea580c", "⚠️")
         self.card_out = StatCard("Ruptures", "0", DANGER, "⛔")
         self.card_products = StatCard("Produits", "0", "#475569", "📦")
         self.card_treasury = StatCard("Trésorerie (jour)", "0", "#0f766e", "🏦")
-        self.card_net = StatCard("Bénéfice net", "0", "#4c1d95", "💹")
+        self.card_net = StatCard("Bénéfice net après dépenses", "0", "#4c1d95", "💹")
 
         # Les dettes se gèrent uniquement dans Clients / Fournisseurs (menu gauche).
         cards = [
@@ -89,7 +89,7 @@ class DashboardPage(QWidget):
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.addWidget(section_title("Produits les plus vendus (30 j)"))
         self.top_table = QTableWidget(0, 3)
-        self.top_table.setHorizontalHeaderLabels(["Produit", "Quantité", "CA"])
+        self.top_table.setHorizontalHeaderLabels(["Produit", "Quantité", "Total ventes"])
         self.top_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
@@ -140,7 +140,7 @@ class DashboardPage(QWidget):
         self.card_revenue_month.set_value(format_money(data["revenue_month"], currency))
         self.card_sales.set_value(str(data["sales_today"]))
         if self.state.can(perms.VIEW_PROFITS):
-            self.card_profit.set_value(format_money(data["profit_today"], currency))
+            self.card_profit.set_value(format_money(data["profit_gross_today"], currency))
             self.card_expenses.set_value(format_money(data["expenses_today"], currency))
             self.card_treasury.set_value(format_money(fin["treasury"], currency))
             self.card_net.set_value(format_money(fin["profit_net_today"], currency))

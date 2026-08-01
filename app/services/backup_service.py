@@ -50,10 +50,12 @@ _SAFETY_PREFIX = "Securite_avant_restauration"
 # Clés de préférences (stockées via settings_service).
 SETTING_AUTO_ENABLED = "auto_backup_enabled"
 SETTING_AUTO_FREQUENCY = "auto_backup_frequency"
+SETTING_AUTO_INTERVAL_HOURS = "auto_backup_interval_hours"
 SETTING_RETENTION = "backup_retention"
 SETTING_LAST_PATH = "last_backup_path"
 
 DEFAULT_RETENTION = 10
+DEFAULT_INTERVAL_HOURS = 24
 FREQUENCIES = ["quotidienne", "hebdomadaire", "mensuelle"]
 _FREQUENCY_DELTA = {
     "quotidienne": timedelta(days=1),
@@ -363,19 +365,36 @@ def get_frequency() -> str:
     return freq if freq in _FREQUENCY_DELTA else "hebdomadaire"
 
 
-def is_backup_due() -> bool:
-    """Indique si une sauvegarde automatique est nécessaire selon la fréquence."""
+def get_interval_hours(default: Optional[int] = None) -> int:
+    """Intervalle de sauvegarde automatique, en heures."""
+    from app.services import settings_service
+
+    raw = settings_service.get_setting(SETTING_AUTO_INTERVAL_HOURS, "")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        value = 0
+    if value <= 0:
+        if default is not None:
+            return max(1, int(default))
+        value = round(_FREQUENCY_DELTA[get_frequency()].total_seconds() / 3600)
+    return max(1, value)
+
+
+def is_backup_due(interval_hours: Optional[int] = None) -> bool:
+    """Indique si une sauvegarde automatique est nécessaire selon l'intervalle."""
     last = latest_backup()
     if last is None:
         return True
-    return datetime.now() - last.created_at >= _FREQUENCY_DELTA[get_frequency()]
+    interval = get_interval_hours() if interval_hours is None else max(1, interval_hours)
+    return datetime.now() - last.created_at >= timedelta(hours=interval)
 
 
 def run_startup_auto_backup() -> Optional[Path]:
     """Au démarrage : crée une sauvegarde automatique si activée et échue."""
     if not is_auto_enabled():
         return None
-    if not is_backup_due():
+    if not is_backup_due(get_interval_hours()):
         return None
     return create_full_backup(manual=False)
 
@@ -386,6 +405,11 @@ def create_backup(manual: bool = True) -> Path:
     return create_full_backup(manual=manual)
 
 
-def auto_backup_if_needed(interval_hours: int = 12) -> Optional[Path]:  # noqa: ARG001
-    """Alias historique : délègue à la sauvegarde automatique paramétrable."""
-    return run_startup_auto_backup()
+def auto_backup_if_needed(interval_hours: int = 12) -> Optional[Path]:
+    """Alias historique : respecte l'intervalle paramétré avant de sauvegarder."""
+    if not is_auto_enabled():
+        return None
+    interval = get_interval_hours(default=interval_hours)
+    if not is_backup_due(interval):
+        return None
+    return create_full_backup(manual=False)

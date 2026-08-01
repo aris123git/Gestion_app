@@ -1,11 +1,4 @@
-"""Matrice des permissions par rôle (Administrateur / Gestionnaire / Caissier).
-
-V1 — petits commerces : le caissier peut réceptionner du stock (tout mouvement
-est historisé avec utilisateur, date, motif). En revanche la modification des
-prix reste réservée au gestionnaire / administrateur (risque de fraude).
-Le gestionnaire gère aussi produits, rapports et bénéfices, mais pas les
-paramètres critiques ni les comptes utilisateurs.
-"""
+"""Matrice des permissions par rôle (Administrateur / Gestionnaire / Caissier)."""
 
 from __future__ import annotations
 
@@ -30,6 +23,7 @@ MANAGE_CATEGORIES = "manage_categories"
 MANAGE_SUPPLIERS = "manage_suppliers"
 MANAGE_EXPENSES = "manage_expenses"
 MANAGE_CLIENTS = "manage_clients"
+MANAGE_CLIENT_DEBTS = "manage_client_debts"
 VIEW_REPORTS = "view_reports"
 VIEW_PROFITS = "view_profits"
 VIEW_DASHBOARD = "view_dashboard"
@@ -37,6 +31,8 @@ MANAGE_SETTINGS = "manage_settings"
 MANAGE_USERS = "manage_users"
 MANAGE_PURCHASES = "manage_purchases"
 VIEW_ASSISTANT = "view_assistant"
+APPLY_DISCOUNT = "apply_discount"
+SELL_ON_CREDIT = "sell_on_credit"
 
 _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
     {
@@ -53,6 +49,7 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         MANAGE_SUPPLIERS,
         MANAGE_EXPENSES,
         MANAGE_CLIENTS,
+        MANAGE_CLIENT_DEBTS,
         VIEW_REPORTS,
         VIEW_PROFITS,
         VIEW_DASHBOARD,
@@ -60,6 +57,8 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         MANAGE_USERS,
         MANAGE_PURCHASES,
         VIEW_ASSISTANT,
+        APPLY_DISCOUNT,
+        SELL_ON_CREDIT,
     }
 )
 
@@ -79,11 +78,14 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             MANAGE_SUPPLIERS,
             MANAGE_EXPENSES,
             MANAGE_CLIENTS,
+            MANAGE_CLIENT_DEBTS,
             VIEW_REPORTS,
             VIEW_PROFITS,
             VIEW_DASHBOARD,
             MANAGE_PURCHASES,
             VIEW_ASSISTANT,
+            APPLY_DISCOUNT,
+            SELL_ON_CREDIT,
         }
     ),
     ROLE_CASHIER: frozenset(
@@ -91,9 +93,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             SELL,
             PRINT_TICKET,
             VIEW_PRODUCTS,
-            MANAGE_STOCK,  # V1 : réception autorisée, tout est historisé
             MANAGE_CLIENTS,
-            VIEW_REPORTS,
             VIEW_DASHBOARD,
         }
     ),

@@ -11,9 +11,11 @@ from sqlalchemy.orm import joinedload
 
 from app import config
 from app.database.connection import session_scope
+from app.models.debt import Debt, DebtPayment
+from app.models.loyalty import CustomerPoints, CustomerPointsHistory
 from app.models.product import Product
 from app.models.sale import Payment, Sale, SaleItem
-from app.models.stock import MOVEMENT_SALE, StockMovement
+from app.models.stock import MOVEMENT_IN, MOVEMENT_SALE, StockMovement
 from app.utils.helpers import generate_ticket_number, to_float
 
 
@@ -62,8 +64,50 @@ class InsufficientStockError(Exception):
 class SaleController:
     @staticmethod
     def _next_ticket_number(session) -> str:
-        count = session.scalar(select(func.count()).select_from(Sale)) or 0
-        return generate_ticket_number(count + 1)
+        max_id = session.scalar(select(func.max(Sale.id))) or 0
+        return generate_ticket_number(max_id + 1)
+
+    @staticmethod
+    def _validate_lines(lines: List[CartLine]) -> None:
+        for line in lines:
+            if to_float(line.quantity) <= 0:
+                raise ValueError("La quantité vendue doit être supérieure à zéro.")
+            if to_float(line.unit_price) < 0:
+                raise ValueError("Le prix unitaire ne peut pas être négatif.")
+
+    @staticmethod
+    def _reverse_loyalty_points(session, sale: Sale, user_id: Optional[int]) -> None:
+        if not sale.client_id:
+            return
+        points = session.scalar(
+            select(func.coalesce(func.sum(CustomerPointsHistory.delta), 0)).where(
+                CustomerPointsHistory.sale_id == sale.id,
+                CustomerPointsHistory.delta > 0,
+            )
+        )
+        points_to_reverse = round(float(points or 0), 2)
+        if points_to_reverse <= 0:
+            return
+        account = session.scalar(
+            select(CustomerPoints).where(CustomerPoints.client_id == sale.client_id)
+        )
+        if not account:
+            return
+        before = float(account.points)
+        account.points = max(0.0, before - points_to_reverse)
+        account.lifetime_points = max(
+            0.0, float(account.lifetime_points) - points_to_reverse
+        )
+        session.add(
+            CustomerPointsHistory(
+                client_id=sale.client_id,
+                delta=round(float(account.points) - before, 2),
+                balance_after=float(account.points),
+                reason="Annulation vente",
+                sale_id=sale.id,
+                user_id=user_id,
+            )
+        )
 
     @classmethod
     def create_sale(
@@ -84,12 +128,16 @@ class SaleController:
         """
         if not lines:
             raise ValueError("Le panier est vide.")
+        cls._validate_lines(lines)
 
         subtotal = round(sum(line.total for line in lines), 2)
         discount = max(0.0, to_float(discount))
-        total = round(subtotal - discount, 2)
+        total = round(max(0.0, subtotal - discount), 2)
 
         credit_method = config.PAYMENT_METHOD_CREDIT
+        for pay in payments:
+            if to_float(pay.amount) < 0:
+                raise ValueError("Le montant d'un paiement ne peut pas être négatif.")
         cash_paid = round(
             sum(
                 to_float(p.amount)
@@ -119,6 +167,9 @@ class SaleController:
         if covered < total and allow_credit and client_id:
             # Reste non saisi → complété automatiquement en dette (ticket).
             credit_marked = round(total - cash_paid, 2)
+            covered = round(cash_paid + credit_marked, 2)
+        if covered > total + 0.01:
+            raise ValueError("Paiement supérieur au total.")
 
         # Montant réellement porté au ledger dette (= non encaissé).
         credit_amount = round(max(0.0, total - cash_paid), 2)
@@ -127,7 +178,16 @@ class SaleController:
                 f"Paiement insuffisant : {cash_paid:,.0f} reçu pour un total de {total:,.0f}."
             )
 
-        change_due = round(max(0.0, to_float(amount_received) - total), 2)
+        cash_due = round(
+            sum(to_float(p.amount) for p in payments if p.method == "Espèces"),
+            2,
+        )
+        amount_received_value = to_float(amount_received)
+        change_due = (
+            round(max(0.0, amount_received_value - cash_due), 2)
+            if cash_due > 0 and amount_received_value > 0
+            else 0.0
+        )
         profit = 0.0
 
         with session_scope() as session:
@@ -155,9 +215,13 @@ class SaleController:
                         required.get(line.product_id, 0.0) + float(line.quantity)
                     )
             for product_id, needed in required.items():
-                product = session.get(Product, product_id)
+                product = session.execute(
+                    select(Product)
+                    .where(Product.id == product_id)
+                    .with_for_update()
+                ).scalar_one_or_none()
                 if product is None:
-                    continue
+                    raise ValueError("Produit introuvable pendant la vérification du stock.")
                 available = float(product.quantity)
                 if available <= 0 or available < needed:
                     raise InsufficientStockError(
@@ -264,13 +328,13 @@ class SaleController:
                 "",
             )
 
-        # Fidélité + CRM
+        # Fidélité + CRM (points uniquement sur la part encaissée, hors dette).
         if client_id:
             from app.services.customer_service import CustomerService
             from app.services.loyalty_service import LoyaltyService
 
             LoyaltyService.add_points_for_sale(
-                client_id, result.total, sale_id=result.sale_id, user_id=user_id
+                client_id, cash_paid, sale_id=result.sale_id, user_id=user_id
             )
             CustomerService.mark_visit(client_id)
         return result
@@ -289,9 +353,10 @@ class SaleController:
         """Met une vente en attente (sans déstocker ni encaisser)."""
         if not lines:
             raise ValueError("Le panier est vide.")
+        cls._validate_lines(lines)
         subtotal = round(sum(line.total for line in lines), 2)
         discount = max(0.0, to_float(discount))
-        total = round(subtotal - discount, 2)
+        total = round(max(0.0, subtotal - discount), 2)
         with session_scope() as session:
             ticket_number = cls._next_ticket_number(session)
             sale = Sale(
@@ -364,13 +429,47 @@ class SaleController:
         return lines, float(sale.discount), sale.client_id
 
     @staticmethod
+    def claim_pending(
+        sale_id: int, user_id: Optional[int] = None
+    ) -> tuple[List[CartLine], float, Optional[int]]:
+        """Charge une vente en attente en mémoire puis supprime la ligne en base."""
+        with session_scope() as session:
+            sale = session.execute(
+                select(Sale)
+                .options(joinedload(Sale.items), joinedload(Sale.payments))
+                .where(Sale.id == sale_id, Sale.status == "pending")
+            ).unique().scalar_one_or_none()
+            if not sale:
+                raise ValueError("Vente en attente introuvable ou déjà reprise.")
+            lines = [
+                CartLine(
+                    product_id=item.product_id,
+                    name=item.product_name,
+                    unit_price=float(item.unit_price),
+                    quantity=float(item.quantity),
+                    purchase_price=float(item.purchase_price),
+                )
+                for item in sale.items
+            ]
+            discount = float(sale.discount)
+            client_id = sale.client_id
+            ticket_number = sale.ticket_number
+            session.delete(sale)
+        from app.services import audit_service
+
+        audit_service.log_action(
+            "Reprise vente en attente", "Sale", ticket_number, user_id, ""
+        )
+        return lines, discount, client_id
+
+    @staticmethod
     def delete_pending(sale_id: int, user_id: Optional[int] = None) -> None:
         with session_scope() as session:
-            sale = session.scalar(
+            sale = session.execute(
                 select(Sale)
                 .options(joinedload(Sale.items), joinedload(Sale.payments))
                 .where(Sale.id == sale_id)
-            )
+            ).unique().scalar_one_or_none()
             if not sale or sale.status != "pending":
                 return
             session.delete(sale)
@@ -383,7 +482,7 @@ class SaleController:
     @staticmethod
     def get(sale_id: int) -> Optional[Sale]:
         with session_scope() as session:
-            sale = session.scalar(
+            sale = session.execute(
                 select(Sale)
                 .options(
                     joinedload(Sale.items),
@@ -392,7 +491,7 @@ class SaleController:
                     joinedload(Sale.client),
                 )
                 .where(Sale.id == sale_id)
-            )
+            ).unique().scalar_one_or_none()
             if sale:
                 session.expunge_all()
             return sale
@@ -430,21 +529,46 @@ class SaleController:
     ) -> None:
         """Annule une vente, restocke et annule les dettes liées."""
         cancelled_debts = 0
+        client_id: Optional[int] = None
         with session_scope() as session:
             sale = session.scalar(
                 select(Sale).options(joinedload(Sale.items)).where(Sale.id == sale_id)
             )
             if not sale or sale.status == "cancelled":
                 return
+            client_id = sale.client_id
+            debt_payment_count = session.scalar(
+                select(func.count())
+                .select_from(DebtPayment)
+                .join(Debt, Debt.id == DebtPayment.debt_id)
+                .where(Debt.sale_id == sale_id)
+            ) or 0
+            if debt_payment_count:
+                raise ValueError(
+                    "Impossible d'annuler : des remboursements existent sur la dette "
+                    "de cette vente."
+                )
             # Les ventes « pending » n'ont jamais déstocké.
             if restock and sale.status == "completed":
                 for item in sale.items:
                     if item.product_id:
                         product = session.get(Product, item.product_id)
                         if product:
-                            product.quantity = float(product.quantity) + float(
-                                item.quantity
+                            before = float(product.quantity)
+                            after = before + float(item.quantity)
+                            product.quantity = after
+                            session.add(
+                                StockMovement(
+                                    product_id=product.id,
+                                    movement_type=MOVEMENT_IN,
+                                    quantity=float(item.quantity),
+                                    quantity_before=before,
+                                    quantity_after=after,
+                                    reason="Annulation vente",
+                                    user_id=user_id,
+                                )
                             )
+            SaleController._reverse_loyalty_points(session, sale, user_id)
             from app.services.debt_service import DebtService
 
             cancelled_debts = DebtService.cancel_debts_for_sale(
@@ -454,6 +578,10 @@ class SaleController:
                 session=session,
             )
             sale.status = "cancelled"
+        if client_id:
+            from app.services.customer_service import CustomerService
+
+            CustomerService.refresh_stats(client_id)
         if cancelled_debts:
             from app.services import audit_service
 

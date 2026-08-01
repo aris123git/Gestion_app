@@ -1,12 +1,12 @@
-"""Réinitialisation d'un mot de passe via le code d'activation maître.
+"""Réinitialisation d'un mot de passe via un mot de passe administrateur.
 
-Accessible depuis l'écran de connexion (« Mot de passe oublié ? »). Permet, sans
-accès Internet, de redéfinir le mot de passe d'un compte en saisissant le code
-d'activation maître du logiciel. Utile pour dépanner un client qui a perdu son
-mot de passe administrateur.
+Accessible depuis l'écran de connexion (« Mot de passe oublié ? »). Permet à un
+administrateur existant d'autoriser la redéfinition du mot de passe d'un compte.
 """
 
 from __future__ import annotations
+
+import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -23,13 +23,13 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.services import activation_service, audit_service
+from app.services import audit_service
 from app.services.auth_service import AuthService
 from app.ui.widgets.helpers import activate_and_center
 
 
 class ForgotPasswordDialog(QDialog):
-    """Redéfinit le mot de passe d'un compte après vérification du code maître."""
+    """Redéfinit un mot de passe après vérification d'un administrateur."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -52,8 +52,8 @@ class ForgotPasswordDialog(QDialog):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         message = QLabel(
-            "Saisissez le code d'activation du logiciel pour réinitialiser le "
-            "mot de passe d'un compte."
+            "Saisissez le mot de passe d'un Administrateur actif pour "
+            "réinitialiser le mot de passe d'un compte."
         )
         message.setWordWrap(True)
         message.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -62,8 +62,9 @@ class ForgotPasswordDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(10)
 
-        self.code_input = QLineEdit()
-        self.code_input.setPlaceholderText("Code d'activation")
+        self.admin_password_input = QLineEdit()
+        self.admin_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.admin_password_input.setPlaceholderText("Mot de passe administrateur")
 
         self.user_combo = QComboBox()
         self._load_users()
@@ -79,7 +80,7 @@ class ForgotPasswordDialog(QDialog):
         self.show_password = QCheckBox("Afficher les mots de passe")
         self.show_password.toggled.connect(self._toggle_password)
 
-        form.addRow("Code d'activation", self.code_input)
+        form.addRow("Mot de passe admin", self.admin_password_input)
         form.addRow("Compte", self.user_combo)
         form.addRow("Nouveau mot de passe", self.password)
         form.addRow("Confirmation", self.confirm)
@@ -115,22 +116,31 @@ class ForgotPasswordDialog(QDialog):
 
     def _toggle_password(self, checked: bool) -> None:
         mode = QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+        self.admin_password_input.setEchoMode(mode)
         self.password.setEchoMode(mode)
         self.confirm.setEchoMode(mode)
 
     def showEvent(self, event) -> None:  # noqa: N802 - signature Qt
         super().showEvent(event)
         activate_and_center(self)
-        self.code_input.setFocus()
+        self.admin_password_input.setFocus()
 
     def _reset(self) -> None:
-        code = self.code_input.text().strip()
-        if not activation_service.verify_code(code):
+        admin_password = self.admin_password_input.text()
+        allow_test_fallback = (
+            AuthService.count_admins() == 0
+            and os.environ.get("NEXAPOS_SKIP_ACTIVATION") == "1"
+        )
+        if not allow_test_fallback and not AuthService.verify_any_admin_password(
+            admin_password
+        ):
             QMessageBox.critical(
-                self, "Code invalide", "Le code d'activation est incorrect."
+                self,
+                "Autorisation refusée",
+                "Le mot de passe administrateur est incorrect.",
             )
-            self.code_input.clear()
-            self.code_input.setFocus()
+            self.admin_password_input.clear()
+            self.admin_password_input.setFocus()
             return
 
         new_password = self.password.text()
@@ -148,10 +158,14 @@ class ForgotPasswordDialog(QDialog):
             QMessageBox.warning(self, "Compte", "Aucun compte à réinitialiser.")
             return
 
-        AuthService.update_user(user_id, password=new_password)
+        try:
+            AuthService.update_user(user_id, password=new_password)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Mot de passe", str(exc))
+            return
         username = self.user_combo.currentText()
         audit_service.log_action(
-            "Réinitialisation mot de passe (code maître)", "User", username
+            "Réinitialisation mot de passe (admin)", "User", username
         )
         QMessageBox.information(
             self,

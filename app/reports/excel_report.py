@@ -31,7 +31,10 @@ def _autosize(worksheet) -> None:
 
 
 def export_report_excel(
-    report: dict, sales_rows=None, path: str | Path | None = None
+    report: dict,
+    sales_rows=None,
+    path: str | Path | None = None,
+    include_profits: bool = True,
 ) -> Path:
     """Génère un classeur Excel : synthèse + détail des ventes."""
     config.ensure_directories()
@@ -49,27 +52,49 @@ def export_report_excel(
     summary.title = "Synthèse"
     summary.append(["Indicateur", f"Valeur ({currency})"])
     summary.append(["Période", f"{report['start']:%d/%m/%Y} - {report['end']:%d/%m/%Y}"])
-    summary.append(["Chiffre d'affaires", report["revenue"]])
+    summary.append(["CA encaissé", report["cash_revenue"]])
+    summary.append(["Total ventes TTC", report["total_sales"]])
     summary.append(["Nombre de ventes", report["sales_count"]])
-    summary.append(["Bénéfice brut", report["profit"]])
-    summary.append(["Dépenses", report["expenses"]])
-    summary.append(["Bénéfice net", report["net_profit"]])
+    summary.append(["Remboursements clients", report["debt_repayments"]])
+    summary.append(["Paiements dettes fournisseurs", report["supplier_debt_payments"]])
+    summary.append(["Trésorerie période", report["treasury"]])
+    if include_profits:
+        summary.append(["Bénéfice brut", report["profit"]])
+        summary.append(["Dépenses", report["expenses"]])
+        summary.append(["Bénéfice net", report["net_profit"]])
+    if report.get("vat_rate", 0) > 0:
+        summary.append([f"dont TVA {report['vat_rate']:g}%", report.get("vat_included", 0)])
     _style_header(summary, 2)
     _autosize(summary)
 
     top = workbook.create_sheet("Top produits")
-    top.append(["Produit", "Quantité", "Chiffre d'affaires"])
+    top.append(["Produit", "Quantité", "Total ventes"])
     for name, qty, total in report["top_products"]:
         top.append([name, qty, total])
     _style_header(top, 3)
     _autosize(top)
 
+    payments = workbook.create_sheet("Encaissements")
+    payments.append(["Mode de paiement", "Montant"])
+    for method, amount in report["payments"]:
+        payments.append([method, amount])
+    if report.get("credit_sales", 0) > 0:
+        payments.append(["Crédit client (Dette, non encaissé)", report["credit_sales"]])
+    _style_header(payments, 2)
+    _autosize(payments)
+
     if sales_rows:
         detail = workbook.create_sheet("Ventes")
-        detail.append(["Ticket", "Date", "Total", "Bénéfice", "Statut"])
-        for row in sales_rows:
-            detail.append(list(row))
-        _style_header(detail, 5)
+        if include_profits:
+            detail.append(["Ticket", "Date", "Total ventes TTC", "Bénéfice", "Statut"])
+            for row in sales_rows:
+                detail.append(list(row))
+            _style_header(detail, 5)
+        else:
+            detail.append(["Ticket", "Date", "Total ventes TTC", "Statut"])
+            for ticket, sale_date, total, _profit, status in sales_rows:
+                detail.append([ticket, sale_date, total, status])
+            _style_header(detail, 4)
         _autosize(detail)
 
     workbook.save(path)

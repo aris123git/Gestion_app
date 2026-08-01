@@ -9,10 +9,49 @@ from sqlalchemy.orm import joinedload
 
 from app.database.connection import session_scope
 from app.models.product import Product
+from app.models.stock import MOVEMENT_CORRECTION, StockMovement
 from app.utils.helpers import to_float
 
 
 class ProductController:
+    @staticmethod
+    def _clean_barcode(value) -> str:
+        return str(value or "").strip()
+
+    @staticmethod
+    def _ensure_unique_barcode(session, barcode: str, product_id: Optional[int] = None) -> None:
+        if not barcode:
+            return
+        query = select(Product.id).where(Product.barcode == barcode)
+        if product_id is not None:
+            query = query.where(Product.id != product_id)
+        if session.scalar(query):
+            raise ValueError("Un produit existe déjà avec ce code-barres.")
+
+    @staticmethod
+    def _record_quantity_adjustment(
+        session,
+        product: Product,
+        before: float,
+        after: float,
+        reason: str,
+        user_id: Optional[int],
+    ) -> None:
+        if abs(after - before) < 0.001:
+            return
+        session.add(
+            StockMovement(
+                product_id=product.id,
+                movement_type=MOVEMENT_CORRECTION,
+                quantity=abs(after - before),
+                quantity_before=before,
+                quantity_after=after,
+                unit_cost=float(product.purchase_price or 0),
+                reason=reason,
+                user_id=user_id,
+            )
+        )
+
     @staticmethod
     def list(
         search: str = "",
@@ -56,7 +95,7 @@ class ProductController:
 
     @staticmethod
     def find_by_barcode(barcode: str) -> Optional[Product]:
-        barcode = barcode.strip()
+        barcode = ProductController._clean_barcode(barcode)
         if not barcode:
             return None
         with session_scope() as session:
@@ -70,23 +109,36 @@ class ProductController:
             return product
 
     @staticmethod
-    def create(data: dict) -> Product:
+    def create(data: dict, user_id: Optional[int] = None) -> Product:
+        barcode = ProductController._clean_barcode(data.get("barcode"))
+        quantity = to_float(data.get("quantity"))
+        if quantity < 0:
+            raise ValueError("La quantité en stock ne peut pas être négative.")
         with session_scope() as session:
+            ProductController._ensure_unique_barcode(session, barcode)
             product = Product(
                 name=str(data.get("name", "")).strip(),
-                barcode=str(data.get("barcode", "")).strip(),
+                barcode=barcode,
                 reference=str(data.get("reference", "")).strip(),
                 category_id=data.get("category_id"),
                 unit_id=data.get("unit_id"),
                 purchase_price=to_float(data.get("purchase_price")),
                 sale_price=to_float(data.get("sale_price")),
                 min_price=to_float(data.get("min_price")),
-                quantity=to_float(data.get("quantity")),
+                quantity=quantity,
                 min_stock=to_float(data.get("min_stock")),
                 is_active=bool(data.get("is_active", True)),
             )
             session.add(product)
             session.flush()
+            ProductController._record_quantity_adjustment(
+                session,
+                product,
+                0.0,
+                quantity,
+                "Stock initial produit",
+                user_id,
+            )
             session.expunge(product)
             return product
 
@@ -105,18 +157,34 @@ class ProductController:
             product = session.get(Product, product_id)
             if not product:
                 return
+            new_barcode = ProductController._clean_barcode(
+                data.get("barcode", product.barcode)
+            )
+            new_quantity = to_float(data.get("quantity", product.quantity))
+            if new_quantity < 0:
+                raise ValueError("La quantité en stock ne peut pas être négative.")
+            ProductController._ensure_unique_barcode(session, new_barcode, product_id)
             old_price = float(product.sale_price)
+            old_quantity = float(product.quantity)
             product.name = str(data.get("name", product.name)).strip()
-            product.barcode = str(data.get("barcode", product.barcode)).strip()
+            product.barcode = new_barcode
             product.reference = str(data.get("reference", product.reference)).strip()
             product.category_id = data.get("category_id")
             product.unit_id = data.get("unit_id")
             product.purchase_price = to_float(data.get("purchase_price"))
             # Le prix de vente est mis à jour via PriceHistoryService si modifié.
             product.min_price = to_float(data.get("min_price"))
-            product.quantity = to_float(data.get("quantity"))
+            product.quantity = new_quantity
             product.min_stock = to_float(data.get("min_stock"))
             product.is_active = bool(data.get("is_active", True))
+            ProductController._record_quantity_adjustment(
+                session,
+                product,
+                old_quantity,
+                new_quantity,
+                "Ajustement fiche produit",
+                user_id,
+            )
             price_changed = abs(old_price - new_price) >= 0.001
             if not price_changed:
                 product.sale_price = new_price

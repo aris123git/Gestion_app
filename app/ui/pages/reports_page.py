@@ -74,7 +74,7 @@ class ReportsPage(QWidget):
         # Cartes de synthèse
         self.summary_grid = QGridLayout()
         self.summary_grid.setSpacing(12)
-        self.lbl_revenue = self._metric("Chiffre d'affaires")
+        self.lbl_revenue = self._metric("CA encaissé")
         self.lbl_sales = self._metric("Nombre de ventes")
         self.lbl_profit = self._metric("Bénéfice brut")
         self.lbl_expenses = self._metric("Dépenses")
@@ -87,7 +87,7 @@ class ReportsPage(QWidget):
 
         layout.addWidget(section_title("Top produits sur la période"))
         self.top_table = QTableWidget(0, 3)
-        self.top_table.setHorizontalHeaderLabels(["Produit", "Quantité", "Chiffre d'affaires"])
+        self.top_table.setHorizontalHeaderLabels(["Produit", "Quantité", "Total ventes"])
         self.top_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.top_table)
@@ -163,7 +163,9 @@ class ReportsPage(QWidget):
         start, end = self._current_range()
         self._report = ReportController.build(start, end)
         currency = settings_service.get_currency()
-        self.lbl_revenue["value"].setText(format_money(self._report["revenue"], currency))
+        self.lbl_revenue["value"].setText(
+            format_money(self._report["cash_revenue"], currency)
+        )
         self.lbl_sales["value"].setText(str(self._report["sales_count"]))
         if self.state.can(perms.VIEW_PROFITS):
             self.lbl_profit["value"].setText(format_money(self._report["profit"], currency))
@@ -237,10 +239,23 @@ class ReportsPage(QWidget):
     def refresh(self) -> None:
         self._generate()
 
+    def select_sale(self, sale_id: int) -> None:
+        if sale_id not in self._sale_ids:
+            self._generate()
+        if sale_id in self._sale_ids:
+            row = self._sale_ids.index(sale_id)
+            self.history_table.selectRow(row)
+            item = self.history_table.item(row, 0)
+            if item:
+                self.history_table.scrollToItem(item)
+
     def _export_pdf(self) -> None:
         if not self._report:
             self._generate()
-        path = export_report_pdf(self._report)
+        path = export_report_pdf(
+            self._report,
+            include_profits=self.state.can(perms.VIEW_PROFITS),
+        )
         info(self, f"Rapport PDF généré :\n{path}")
 
     def _export_excel(self) -> None:
@@ -248,5 +263,9 @@ class ReportsPage(QWidget):
             self._generate()
         start, end = self._current_range()
         rows = ReportController.sales_rows(start, end)
-        path = export_report_excel(self._report, rows)
+        path = export_report_excel(
+            self._report,
+            rows,
+            include_profits=self.state.can(perms.VIEW_PROFITS),
+        )
         info(self, f"Rapport Excel généré :\n{path}")

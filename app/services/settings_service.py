@@ -61,3 +61,11 @@ def set_setting(key: str, value: str) -> None:
 
 def get_currency() -> str:
     return get_shop_info().currency or "FCFA"
+
+
+def get_vat_rate() -> float:
+    """Retourne le taux de TVA configuré sur la fiche commerce."""
+    try:
+        return max(0.0, float(get_shop_info().vat_rate or 0))
+    except (TypeError, ValueError):
+        return 0.0

@@ -295,12 +295,16 @@ class SettingsPage(QWidget):
         self.auto_enabled = QCheckBox("Activer la sauvegarde automatique")
         self.auto_frequency = QComboBox()
         self.auto_frequency.addItems(["Quotidienne", "Hebdomadaire", "Mensuelle"])
+        self.auto_interval = QSpinBox()
+        self.auto_interval.setRange(1, 24 * 365)
+        self.auto_interval.setSuffix(" heures")
         self.retention = QSpinBox()
         self.retention.setRange(1, 200)
         self.retention.setValue(backup_service.DEFAULT_RETENTION)
         self.retention.setSuffix(" sauvegardes conservées")
         auto_form.addRow(self.auto_enabled)
         auto_form.addRow("Fréquence", self.auto_frequency)
+        auto_form.addRow("Intervalle", self.auto_interval)
         auto_form.addRow("Rétention", self.retention)
         save_auto = QPushButton("Enregistrer les options")
         save_auto.setObjectName("Primary")
@@ -430,6 +434,10 @@ class SettingsPage(QWidget):
             self.auto_frequency.currentText().lower(),
         )
         settings_service.set_setting(
+            backup_service.SETTING_AUTO_INTERVAL_HOURS,
+            str(self.auto_interval.value()),
+        )
+        settings_service.set_setting(
             backup_service.SETTING_RETENTION, str(self.retention.value())
         )
         backup_service.prune_backups(self.retention.value())
@@ -439,6 +447,7 @@ class SettingsPage(QWidget):
     def _load_auto_options(self) -> None:
         self.auto_enabled.setChecked(backup_service.is_auto_enabled())
         self.auto_frequency.setCurrentText(backup_service.get_frequency().capitalize())
+        self.auto_interval.setValue(backup_service.get_interval_hours())
         self.retention.setValue(backup_service.get_retention())
 
     def _reload_backups(self) -> None:

@@ -36,6 +36,7 @@ class PaymentDialog(QDialog):
         total: float,
         client_id: Optional[int] = None,
         client_phone: str = "",
+        allow_credit: bool = True,
         parent=None,
     ):
         super().__init__(parent)
@@ -51,6 +52,7 @@ class PaymentDialog(QDialog):
         self.use_credit = False
         self.result_client_id: Optional[int] = client_id
         self._resolved_client_name = ""
+        self.allow_credit = allow_credit
 
         if client_id:
             client = ClientController.get(client_id)
@@ -110,10 +112,11 @@ class PaymentDialog(QDialog):
             self.method_inputs[method] = spin
             form.addRow(method, spin)
 
-        # Dette toujours affichée à l'établissement du ticket.
+        # Dette affichée à l'établissement du ticket, activée selon le rôle.
         self.credit_input = self._make_spin()
         self.method_inputs[self.credit_method] = self.credit_input
-        form.addRow(self.credit_method, self.credit_input)
+        self.credit_label = QLabel(self.credit_method)
+        form.addRow(self.credit_label, self.credit_input)
         self.credit_hint = QLabel(
             "Pour porter le montant en dette, indiquez le téléphone du client ci-dessus."
         )
@@ -130,6 +133,11 @@ class PaymentDialog(QDialog):
         self.quick_debt.setObjectName("Primary")
         self.quick_debt.clicked.connect(self._pay_all_credit)
         quick_row.addWidget(self.quick_debt)
+        if not self.allow_credit:
+            self.credit_label.setVisible(False)
+            self.credit_input.setVisible(False)
+            self.credit_hint.setVisible(False)
+            self.quick_debt.setVisible(False)
         layout.addLayout(quick_row)
 
         received_row = QFormLayout()
@@ -224,6 +232,15 @@ class PaymentDialog(QDialog):
         return self.result_client_id
 
     def _refresh_client_status(self) -> None:
+        if not self.allow_credit:
+            self.credit_hint.setText("La vente à crédit est réservée au gestionnaire.")
+            self.quick_debt.setEnabled(False)
+            self.credit_input.setValue(0)
+            self.credit_input.setEnabled(False)
+            self.client_status.setText(
+                "<span style='color:#64748b;'>Client facultatif pour la facture.</span>"
+            )
+            return
         if self.result_client_id and self._resolved_client_name:
             phone = self.phone_input.text().strip()
             suffix = f" — {phone}" if phone else ""
@@ -250,7 +267,7 @@ class PaymentDialog(QDialog):
             self.credit_hint.setText(
                 "Pour porter le montant en dette, indiquez le téléphone du client."
             )
-            # Dette saisieable même sans client : la validation créera / liera le client.
+            # Dette saisissable même sans client : la validation créera / liera le client.
             self.quick_debt.setEnabled(True)
             self.credit_input.setEnabled(True)
 
@@ -275,6 +292,8 @@ class PaymentDialog(QDialog):
         self._recalculate()
 
     def _pay_all_credit(self) -> None:
+        if not self.allow_credit:
+            return
         phone = self.phone_input.text().strip()
         if not self.result_client_id and phone:
             self._resolve_client_from_phone()
@@ -333,6 +352,8 @@ class PaymentDialog(QDialog):
     def _confirm(self) -> None:
         cash_paid = self._cash_paid_total()
         credit = self._credit_amount()
+        if credit > 0 and not self.allow_credit:
+            return
         if cash_paid + credit < self.total:
             return
         if credit > 0:

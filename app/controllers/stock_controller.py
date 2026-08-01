@@ -99,15 +99,22 @@ class StockController:
         comment: str = "",
     ) -> None:
         quantity = to_float(quantity)
+        if quantity <= 0:
+            raise ValueError("Quantité invalide.")
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:
                 return
+            available = float(product.quantity)
+            if quantity > available:
+                raise ValueError(
+                    f"Stock insuffisant : disponible {available:g}, demandé {quantity:g}."
+                )
             cls._record(
                 session,
                 product,
                 MOVEMENT_OUT,
-                max(0.0, float(product.quantity) - quantity),
+                available - quantity,
                 reason or "Sortie de stock",
                 0,
                 user_id,

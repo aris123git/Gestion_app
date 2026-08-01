@@ -12,9 +12,9 @@ le logiciel : seuls changent les **produits**, **catégories** et **unités**.
 
 ## Fonctionnalités
 
-- **Premier démarrage** : assistant de configuration du commerce (nom, logo,
+- **Premier démarrage** : assistant de configuration du commerce (nom, logo optionnel,
   adresse, téléphone, devise, type de commerce), modifiable ensuite.
-- **Tableau de bord** : CA du jour / du mois, nombre de ventes, produits les
+- **Tableau de bord** : CA encaissé du jour / du mois, nombre de ventes, produits les
   plus vendus, stock faible, ruptures, dépenses du jour, bénéfice estimé.
 - **Produits** : nom, catégorie, code-barres, référence, prix d'achat / vente /
   minimum, quantité, stock minimum, unité.
@@ -23,24 +23,25 @@ le logiciel : seuls changent les **produits**, **catégories** et **unités**.
   unités personnalisées).
 - **Stock** : entrées, sorties, inventaire, correction, historique, alertes de
   rupture.
-- **Fournisseurs** et **Clients** (avec gestion des dettes).
+- **Fournisseurs** et **Clients** : dettes, règlements, historique et points de fidélité.
 - **Caisse (POS)** : interface rapide, ajout/modification/suppression d'articles,
   modification du prix directement dans le panier (avec choix « uniquement cette
   vente » ou « mise à jour définitive du prix »).
-- **Paiement** : espèces, Orange Money, Moov Money, carte bancaire, virement, et
-  **paiement mixte**. Calcul automatique de la **monnaie rendue** et message
-  « Montant insuffisant » le cas échéant.
-- **Ticket thermique** 58 mm / 80 mm (nom, logo, adresse, numéro, date, heure,
+- **Paiement** : espèces, Orange Money, Moov Money, carte bancaire, virement,
+  **paiement mixte** et ventes à crédit client pour les rôles autorisés. Calcul
+  automatique de la **monnaie rendue** et message « Montant insuffisant » le cas échéant.
+- **Ticket thermique** 58 mm / 80 mm (nom, logo si configuré, adresse, numéro, date, heure,
   caissier, produits, totaux, monnaie, mode de paiement, message de
   remerciement) + **réimpression**.
 - **Dépenses** : loyer, salaire, transport, électricité, internet, autres.
-- **Rapports** : journalier, hebdomadaire, mensuel, annuel — export **PDF** et
-  **Excel**.
-- **Utilisateurs** : administrateur / caissier, permissions, connexion
+- **Rapports** : journalier, hebdomadaire, mensuel, annuel, avec CA encaissé —
+  export **PDF** et **Excel**.
+- **Utilisateurs** : administrateur / gestionnaire / caissier, permissions, connexion
   sécurisée (mots de passe hachés PBKDF2).
 - **Sauvegarde** : automatique, manuelle, restauration.
-- **Paramètres** : logo, nom, adresse, téléphone, TVA, devise, format du ticket,
-  imprimante.
+- **Paramètres** : identité du commerce, devise, apparence, format du ticket,
+  imprimante, options de sauvegarde. Un taux de TVA peut être renseigné pour les
+  besoins de configuration, sans automatiser toute la fiscalité.
 - **Recherche instantanée** sur produits, clients, fournisseurs, ventes.
 - **Interface moderne** : navigation latérale, grandes cartes, compatible écran
   tactile, **mode clair / sombre**.

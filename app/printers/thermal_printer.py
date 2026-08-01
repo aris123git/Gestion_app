@@ -67,7 +67,12 @@ def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
     currency = shop.currency or "FCFA"
 
     lines = []
-    lines.append(_center(shop.name or "Commerce", width))
+    logo_path = Path(str(shop.logo_path or ""))
+    shop_name = shop.name or "Commerce"
+    if shop.logo_path and logo_path.exists():
+        lines.append(_center(shop_name.upper(), width))
+    else:
+        lines.append(_center(shop_name, width))
     if shop.address:
         lines.append(_center(shop.address, width))
     if shop.phone:
@@ -92,7 +97,18 @@ def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
     lines.append(_row("Sous-total", format_money(sale.subtotal, currency), width))
     if float(sale.discount or 0) > 0:
         lines.append(_row("Remise", format_money(sale.discount, currency), width))
-    lines.append(_row("TOTAL", format_money(sale.total, currency), width))
+    vat_rate = settings_service.get_vat_rate()
+    if vat_rate > 0:
+        total_ttc = float(sale.total or 0)
+        vat_amount = round(total_ttc * vat_rate / (100 + vat_rate), 2)
+        total_ht = round(total_ttc - vat_amount, 2)
+        lines.append(_row("TOTAL TTC", format_money(total_ttc, currency), width))
+        lines.append(_row("Total HT", format_money(total_ht, currency), width))
+        lines.append(
+            _row(f"dont TVA {vat_rate:g}%", format_money(vat_amount, currency), width)
+        )
+    else:
+        lines.append(_row("TOTAL", format_money(sale.total, currency), width))
     lines.append(_row("Recu", format_money(sale.amount_received, currency), width))
     lines.append(_row("Monnaie", format_money(sale.change_due, currency), width))
     lines.append(_line("-", width))

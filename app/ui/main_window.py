@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QHBoxLayout,
     QLabel,
@@ -58,6 +60,9 @@ class MainWindow(QWidget):
         self.state = state
         self.setWindowTitle("Gestion Commerciale")
         self.resize(1280, 800)
+        self._idle_timeout_seconds = 120 * 60
+        self._last_activity = time.monotonic()
+        self._idle_logging_out = False
 
         self.pages: list[Optional[QWidget]] = []
         self._nav_buttons: list[Optional[QPushButton]] = []
@@ -73,6 +78,13 @@ class MainWindow(QWidget):
 
         self._build_pages()
         self.state.data_changed.connect(self._refresh_current)
+        self._idle_timer = QTimer(self)
+        self._idle_timer.setInterval(60_000)
+        self._idle_timer.timeout.connect(self._check_idle_timeout)
+        self._idle_timer.start()
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
         self.select_page(0)
 
     def _allowed(self, permission: Optional[str]) -> bool:
@@ -118,10 +130,11 @@ class MainWindow(QWidget):
 
         layout.addStretch()
 
-        search_btn = QPushButton("🔎  Recherche")
-        search_btn.setObjectName("NavButton")
-        search_btn.clicked.connect(self._open_search)
-        layout.addWidget(search_btn)
+        if self._can_search():
+            search_btn = QPushButton("🔎  Recherche")
+            search_btn.setObjectName("NavButton")
+            search_btn.clicked.connect(self._open_search)
+            layout.addWidget(search_btn)
 
         user = self.state.current_user
         self._user_label = QLabel(
@@ -150,16 +163,23 @@ class MainWindow(QWidget):
             self.pages.append(page)
             self.stack.addWidget(page)
 
-    def select_page(self, index: int) -> None:
+    def select_page(self, index: int) -> Optional[QWidget]:
         page = self.pages[index] if index < len(self.pages) else None
         if page is None:
-            return
+            return None
         self.stack.setCurrentWidget(page)
         button = self._nav_buttons[index]
         if button:
             button.setChecked(True)
         if hasattr(page, "refresh"):
             page.refresh()
+        return page
+
+    def _select_page_by_label(self, label: str) -> Optional[QWidget]:
+        for index, (item_label, _icon, _page, _permission) in enumerate(NAV_ITEMS):
+            if item_label == label:
+                return self.select_page(index)
+        return None
 
     def _refresh_current(self) -> None:
         current = self.stack.currentWidget()
@@ -170,8 +190,63 @@ class MainWindow(QWidget):
         self._subtitle_label.setText(shop.shop_type or "Commerce")
 
     def _open_search(self) -> None:
+        if not self._can_search():
+            return
         dialog = GlobalSearchDialog(self)
-        dialog.exec()
+        if dialog.exec() and dialog.selected_hit is not None:
+            self._navigate_search_hit(dialog.selected_hit)
+
+    def _navigate_search_hit(self, hit) -> None:
+        page_label_by_kind = {
+            "client": "Clients",
+            "dette": "Clients",
+            "produit": "Produits",
+            "facture": "Rapports",
+            "fournisseur": "Fournisseurs",
+        }
+        page = self._select_page_by_label(page_label_by_kind.get(hit.kind, ""))
+        if page is None:
+            return
+        selector_by_kind = {
+            "client": "select_client",
+            "produit": "select_product",
+            "facture": "select_sale",
+            "fournisseur": "select_supplier",
+        }
+        selector_name = selector_by_kind.get(hit.kind)
+        selector = getattr(page, selector_name, None) if selector_name else None
+        if selector:
+            selector(hit.entity_id)
+
+    def _can_search(self) -> bool:
+        return any(
+            self.state.can(permission)
+            for permission in (
+                perms.VIEW_REPORTS,
+                perms.VIEW_PRODUCTS,
+                perms.MANAGE_PRODUCTS,
+                perms.MANAGE_CLIENTS,
+                perms.MANAGE_SUPPLIERS,
+            )
+        )
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if event.type() in {
+            QEvent.Type.KeyPress,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonDblClick,
+            QEvent.Type.Wheel,
+            QEvent.Type.TouchBegin,
+        }:
+            self._last_activity = time.monotonic()
+        return super().eventFilter(obj, event)
+
+    def _check_idle_timeout(self) -> None:
+        if self._idle_logging_out or not self.state.current_user:
+            return
+        if time.monotonic() - self._last_activity >= self._idle_timeout_seconds:
+            self._idle_logging_out = True
+            self._logout()
 
     def _logout(self) -> None:
         self.state.auth.logout()
@@ -180,3 +255,10 @@ class MainWindow(QWidget):
         from app.ui.app import restart_login
 
         restart_login()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._idle_timer.stop()
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+        super().closeEvent(event)
