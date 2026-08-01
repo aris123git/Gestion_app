@@ -61,6 +61,10 @@ class InsufficientStockError(Exception):
     """Levée lorsqu'une vente dépasserait le stock disponible."""
 
 
+class BelowMinPriceError(Exception):
+    """Levée lorsqu'une ligne est vendue sous le prix minimum du produit."""
+
+
 class SaleController:
     @staticmethod
     def _next_ticket_number(session) -> str:
@@ -214,6 +218,7 @@ class SaleController:
                     required[line.product_id] = (
                         required.get(line.product_id, 0.0) + float(line.quantity)
                     )
+            min_prices: dict[int, float] = {}
             for product_id, needed in required.items():
                 product = session.execute(
                     select(Product)
@@ -228,6 +233,21 @@ class SaleController:
                         f"Stock insuffisant pour « {product.name} » : "
                         f"disponible {available:g}, demandé {needed:g}."
                     )
+                min_prices[product_id] = (float(product.min_price), product.name)
+
+            # Empêche de vendre en dessous du prix minimum défini sur le produit.
+            below_min = []
+            for line in lines:
+                info = min_prices.get(line.product_id)
+                if info and info[0] > 0 and float(line.unit_price) < info[0]:
+                    below_min.append(
+                        f"{info[1]} (min : {info[0]:g}, saisi : {float(line.unit_price):g})"
+                    )
+            if below_min:
+                raise BelowMinPriceError(
+                    "Prix de vente en dessous du minimum autorisé pour :\n- "
+                    + "\n- ".join(below_min)
+                )
 
             for line in lines:
                 product = (

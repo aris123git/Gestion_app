@@ -304,12 +304,20 @@ class PaymentDialog(QDialog):
         self.received_input.setValue(0)
         self._recalculate()
 
+    def _cash_method_amount(self) -> float:
+        """Montant réglé en espèces (base du calcul de la monnaie rendue)."""
+        spin = self.method_inputs.get("Espèces")
+        return float(spin.value()) if spin else 0.0
+
     def _recalculate(self) -> None:
         cash_paid = self._cash_paid_total()
         credit = self._credit_amount()
         covered = cash_paid + credit
         received = self.received_input.value()
-        change = max(0.0, received - self.total)
+        # La monnaie se calcule sur la part ESPÈCES (pas sur le total), afin de
+        # rester correcte en cas de paiement mixte (Orange Money + espèces, ...).
+        cash_due = self._cash_method_amount()
+        change = max(0.0, received - cash_due) if received > 0 else 0.0
         remaining = max(0.0, self.total - covered)
 
         parts = [
@@ -374,6 +382,6 @@ class PaymentDialog(QDialog):
             if spin.value() > 0
         ]
         self.amount_received = self.received_input.value() or cash_paid
-        self.change_due = max(0.0, self.amount_received - self.total)
+        self.change_due = max(0.0, self.amount_received - self._cash_method_amount())
         self.use_credit = credit > 0
         self.accept()

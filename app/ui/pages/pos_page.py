@@ -27,6 +27,7 @@ from app.controllers.client_controller import ClientController
 from app.controllers.product_controller import ProductController
 from app.controllers.sale_controller import (
     CartLine,
+    BelowMinPriceError,
     InsufficientPaymentError,
     InsufficientStockError,
     SaleController,
@@ -575,6 +576,9 @@ class POSPage(QWidget):
         except InsufficientStockError as exc:
             warn(self, str(exc), "Stock insuffisant")
             self._reload_products()
+            return
+        except BelowMinPriceError as exc:
+            warn(self, str(exc), "Prix minimum")
             return
         except ValueError as exc:
             warn(self, str(exc))
