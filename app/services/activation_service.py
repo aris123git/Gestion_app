@@ -63,10 +63,16 @@ def _set_hidden(path: Path) -> None:
             pass
 
 
+def _is_frozen_build() -> bool:
+    """True si l'application tourne en exécutable packagé (PyInstaller)."""
+    return bool(getattr(sys, "frozen", False))
+
+
 def is_activated() -> bool:
     """Indique si le logiciel est déjà activé sur ce poste."""
-    # Bypass explicite pour les tests automatisés / environnements headless.
-    if os.environ.get("NEXAPOS_SKIP_ACTIVATION") == "1":
+    # Bypass réservé aux tests automatisés / environnements headless. Il est
+    # IGNORÉ dans un exécutable packagé (production) pour éviter tout contournement.
+    if os.environ.get("NEXAPOS_SKIP_ACTIVATION") == "1" and not _is_frozen_build():
         return True
     if not ACTIVATION_FILE.exists():
         return False
