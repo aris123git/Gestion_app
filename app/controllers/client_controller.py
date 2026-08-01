@@ -25,7 +25,11 @@ class ClientController:
             if search:
                 pattern = f"%{search}%"
                 query = query.where(
-                    or_(Client.name.ilike(pattern), Client.phone.ilike(pattern))
+                    or_(
+                        Client.name.ilike(pattern),
+                        Client.phone.ilike(pattern),
+                        Client.phone2.ilike(pattern),
+                    )
                 )
             rows = session.scalars(query).all()
             session.expunge_all()
@@ -38,6 +42,55 @@ class ClientController:
             if client:
                 session.expunge(client)
             return client
+
+    @staticmethod
+    def find_by_phone(phone: str) -> Optional[Client]:
+        """Retrouve un client par téléphone (correspondance exacte prioritaire)."""
+        phone = str(phone or "").strip()
+        if not phone:
+            return None
+        with session_scope() as session:
+            # Exact sur phone / phone2, puis recherche partielle.
+            client = session.scalar(
+                select(Client)
+                .where(or_(Client.phone == phone, Client.phone2 == phone))
+                .order_by(Client.name)
+                .limit(1)
+            )
+            if client is None:
+                pattern = f"%{phone}%"
+                client = session.scalar(
+                    select(Client)
+                    .where(
+                        or_(Client.phone.ilike(pattern), Client.phone2.ilike(pattern))
+                    )
+                    .order_by(Client.name)
+                    .limit(1)
+                )
+            if client:
+                session.expunge(client)
+            return client
+
+    @staticmethod
+    def find_or_create_by_phone(
+        phone: str,
+        name: str = "",
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> Optional[Client]:
+        """Retrouve ou crée un client à partir d'un numéro de téléphone."""
+        phone = str(phone or "").strip()
+        if not phone:
+            return None
+        existing = ClientController.find_by_phone(phone)
+        if existing:
+            return existing
+        display = str(name or "").strip() or f"Client {phone}"
+        return ClientController.create(
+            {"name": display, "phone": phone},
+            user_id=user_id,
+            username=username,
+        )
 
     @staticmethod
     def create(

@@ -127,8 +127,22 @@ class POSPage(QWidget):
         client_row = QHBoxLayout()
         client_row.addWidget(QLabel("Client :"))
         self.client_combo = QComboBox()
+        self.client_combo.currentIndexChanged.connect(self._on_client_combo_changed)
         client_row.addWidget(self.client_combo, 1)
         layout.addLayout(client_row)
+
+        phone_row = QHBoxLayout()
+        phone_row.addWidget(QLabel("Téléphone :"))
+        self.client_phone_input = QLineEdit()
+        self.client_phone_input.setPlaceholderText(
+            "N° pour la facture / dette (Entrée pour rechercher)"
+        )
+        self.client_phone_input.returnPressed.connect(self._lookup_client_by_phone)
+        phone_row.addWidget(self.client_phone_input, 1)
+        phone_find = QPushButton("OK")
+        phone_find.clicked.connect(self._lookup_client_by_phone)
+        phone_row.addWidget(phone_find)
+        layout.addLayout(phone_row)
 
         self.cart_table = QTableWidget(0, 5)
         self.cart_table.setHorizontalHeaderLabels(
@@ -198,13 +212,59 @@ class POSPage(QWidget):
             self.category_filter.setCurrentIndex(index)
         self.category_filter.blockSignals(False)
 
-    def _reload_clients(self) -> None:
+    def _client_label(self, client) -> str:
+        phone = (client.phone or client.phone2 or "").strip()
+        if phone:
+            return f"{client.name} — {phone}"
+        return client.name
+
+    def _reload_clients(self, select_id: Optional[int] = None) -> None:
+        current = select_id if select_id is not None else self.client_combo.currentData()
         self.client_combo.blockSignals(True)
         self.client_combo.clear()
         self.client_combo.addItem("Client de passage", None)
         for client in ClientController.list():
-            self.client_combo.addItem(client.name, client.id)
+            self.client_combo.addItem(self._client_label(client), client.id)
+        if current is not None:
+            idx = self.client_combo.findData(current)
+            if idx >= 0:
+                self.client_combo.setCurrentIndex(idx)
         self.client_combo.blockSignals(False)
+        self._sync_phone_from_combo()
+
+    def _on_client_combo_changed(self, _index: int = 0) -> None:
+        self._sync_phone_from_combo()
+
+    def _sync_phone_from_combo(self) -> None:
+        client_id = self.client_combo.currentData()
+        if client_id is None:
+            return
+        client = ClientController.get(client_id)
+        if client:
+            phone = (client.phone or client.phone2 or "").strip()
+            if phone and self.client_phone_input.text().strip() != phone:
+                self.client_phone_input.blockSignals(True)
+                self.client_phone_input.setText(phone)
+                self.client_phone_input.blockSignals(False)
+
+    def _lookup_client_by_phone(self) -> None:
+        phone = self.client_phone_input.text().strip()
+        if not phone:
+            warn(self, "Saisissez un numéro de téléphone.")
+            return
+        client = ClientController.find_by_phone(phone)
+        if client is None:
+            client = ClientController.find_or_create_by_phone(
+                phone,
+                user_id=self.state.user_id,
+                username=getattr(self.state.current_user, "username", ""),
+            )
+            info(self, f"Client créé : {client.name}", "Nouveau client")
+        self._reload_clients(select_id=client.id)
+        idx = self.client_combo.findData(client.id)
+        if idx >= 0:
+            self.client_combo.setCurrentIndex(idx)
+        self.client_phone_input.setText(phone)
 
     def _reload_products(self) -> None:
         products = ProductController.list(
@@ -395,6 +455,10 @@ class POSPage(QWidget):
         self.cart.clear()
         self.discount_input.setValue(0)
         self._pending_sale_id = None
+        self.client_combo.blockSignals(True)
+        self.client_combo.setCurrentIndex(0)
+        self.client_combo.blockSignals(False)
+        self.client_phone_input.clear()
         self._render_cart()
 
     def _hold_sale(self) -> None:
@@ -447,9 +511,22 @@ class POSPage(QWidget):
             return
         total = self._cart_total()
         client_id: Optional[int] = self.client_combo.currentData()
-        dialog = PaymentDialog(total, allow_credit=client_id is not None, parent=self)
+        phone = self.client_phone_input.text().strip()
+        dialog = PaymentDialog(
+            total,
+            client_id=client_id,
+            client_phone=phone,
+            parent=self,
+        )
         if not dialog.exec():
             return
+        client_id = dialog.result_client_id or client_id
+        if client_id is not None:
+            # Resynchronise le panier avec le client résolu (téléphone / création).
+            self._reload_clients(select_id=client_id)
+            idx = self.client_combo.findData(client_id)
+            if idx >= 0:
+                self.client_combo.setCurrentIndex(idx)
         try:
             result = SaleController.create_sale(
                 lines=list(self.cart),
