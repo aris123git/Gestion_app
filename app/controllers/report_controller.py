@@ -7,9 +7,13 @@ from typing import Dict, List, Tuple
 
 from sqlalchemy import func, select
 
+from app import config
 from app.database.connection import session_scope
+from app.models.debt import DebtPayment
 from app.models.expense import Expense
 from app.models.sale import Payment, Sale, SaleItem
+from app.models.supplier_debt import SupplierDebtPayment
+from app.services import settings_service
 
 
 def period_bounds(kind: str, reference: date | None = None) -> Tuple[date, date]:
@@ -36,10 +40,36 @@ class ReportController:
         lo = datetime.combine(start, time.min)
         hi = datetime.combine(end, time.max)
         with session_scope() as session:
-            revenue = float(
+            total_sales = float(
                 session.scalar(
                     select(func.coalesce(func.sum(Sale.total), 0)).where(
                         Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
+                    )
+                )
+                or 0
+            )
+            cash_revenue = float(
+                session.scalar(
+                    select(func.coalesce(func.sum(Payment.amount), 0))
+                    .join(Sale, Sale.id == Payment.sale_id)
+                    .where(
+                        Sale.date >= lo,
+                        Sale.date <= hi,
+                        Sale.status == "completed",
+                        Payment.method != config.PAYMENT_METHOD_CREDIT,
+                    )
+                )
+                or 0
+            )
+            credit_sales = float(
+                session.scalar(
+                    select(func.coalesce(func.sum(Payment.amount), 0))
+                    .join(Sale, Sale.id == Payment.sale_id)
+                    .where(
+                        Sale.date >= lo,
+                        Sale.date <= hi,
+                        Sale.status == "completed",
+                        Payment.method == config.PAYMENT_METHOD_CREDIT,
                     )
                 )
                 or 0
@@ -68,6 +98,26 @@ class ReportController:
                 )
                 or 0
             )
+            debt_repayments = float(
+                session.scalar(
+                    select(func.coalesce(func.sum(DebtPayment.amount), 0)).where(
+                        DebtPayment.payment_date >= lo,
+                        DebtPayment.payment_date <= hi,
+                    )
+                )
+                or 0
+            )
+            supplier_debt_payments = float(
+                session.scalar(
+                    select(
+                        func.coalesce(func.sum(SupplierDebtPayment.amount), 0)
+                    ).where(
+                        SupplierDebtPayment.payment_date >= lo,
+                        SupplierDebtPayment.payment_date <= hi,
+                    )
+                )
+                or 0
+            )
 
             top = session.execute(
                 select(
@@ -85,7 +135,12 @@ class ReportController:
             by_method = session.execute(
                 select(Payment.method, func.sum(Payment.amount))
                 .join(Sale, Sale.id == Payment.sale_id)
-                .where(Sale.date >= lo, Sale.date <= hi, Sale.status == "completed")
+                .where(
+                    Sale.date >= lo,
+                    Sale.date <= hi,
+                    Sale.status == "completed",
+                    Payment.method != config.PAYMENT_METHOD_CREDIT,
+                )
                 .group_by(Payment.method)
             ).all()
 
@@ -95,10 +150,28 @@ class ReportController:
                 .group_by(Expense.category)
             ).all()
 
+        vat_rate = settings_service.get_vat_rate()
+        vat_included = (
+            round(total_sales * vat_rate / (100 + vat_rate), 2)
+            if vat_rate > 0
+            else 0.0
+        )
+        treasury = round(
+            cash_revenue + debt_repayments - expenses - supplier_debt_payments,
+            2,
+        )
         return {
             "start": start,
             "end": end,
-            "revenue": revenue,
+            "revenue": cash_revenue,
+            "cash_revenue": cash_revenue,
+            "total_sales": total_sales,
+            "credit_sales": credit_sales,
+            "debt_repayments": debt_repayments,
+            "supplier_debt_payments": supplier_debt_payments,
+            "treasury": treasury,
+            "vat_rate": vat_rate,
+            "vat_included": vat_included,
             "profit": profit,
             "net_profit": profit - expenses,
             "sales_count": sales_count,
@@ -118,7 +191,11 @@ class ReportController:
         with session_scope() as session:
             sales = session.scalars(
                 select(Sale)
-                .where(Sale.date >= lo, Sale.date <= hi)
+                .where(
+                    Sale.date >= lo,
+                    Sale.date <= hi,
+                    Sale.status == "completed",
+                )
                 .order_by(Sale.date)
             ).all()
             rows = [

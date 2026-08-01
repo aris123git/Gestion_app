@@ -133,6 +133,20 @@ class ProductsPage(QWidget):
             return None
         return self._ids[row]
 
+    def select_product(self, product_id: int) -> None:
+        if product_id not in self._ids:
+            self.search.blockSignals(True)
+            self.search.clear()
+            self.search.blockSignals(False)
+            self.category_filter.setCurrentIndex(0)
+            self.refresh()
+        if product_id in self._ids:
+            row = self._ids.index(product_id)
+            self.table.selectRow(row)
+            item = self.table.item(row, 0)
+            if item:
+                self.table.scrollToItem(item)
+
     def _add(self) -> None:
         if not self.state.can(perms.MANAGE_PRODUCTS):
             warn(self, "Vous n'avez pas l'autorisation d'ajouter un produit.")

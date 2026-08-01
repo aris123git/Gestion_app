@@ -7,10 +7,11 @@ from typing import List, Tuple
 
 from sqlalchemy import func, select
 
+from app import config
 from app.database.connection import session_scope
 from app.models.expense import Expense
 from app.models.product import Product
-from app.models.sale import Sale, SaleItem
+from app.models.sale import Payment, Sale, SaleItem
 
 
 def _range(start: date, end: date) -> Tuple[datetime, datetime]:
@@ -19,11 +20,16 @@ def _range(start: date, end: date) -> Tuple[datetime, datetime]:
 
 class DashboardController:
     @staticmethod
-    def _revenue(session, start: date, end: date) -> float:
+    def _cash_revenue(session, start: date, end: date) -> float:
         lo, hi = _range(start, end)
         total = session.scalar(
-            select(func.coalesce(func.sum(Sale.total), 0)).where(
-                Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
+            select(func.coalesce(func.sum(Payment.amount), 0))
+            .join(Sale, Sale.id == Payment.sale_id)
+            .where(
+                Sale.date >= lo,
+                Sale.date <= hi,
+                Sale.status == "completed",
+                Payment.method != config.PAYMENT_METHOD_CREDIT,
             )
         )
         return float(total or 0)
@@ -66,10 +72,10 @@ class DashboardController:
         today = date.today()
         month_start = today.replace(day=1)
         with session_scope() as session:
-            revenue_today = cls._revenue(session, today, today)
-            revenue_month = cls._revenue(session, month_start, today)
+            revenue_today = cls._cash_revenue(session, today, today)
+            revenue_month = cls._cash_revenue(session, month_start, today)
             sales_today = cls._sales_count(session, today, today)
-            profit_today = cls._profit(session, today, today)
+            profit_gross_today = cls._profit(session, today, today)
             expenses_today = cls._expenses(session, today, today)
 
             low_stock = session.scalar(
@@ -95,7 +101,9 @@ class DashboardController:
             "revenue_month": revenue_month,
             "sales_today": sales_today,
             "tickets_today": sales_today,
-            "profit_today": profit_today - expenses_today,
+            "profit_today": profit_gross_today,
+            "profit_gross_today": profit_gross_today,
+            "profit_net_today": profit_gross_today - expenses_today,
             "expenses_today": expenses_today,
             "low_stock": int(low_stock or 0),
             "out_of_stock": int(out_of_stock or 0),

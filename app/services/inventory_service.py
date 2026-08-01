@@ -46,7 +46,11 @@ class InventoryService:
             if not product:
                 raise ValueError("Produit introuvable.")
             before = float(product.quantity)
-            after = max(0.0, before - quantity)
+            if quantity > before:
+                raise ValueError(
+                    f"Stock insuffisant : disponible {before:g}, demandé {quantity:g}."
+                )
+            after = before - quantity
             product.quantity = after
             note = reason
             if comment:
@@ -55,7 +59,7 @@ class InventoryService:
                 StockMovement(
                     product_id=product_id,
                     movement_type=MOVEMENT_OUT,
-                    quantity=before - after,
+                    quantity=quantity,
                     quantity_before=before,
                     quantity_after=after,
                     reason=note,

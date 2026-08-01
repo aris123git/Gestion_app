@@ -7,13 +7,14 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy import func, select
 
+from app import config
 from app.database.connection import session_scope
 from app.models.client import Client
-from app.models.debt import ACTIVE_DEBT_STATUSES, Debt
+from app.models.debt import ACTIVE_DEBT_STATUSES, Debt, DebtPayment
 from app.models.expense import Expense
 from app.models.product import Product
-from app.models.sale import Sale, SaleItem
-from app.models.supplier_debt import SupplierDebt
+from app.models.sale import Payment, Sale, SaleItem
+from app.models.supplier_debt import SupplierDebtPayment
 from app.services.supplier_debt_service import SupplierDebtService
 
 
@@ -25,12 +26,29 @@ class DashboardService:
     """Agrégations financières et commerciales pour le tableau de bord."""
 
     @staticmethod
-    def _revenue(session, start: date, end: date) -> float:
+    def _sales_total(session, start: date, end: date) -> float:
         lo, hi = _range(start, end)
         return float(
             session.scalar(
                 select(func.coalesce(func.sum(Sale.total), 0)).where(
                     Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
+                )
+            )
+            or 0
+        )
+
+    @staticmethod
+    def _cash_revenue(session, start: date, end: date) -> float:
+        lo, hi = _range(start, end)
+        return float(
+            session.scalar(
+                select(func.coalesce(func.sum(Payment.amount), 0))
+                .join(Sale, Sale.id == Payment.sale_id)
+                .where(
+                    Sale.date >= lo,
+                    Sale.date <= hi,
+                    Sale.status == "completed",
+                    Payment.method != config.PAYMENT_METHOD_CREDIT,
                 )
             )
             or 0
@@ -43,6 +61,32 @@ class DashboardService:
             session.scalar(
                 select(func.coalesce(func.sum(Sale.profit), 0)).where(
                     Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
+                )
+            )
+            or 0
+        )
+
+    @staticmethod
+    def _client_debt_payments(session, start: date, end: date) -> float:
+        lo, hi = _range(start, end)
+        return float(
+            session.scalar(
+                select(func.coalesce(func.sum(DebtPayment.amount), 0)).where(
+                    DebtPayment.payment_date >= lo,
+                    DebtPayment.payment_date <= hi,
+                )
+            )
+            or 0
+        )
+
+    @staticmethod
+    def _supplier_debt_payments(session, start: date, end: date) -> float:
+        lo, hi = _range(start, end)
+        return float(
+            session.scalar(
+                select(func.coalesce(func.sum(SupplierDebtPayment.amount), 0)).where(
+                    SupplierDebtPayment.payment_date >= lo,
+                    SupplierDebtPayment.payment_date <= hi,
                 )
             )
             or 0
@@ -67,9 +111,12 @@ class DashboardService:
         month_start = today.replace(day=1)
         year_start = today.replace(month=1, day=1)
         with session_scope() as session:
-            revenue = cls._revenue(session, today, today)
+            cash_revenue = cls._cash_revenue(session, today, today)
+            total_sales = cls._sales_total(session, today, today)
             profit_gross = cls._profit(session, today, today)
             expenses = cls._expenses(session, today, today)
+            debt_repayments = cls._client_debt_payments(session, today, today)
+            supplier_debt_payments = cls._supplier_debt_payments(session, today, today)
             client_debts = float(
                 session.scalar(
                     select(func.coalesce(func.sum(Debt.amount_remaining), 0)).where(
@@ -79,25 +126,31 @@ class DashboardService:
                 or 0
             )
         supplier_debts = SupplierDebtService.total_remaining()
-        # Trésorerie simplifiée : encaissements jour − dépenses jour
-        treasury = round(revenue - expenses, 2)
+        treasury = round(
+            cash_revenue + debt_repayments - expenses - supplier_debt_payments,
+            2,
+        )
         return {
-            "revenue_today": revenue,
-            "revenue_week": cls._period_revenue(week_start, today),
-            "revenue_month": cls._period_revenue(month_start, today),
-            "revenue_year": cls._period_revenue(year_start, today),
+            "revenue_today": cash_revenue,
+            "cash_revenue_today": cash_revenue,
+            "total_sales_today": total_sales,
+            "revenue_week": cls._period_cash_revenue(week_start, today),
+            "revenue_month": cls._period_cash_revenue(month_start, today),
+            "revenue_year": cls._period_cash_revenue(year_start, today),
             "profit_gross_today": profit_gross,
             "profit_net_today": round(profit_gross - expenses, 2),
             "expenses_today": expenses,
+            "debt_repayments_today": debt_repayments,
+            "supplier_debt_payments_today": supplier_debt_payments,
             "treasury": treasury,
             "client_debts": client_debts,
             "supplier_debts": supplier_debts,
         }
 
     @classmethod
-    def _period_revenue(cls, start: date, end: date) -> float:
+    def _period_cash_revenue(cls, start: date, end: date) -> float:
         with session_scope() as session:
-            return cls._revenue(session, start, end)
+            return cls._cash_revenue(session, start, end)
 
     @staticmethod
     def best_client(start: date, end: date) -> Optional[Tuple[str, float]]:

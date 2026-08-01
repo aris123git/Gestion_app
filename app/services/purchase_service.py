@@ -54,6 +54,10 @@ class PurchaseService:
         amount_paid = round(to_float(amount_paid), 2)
         if amount_paid < 0:
             raise ValueError("Montant payé invalide.")
+        if amount_paid < total and not supplier_id:
+            raise ValueError(
+                "Un achat partiellement payé doit être rattaché à un fournisseur."
+            )
 
         with session_scope() as session:
             purchase = Purchase(

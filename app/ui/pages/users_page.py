@@ -23,6 +23,7 @@ from app.services import permissions as perms
 from app.services.auth_service import AuthService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, page_title, warn
+from app.utils.security import validate_password
 
 
 class UserDialog(QDialog):
@@ -45,6 +46,7 @@ class UserDialog(QDialog):
         self.full_name = QLineEdit()
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.setPlaceholderText("Minimum 6 caractères")
         self.role = QComboBox()
         self.role.addItems(config.ROLES)
         self.active = QCheckBox("Compte actif")
@@ -84,6 +86,12 @@ class UserDialog(QDialog):
         if not self.user and not self.password.text():
             warn(self, "Le mot de passe est obligatoire.")
             return
+        if self.password.text():
+            try:
+                validate_password(self.password.text())
+            except ValueError as exc:
+                warn(self, str(exc))
+                return
         self.data = {
             "username": self.username.text().strip(),
             "full_name": self.full_name.text().strip(),
@@ -161,12 +169,16 @@ class UsersPage(QWidget):
             return
         dialog = UserDialog(parent=self)
         if dialog.exec() and dialog.data:
-            AuthService.create_user(
-                dialog.data["username"],
-                dialog.data["password"],
-                dialog.data["full_name"],
-                dialog.data["role"],
-            )
+            try:
+                AuthService.create_user(
+                    dialog.data["username"],
+                    dialog.data["password"],
+                    dialog.data["full_name"],
+                    dialog.data["role"],
+                )
+            except ValueError as exc:
+                warn(self, str(exc))
+                return
             self.refresh()
 
     def _edit(self) -> None:
@@ -179,13 +191,17 @@ class UsersPage(QWidget):
         user = next((u for u in AuthService.list_users() if u.id == user_id), None)
         dialog = UserDialog(user=user, parent=self)
         if dialog.exec() and dialog.data:
-            AuthService.update_user(
-                user_id,
-                full_name=dialog.data["full_name"],
-                role=dialog.data["role"],
-                is_active=dialog.data["is_active"],
-                password=dialog.data["password"] or None,
-            )
+            try:
+                AuthService.update_user(
+                    user_id,
+                    full_name=dialog.data["full_name"],
+                    role=dialog.data["role"],
+                    is_active=dialog.data["is_active"],
+                    password=dialog.data["password"] or None,
+                )
+            except ValueError as exc:
+                warn(self, str(exc))
+                return
             self.refresh()
 
     def _delete(self) -> None:
@@ -199,5 +215,9 @@ class UsersPage(QWidget):
             warn(self, "Vous ne pouvez pas supprimer votre propre compte.")
             return
         if confirm(self, "Supprimer cet utilisateur ?"):
-            AuthService.delete_user(user_id)
+            try:
+                AuthService.delete_user(user_id)
+            except ValueError as exc:
+                warn(self, str(exc))
+                return
             self.refresh()

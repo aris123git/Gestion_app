@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -19,6 +20,63 @@ from PySide6.QtWidgets import (
 from app.services.auth_service import AuthService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import activate_and_center
+
+
+class ChangePasswordDialog(QDialog):
+    """Changement obligatoire du mot de passe admin par défaut."""
+
+    def __init__(self, user, parent=None):
+        super().__init__(parent)
+        self.user = user
+        self.setWindowTitle("Changer le mot de passe")
+        self.setModal(True)
+        self.setFixedWidth(420)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(12)
+
+        message = QLabel(
+            "Le compte admin utilise encore le mot de passe par défaut. "
+            "Choisissez un nouveau mot de passe pour continuer."
+        )
+        message.setWordWrap(True)
+        layout.addWidget(message)
+
+        form = QFormLayout()
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.setPlaceholderText("Minimum 6 caractères")
+        self.confirm = QLineEdit()
+        self.confirm.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Nouveau mot de passe", self.password)
+        form.addRow("Confirmation", self.confirm)
+        layout.addLayout(form)
+
+        buttons = QHBoxLayout()
+        cancel = QPushButton("Annuler")
+        cancel.clicked.connect(self.reject)
+        save = QPushButton("Enregistrer")
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save)
+        buttons.addWidget(cancel)
+        buttons.addStretch()
+        buttons.addWidget(save)
+        layout.addLayout(buttons)
+
+    def _save(self) -> None:
+        password = self.password.text()
+        if password != self.confirm.text():
+            QMessageBox.warning(
+                self, "Mot de passe", "Les deux mots de passe ne correspondent pas."
+            )
+            return
+        try:
+            AuthService.update_user(self.user.id, password=password)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Mot de passe", str(exc))
+            return
+        self.accept()
 
 
 class LoginDialog(QDialog):
@@ -51,7 +109,6 @@ class LoginDialog(QDialog):
         # Sélection de l'utilisateur dans une liste déroulante (clic + choix).
         self.user_combo = QComboBox()
         self.user_combo.setMinimumHeight(38)
-        self._load_users()
 
         # Mot de passe avec possibilité d'afficher / masquer le code.
         self.password = QLineEdit()
@@ -66,7 +123,7 @@ class LoginDialog(QDialog):
         self.login_button.setObjectName("Primary")
         self.login_button.clicked.connect(self._attempt_login)
 
-        # Lien de récupération de mot de passe (via le code d'activation maître).
+        # Lien de récupération de mot de passe avec autorisation administrateur.
         self.forgot_button = QPushButton("Mot de passe oublié ?")
         self.forgot_button.setFlat(True)
         self.forgot_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -78,6 +135,7 @@ class LoginDialog(QDialog):
         self.hint = QLabel("Astuce : compte par défaut admin / admin")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hint.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        self._load_users()
 
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -108,6 +166,7 @@ class LoginDialog(QDialog):
             self.user_combo.addItem(display, user.username)
         if self.user_combo.count() == 0:
             self.user_combo.addItem("admin", "admin")
+        self.hint.setVisible(AuthService.default_admin_uses_default_password())
 
     def _selected_username(self) -> str:
         """Retourne l'identifiant sélectionné (data) ou le texte saisi."""
@@ -142,8 +201,24 @@ class LoginDialog(QDialog):
         if not username or not password:
             QMessageBox.warning(self, "Connexion", "Veuillez remplir tous les champs.")
             return
-        user = self.state.auth.login(username, password)
+        try:
+            user = self.state.auth.login(username, password)
+        except ValueError as exc:
+            QMessageBox.critical(self, "Connexion", str(exc))
+            self.password.clear()
+            self.password.setFocus()
+            return
         if user:
+            if (
+                user.username.lower() == "admin"
+                and AuthService.default_admin_uses_default_password()
+            ):
+                dialog = ChangePasswordDialog(user, self)
+                if not dialog.exec():
+                    self.state.auth.logout()
+                    self.password.clear()
+                    self.password.setFocus()
+                    return
             self.accept()
         else:
             QMessageBox.critical(

@@ -73,6 +73,9 @@ class ExpensesPage(QWidget):
         layout.addLayout(actions)
 
     def _add(self) -> None:
+        if not self.state.can(perms.MANAGE_EXPENSES):
+            warn(self, "Vous n'avez pas l'autorisation d'ajouter une dépense.")
+            return
         if self.amount.value() <= 0:
             warn(self, "Le montant doit être supérieur à zéro.")
             return

@@ -166,6 +166,11 @@ class POSPage(QWidget):
         self.discount_input.setDecimals(0)
         self.discount_input.setSingleStep(100)
         self.discount_input.valueChanged.connect(self._update_total)
+        if not self.state.can(perms.APPLY_DISCOUNT):
+            self.discount_input.setEnabled(False)
+            self.discount_input.setToolTip(
+                "Les remises sont réservées au gestionnaire."
+            )
         discount_row.addWidget(self.discount_input)
         discount_row.addStretch()
         layout.addLayout(discount_row)
@@ -322,10 +327,12 @@ class POSPage(QWidget):
 
     def _add_product(self, product) -> None:
         available = self._available_stock(product.id)
-        if available <= 0:
+        requested = 1.0
+        if available + 0.0001 < requested:
             warn(
                 self,
-                f"Stock insuffisant : « {product.name} » est en rupture de stock.",
+                f"Stock insuffisant pour « {product.name} » : "
+                f"disponible {format_quantity(available)}, demandé {format_quantity(requested)}.",
                 "Stock insuffisant",
             )
             return
@@ -452,9 +459,12 @@ class POSPage(QWidget):
         self.total_label.setText(f"Total : {format_money(self._cart_total(), currency)}")
 
     def _clear_cart(self) -> None:
+        pending_id = self._pending_sale_id
+        self._pending_sale_id = None
+        if pending_id:
+            SaleController.delete_pending(pending_id, user_id=self.state.user_id)
         self.cart.clear()
         self.discount_input.setValue(0)
-        self._pending_sale_id = None
         self.client_combo.blockSignals(True)
         self.client_combo.setCurrentIndex(0)
         self.client_combo.blockSignals(False)
@@ -464,6 +474,9 @@ class POSPage(QWidget):
     def _hold_sale(self) -> None:
         if not self.cart:
             warn(self, "Le panier est vide.")
+            return
+        if self.discount_input.value() > 0 and not self.state.can(perms.APPLY_DISCOUNT):
+            warn(self, "Vous n'avez pas l'autorisation d'appliquer une remise.")
             return
         try:
             sale = SaleController.hold_sale(
@@ -494,10 +507,16 @@ class POSPage(QWidget):
         if not ok:
             return
         sale = pending[labels.index(choice)]
-        lines, discount, client_id = SaleController.pending_to_cart(sale.id)
+        try:
+            lines, discount, client_id = SaleController.claim_pending(
+                sale.id, user_id=self.state.user_id
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
         self.cart = lines
         self.discount_input.setValue(discount)
-        self._pending_sale_id = sale.id
+        self._pending_sale_id = None
         if client_id is not None:
             idx = self.client_combo.findData(client_id)
             if idx >= 0:
@@ -516,6 +535,7 @@ class POSPage(QWidget):
             total,
             client_id=client_id,
             client_phone=phone,
+            allow_credit=self.state.can(perms.SELL_ON_CREDIT),
             parent=self,
         )
         if not dialog.exec():
@@ -528,6 +548,18 @@ class POSPage(QWidget):
             if idx >= 0:
                 self.client_combo.setCurrentIndex(idx)
         try:
+            credit_requested = dialog.use_credit or any(
+                p.method == config.PAYMENT_METHOD_CREDIT
+                for p in dialog.result_payments
+            )
+            if credit_requested and not self.state.can(perms.SELL_ON_CREDIT):
+                warn(self, "Vous n'avez pas l'autorisation de vendre à crédit.")
+                return
+            if self.discount_input.value() > 0 and not self.state.can(
+                perms.APPLY_DISCOUNT
+            ):
+                warn(self, "Vous n'avez pas l'autorisation d'appliquer une remise.")
+                return
             result = SaleController.create_sale(
                 lines=list(self.cart),
                 payments=dialog.result_payments,
@@ -535,11 +567,7 @@ class POSPage(QWidget):
                 discount=self.discount_input.value(),
                 client_id=client_id,
                 user_id=self.state.user_id,
-                allow_credit=dialog.use_credit
-                or any(
-                    p.method == config.PAYMENT_METHOD_CREDIT
-                    for p in dialog.result_payments
-                ),
+                allow_credit=credit_requested,
             )
         except InsufficientPaymentError as exc:
             warn(self, str(exc), "Paiement insuffisant")

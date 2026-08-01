@@ -48,7 +48,7 @@ class AppController:
             return True
         return False
 
-    def run_first_start_if_needed(self) -> None:
+    def run_first_start_if_needed(self) -> bool:
         from app.services import settings_service
 
         if not settings_service.is_configured():
@@ -59,6 +59,8 @@ class AppController:
             # gestionnaires de fenêtres).
             wizard.deleteLater()
             self.app.processEvents()
+            return settings_service.is_configured()
+        return True
 
     def show_login(self) -> bool:
         """Affiche la connexion. Retourne True si l'utilisateur s'est connecté."""
@@ -103,7 +105,8 @@ def run() -> int:
     if not _controller.ensure_activated():
         return 0
 
-    _controller.run_first_start_if_needed()
+    if not _controller.run_first_start_if_needed():
+        return 0
 
     if not _controller.show_login():
         return 0

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -19,16 +19,26 @@ from PySide6.QtWidgets import (
 from app.controllers.client_controller import ClientController
 from app.services import permissions as perms, settings_service
 from app.services.debt_service import DebtService
+from app.services.loyalty_service import LoyaltyService
 from app.ui.dialogs.contact_dialog import ContactDialog
 from app.ui.dialogs.debt_history_dialog import DebtHistoryDialog
 from app.ui.dialogs.debt_payment_dialog import DebtPaymentDialog
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
-from app.utils.helpers import format_money
+from app.utils.helpers import format_money, format_quantity
 
 
 class ClientsPage(QWidget):
-    HEADERS = ["Nom", "Téléphone", "Adresse", "Dette", "Dettes actives"]
+    HEADERS = [
+        "Nom",
+        "Téléphone",
+        "Adresse",
+        "Dette",
+        "Dettes actives",
+        "Points",
+        "Dernière visite",
+        "Achats",
+    ]
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -51,7 +61,11 @@ class ClientsPage(QWidget):
         filters = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText("Rechercher (nom, téléphone, note de dette)…")
-        self.search.textChanged.connect(self.refresh)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self.refresh)
+        self.search.textChanged.connect(lambda _text="": self._search_timer.start())
         self.debt_filter = QComboBox()
         self.debt_filter.addItem("Tous les clients", "all")
         self.debt_filter.addItem("Avec dette", "with_debt")
@@ -76,6 +90,7 @@ class ClientsPage(QWidget):
         for label, handler, obj in [
             ("Modifier", self._edit, ""),
             ("Régler dette", self._settle, "Success"),
+            ("Échanger points", self._redeem_points, "Primary"),
             ("Historique dettes", self._history, "Primary"),
             ("Supprimer", self._delete, "Danger"),
         ]:
@@ -133,6 +148,13 @@ class ClientsPage(QWidget):
             self.table.setItem(
                 row, 4, QTableWidgetItem(str(summary["active_count"]))
             )
+            self.table.setItem(
+                row,
+                5,
+                QTableWidgetItem(format_quantity(LoyaltyService.get_balance(client.id))),
+            )
+            self.table.setItem(row, 6, QTableWidgetItem(client.last_visit or ""))
+            self.table.setItem(row, 7, QTableWidgetItem(str(client.purchase_count or 0)))
 
     def _selected_id(self):
         row = self.table.currentRow()
@@ -140,8 +162,25 @@ class ClientsPage(QWidget):
             return None
         return self._ids[row]
 
+    def select_client(self, client_id: int) -> None:
+        if client_id not in self._ids:
+            self.search.blockSignals(True)
+            self.search.clear()
+            self.search.blockSignals(False)
+            self.debt_filter.setCurrentIndex(0)
+            self.refresh()
+        if client_id in self._ids:
+            row = self._ids.index(client_id)
+            self.table.selectRow(row)
+            item = self.table.item(row, 0)
+            if item:
+                self.table.scrollToItem(item)
+
     def _add(self) -> None:
-        dialog = ContactDialog("Nouveau client", with_debt=True, parent=self)
+        can_manage_debts = self.state.can(perms.MANAGE_CLIENT_DEBTS)
+        dialog = ContactDialog(
+            "Nouveau client", with_debt=can_manage_debts, parent=self
+        )
         if dialog.exec() and dialog.data:
             ClientController.create(
                 dialog.data,
@@ -157,8 +196,9 @@ class ClientsPage(QWidget):
             warn(self, "Sélectionnez un client.")
             return
         client = ClientController.get(client_id)
+        can_manage_debts = self.state.can(perms.MANAGE_CLIENT_DEBTS)
         dialog = ContactDialog(
-            "Modifier le client", client, with_debt=True, parent=self
+            "Modifier le client", client, with_debt=can_manage_debts, parent=self
         )
         if dialog.exec() and dialog.data:
             ClientController.update(client_id, dialog.data)
@@ -166,6 +206,9 @@ class ClientsPage(QWidget):
             self.state.notify_data_changed()
 
     def _settle(self) -> None:
+        if not self.state.can(perms.MANAGE_CLIENT_DEBTS):
+            warn(self, "Vous n'avez pas l'autorisation de gérer les dettes client.")
+            return
         client_id = self._selected_id()
         if not client_id:
             warn(self, "Sélectionnez un client.")
@@ -198,6 +241,44 @@ class ClientsPage(QWidget):
         self.state.notify_data_changed()
         info(self, "Remboursement enregistré.")
 
+    def _redeem_points(self) -> None:
+        client_id = self._selected_id()
+        if not client_id:
+            warn(self, "Sélectionnez un client.")
+            return
+        client = ClientController.get(client_id)
+        if not client:
+            return
+        balance = LoyaltyService.get_balance(client_id)
+        if balance <= 0:
+            warn(self, "Ce client n'a aucun point de fidélité.")
+            return
+        from PySide6.QtWidgets import QInputDialog
+
+        points, ok = QInputDialog.getDouble(
+            self,
+            "Échanger des points",
+            f"Points disponibles : {balance:g}\nNombre à échanger :",
+            min(balance, 100.0),
+            0.01,
+            balance,
+            2,
+        )
+        if not ok or points <= 0:
+            return
+        try:
+            remaining = LoyaltyService.redeem(
+                client_id,
+                points,
+                user_id=self.state.user_id,
+                username=getattr(self.state.current_user, "username", ""),
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        self.refresh()
+        info(self, f"Échange enregistré. Solde restant : {remaining:g} pts.")
+
     def _history(self) -> None:
         client_id = self._selected_id()
         if not client_id:
@@ -213,7 +294,7 @@ class ClientsPage(QWidget):
         if not client_id:
             warn(self, "Sélectionnez un client.")
             return
-        if not (self.state.is_admin or self.state.can(perms.MANAGE_PRODUCTS)):
+        if not self.state.can(perms.MANAGE_CLIENTS):
             warn(self, "Vous n'avez pas l'autorisation de supprimer un client.")
             return
         if DebtService.list_debts(client_id=client_id, limit=1):
