@@ -131,10 +131,10 @@ class AssistantService:
     @staticmethod
     def _sales_trend() -> List[Recommendation]:
         today = date.today()
-        this_week = DashboardService._period_revenue(
+        this_week = DashboardService._period_cash_revenue(
             today - timedelta(days=6), today
         )
-        prev_week = DashboardService._period_revenue(
+        prev_week = DashboardService._period_cash_revenue(
             today - timedelta(days=13), today - timedelta(days=7)
         )
         if prev_week > 0 and this_week < prev_week * 0.8:

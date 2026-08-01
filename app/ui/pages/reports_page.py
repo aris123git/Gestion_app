@@ -107,6 +107,9 @@ class ReportsPage(QWidget):
         # Annulation : admin direct, gestionnaire avec autorisation admin.
         history_actions = QHBoxLayout()
         history_actions.addStretch()
+        self.reprint_button = QPushButton("Réimprimer le ticket")
+        self.reprint_button.clicked.connect(self._reprint_selected_sale)
+        history_actions.addWidget(self.reprint_button)
         self.cancel_sale_button = QPushButton("Annuler la vente sélectionnée")
         self.cancel_sale_button.setObjectName("Danger")
         self.cancel_sale_button.clicked.connect(self._cancel_selected_sale)
@@ -192,6 +195,20 @@ class ReportsPage(QWidget):
             if sale.status == "cancelled":
                 total_item.setText(format_money(sale.total, currency) + " (annulée)")
             self.history_table.setItem(row, 4, total_item)
+
+    def _reprint_selected_sale(self) -> None:
+        """Réimprime (aperçu + impression) le ticket de la vente sélectionnée."""
+        row = self.history_table.currentRow()
+        if row < 0 or row >= len(self._sale_ids):
+            warn(self, "Sélectionnez une vente dans l'historique.")
+            return
+        sale = SaleController.get(self._sale_ids[row])
+        if not sale:
+            warn(self, "Vente introuvable.")
+            return
+        from app.ui.dialogs.ticket_dialog import TicketDialog
+
+        TicketDialog(sale, self).exec()
 
     def _cancel_selected_sale(self) -> None:
         """Annule la vente sélectionnée et remet en stock.

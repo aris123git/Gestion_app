@@ -109,8 +109,20 @@ class ProductController:
             return product
 
     @staticmethod
+    def _validate_prices(data: dict) -> None:
+        """Refuse tout prix négatif (achat / vente / minimum)."""
+        for key, label in (
+            ("purchase_price", "Le prix d'achat"),
+            ("sale_price", "Le prix de vente"),
+            ("min_price", "Le prix minimum"),
+        ):
+            if key in data and to_float(data.get(key)) < 0:
+                raise ValueError(f"{label} ne peut pas être négatif.")
+
+    @staticmethod
     def create(data: dict, user_id: Optional[int] = None) -> Product:
         barcode = ProductController._clean_barcode(data.get("barcode"))
+        ProductController._validate_prices(data)
         quantity = to_float(data.get("quantity"))
         if quantity < 0:
             raise ValueError("La quantité en stock ne peut pas être négative.")
@@ -152,6 +164,7 @@ class ProductController:
         from app.services.price_history_service import PriceHistoryService
 
         new_price = to_float(data.get("sale_price"))
+        ProductController._validate_prices(data)
         price_changed = False
         with session_scope() as session:
             product = session.get(Product, product_id)
