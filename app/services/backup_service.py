@@ -44,6 +44,7 @@ _DATA_FOLDERS = {
 
 _DB_ARCNAME = "gestion.db"
 _MANIFEST_ARCNAME = "manifest.json"
+_ACTIVATION_ARCNAME = "activation.dat"
 _BACKUP_PREFIX = "Sauvegarde"
 _SAFETY_PREFIX = "Securite_avant_restauration"
 
@@ -166,6 +167,11 @@ def create_full_backup(
                 archive.write(db_snapshot, _DB_ARCNAME)
                 for arc_root, folder in _DATA_FOLDERS.items():
                     _add_folder_to_zip(archive, arc_root, folder)
+                # Inclut le fichier d'activation pour une restauration cohérente
+                # sur le même poste (ignoré si restauré sur une autre machine).
+                activation_file = config.DATA_DIR / _ACTIVATION_ARCNAME
+                if activation_file.exists():
+                    archive.write(activation_file, _ACTIVATION_ARCNAME)
                 archive.writestr(_MANIFEST_ARCNAME, json.dumps(manifest, indent=2))
     except (OSError, sqlite3.Error, zipfile.BadZipFile) as exc:
         if zip_path.exists():
@@ -276,6 +282,13 @@ def restore_backup(zip_path: str | Path, safety_backup: bool = True) -> Optional
                         shutil.rmtree(folder)
                     shutil.copytree(extracted_folder, folder)
                     folder.mkdir(parents=True, exist_ok=True)
+
+            # 3) Fichier d'activation (si présent dans la sauvegarde).
+            extracted_activation = tmp_dir / _ACTIVATION_ARCNAME
+            if extracted_activation.exists():
+                shutil.copy2(
+                    extracted_activation, config.DATA_DIR / _ACTIVATION_ARCNAME
+                )
     except (OSError, zipfile.BadZipFile) as exc:
         raise BackupError(f"Échec de la restauration : {exc}") from exc
 

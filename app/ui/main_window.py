@@ -82,6 +82,11 @@ class MainWindow(QWidget):
         self._idle_timer.setInterval(60_000)
         self._idle_timer.timeout.connect(self._check_idle_timeout)
         self._idle_timer.start()
+        # Sauvegarde automatique périodique (vérifie l'échéance sans bloquer).
+        self._backup_timer = QTimer(self)
+        self._backup_timer.setInterval(30 * 60_000)  # toutes les 30 minutes
+        self._backup_timer.timeout.connect(self._run_periodic_backup)
+        self._backup_timer.start()
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
@@ -91,6 +96,15 @@ class MainWindow(QWidget):
         if permission is None:
             return True
         return self.state.can(permission)
+
+    def _run_periodic_backup(self) -> None:
+        """Déclenche une sauvegarde automatique si la fréquence est échue."""
+        try:
+            from app.services import backup_service
+
+            backup_service.run_startup_auto_backup()
+        except Exception:
+            pass  # Une sauvegarde en tâche de fond ne doit jamais gêner l'utilisateur.
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()

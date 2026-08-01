@@ -402,10 +402,15 @@ class SettingsPage(QWidget):
         info(
             self,
             "Restauration effectuée avec succès.\n\n"
-            "Veuillez redémarrer l'application pour appliquer les changements.",
+            "L'application va se fermer. Veuillez la relancer pour utiliser "
+            "les données restaurées.",
             "Restauration terminée",
         )
-        self._reload_backups()
+        # Fermeture forcée : évite tout état incohérent en mémoire après le
+        # remplacement de la base de données.
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.quit()
 
     def _restore_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
