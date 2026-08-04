@@ -52,10 +52,10 @@ def export_report_excel(
     summary.title = "Synthèse"
     summary.append(["Indicateur", f"Valeur ({currency})"])
     summary.append(["Période", f"{report['start']:%d/%m/%Y} - {report['end']:%d/%m/%Y}"])
-    summary.append(["CA encaissé", report["cash_revenue"]])
+    summary.append(["CA encaissé (ventes + règlements)", report["cash_revenue"]])
+    summary.append(["dont règlements dettes clients", report["debt_repayments"]])
     summary.append(["Total ventes TTC", report["total_sales"]])
     summary.append(["Nombre de ventes", report["sales_count"]])
-    summary.append(["Remboursements clients", report["debt_repayments"]])
     summary.append(["Paiements dettes fournisseurs", report["supplier_debt_payments"]])
     summary.append(["Trésorerie période", report["treasury"]])
     if include_profits:

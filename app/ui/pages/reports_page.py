@@ -83,12 +83,20 @@ class ReportsPage(QWidget):
         self.summary_grid = QGridLayout()
         self.summary_grid.setSpacing(12)
         self.lbl_revenue = self._metric("CA encaissé")
+        self.lbl_debt_pay = self._metric("Règlements dettes")
         self.lbl_sales = self._metric("Nombre de ventes")
         self.lbl_profit = self._metric("Bénéfice brut")
         self.lbl_expenses = self._metric("Dépenses")
         self.lbl_net = self._metric("Bénéfice net")
         for i, widget in enumerate(
-            [self.lbl_revenue, self.lbl_sales, self.lbl_profit, self.lbl_expenses, self.lbl_net]
+            [
+                self.lbl_revenue,
+                self.lbl_debt_pay,
+                self.lbl_sales,
+                self.lbl_profit,
+                self.lbl_expenses,
+                self.lbl_net,
+            ]
         ):
             self.summary_grid.addWidget(widget["card"], 0, i)
         layout.addLayout(self.summary_grid)
@@ -181,6 +189,9 @@ class ReportsPage(QWidget):
         self.lbl_revenue["value"].setText(
             format_money(self._report["cash_revenue"], currency)
         )
+        self.lbl_debt_pay["value"].setText(
+            format_money(self._report.get("debt_repayments", 0), currency)
+        )
         self.lbl_sales["value"].setText(str(self._report["sales_count"]))
         if self.state.can(perms.VIEW_PROFITS):
             self.lbl_profit["value"].setText(format_money(self._report["profit"], currency))
@@ -222,9 +233,9 @@ class ReportsPage(QWidget):
             f"Date : {day:%d/%m/%Y}",
             f"Généré le : {datetime.now():%d/%m/%Y %H:%M}",
             "",
-            f"CA encaissé : {format_money(report['cash_revenue'], currency)}",
-            f"Crédit client : {format_money(report['credit_sales'], currency)}",
-            f"Remboursements clients : {format_money(report['debt_repayments'], currency)}",
+            f"CA encaissé (ventes + règlements) : {format_money(report['cash_revenue'], currency)}",
+            f"dont règlements dettes : {format_money(report['debt_repayments'], currency)}",
+            f"Crédit client (non encaissé) : {format_money(report['credit_sales'], currency)}",
             f"Dépenses : {format_money(report['expenses'], currency)}",
             f"Règlements fournisseurs : {format_money(report['supplier_debt_payments'], currency)}",
             f"Trésorerie : {format_money(report['treasury'], currency)}",

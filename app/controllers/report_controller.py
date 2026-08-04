@@ -55,7 +55,7 @@ class ReportController:
                 )
                 or 0
             )
-            cash_revenue = float(
+            sales_cash = float(
                 session.scalar(
                     select(func.coalesce(func.sum(Payment.amount), 0))
                     .join(Sale, Sale.id == Payment.sale_id)
@@ -139,7 +139,7 @@ class ReportController:
                 .limit(10)
             ).all()
 
-            by_method = session.execute(
+            by_method_rows = session.execute(
                 select(Payment.method, func.sum(Payment.amount))
                 .join(Sale, Sale.id == Payment.sale_id)
                 .where(
@@ -150,12 +150,32 @@ class ReportController:
                 )
                 .group_by(Payment.method)
             ).all()
+            # Les règlements de dettes clients comptent aussi dans le CA encaissé.
+            debt_by_method = session.execute(
+                select(DebtPayment.payment_method, func.sum(DebtPayment.amount)).where(
+                    DebtPayment.payment_date >= lo,
+                    DebtPayment.payment_date <= hi,
+                ).group_by(DebtPayment.payment_method)
+            ).all()
 
             by_expense_cat = session.execute(
                 select(Expense.category, func.sum(Expense.amount))
                 .where(Expense.date >= lo, Expense.date <= hi)
                 .group_by(Expense.category)
             ).all()
+
+        method_totals: dict[str, float] = {}
+        for method, amount in by_method_rows:
+            method_totals[str(method)] = method_totals.get(str(method), 0.0) + float(
+                amount or 0
+            )
+        for method, amount in debt_by_method:
+            key = str(method or "Espèces")
+            method_totals[key] = method_totals.get(key, 0.0) + float(amount or 0)
+        by_method = sorted(method_totals.items(), key=lambda item: item[0])
+
+        # CA encaissé = paiements de ventes (hors Dette) + règlements de dettes.
+        cash_revenue = round(sales_cash + debt_repayments, 2)
 
         vat_rate = settings_service.get_vat_rate()
         vat_included = (
@@ -164,7 +184,7 @@ class ReportController:
             else 0.0
         )
         treasury = round(
-            cash_revenue + debt_repayments - expenses - supplier_debt_payments,
+            cash_revenue - expenses - supplier_debt_payments,
             2,
         )
         return {
@@ -172,6 +192,7 @@ class ReportController:
             "end": end,
             "revenue": cash_revenue,
             "cash_revenue": cash_revenue,
+            "sales_cash": sales_cash,
             "total_sales": total_sales,
             "credit_sales": credit_sales,
             "debt_repayments": debt_repayments,

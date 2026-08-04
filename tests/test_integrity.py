@@ -158,6 +158,28 @@ class IntegrityTestCase(unittest.TestCase):
         self.assertNotIn(config.PAYMENT_METHOD_CREDIT, payment_methods)
         self.assertGreaterEqual(report["credit_sales"], 200)
 
+    def test_debt_settlement_counts_in_cash_revenue(self) -> None:
+        """Le règlement d'une dette alimente le CA encaissé du rapport."""
+        client = self._create_client()
+        product = self._create_product(sale_price=1000)
+        SaleController.create_sale(
+            [CartLine(product.id, product.name, 1000, 1)],
+            [PaymentLine(config.PAYMENT_METHOD_CREDIT, 1000)],
+            client_id=client.id,
+            allow_credit=True,
+        )
+        before = ReportController.build(date.today(), date.today())
+        ClientController.settle_debt(
+            client.id, 1000, payment_method="Espèces"
+        )
+        after = ReportController.build(date.today(), date.today())
+        self.assertGreaterEqual(
+            after["debt_repayments"] - before["debt_repayments"], 1000
+        )
+        self.assertGreaterEqual(
+            after["cash_revenue"] - before["cash_revenue"], 1000
+        )
+
     def test_cancel_sale_with_debt_payment_is_blocked(self) -> None:
         client = self._create_client()
         product = self._create_product(sale_price=300)

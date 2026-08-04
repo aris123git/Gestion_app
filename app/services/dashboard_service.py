@@ -111,7 +111,7 @@ class DashboardService:
         month_start = today.replace(day=1)
         year_start = today.replace(month=1, day=1)
         with session_scope() as session:
-            cash_revenue = cls._cash_revenue(session, today, today)
+            sales_cash = cls._cash_revenue(session, today, today)
             total_sales = cls._sales_total(session, today, today)
             profit_gross = cls._profit(session, today, today)
             expenses = cls._expenses(session, today, today)
@@ -126,17 +126,32 @@ class DashboardService:
                 or 0
             )
         supplier_debts = SupplierDebtService.total_remaining()
+        # CA encaissé = ventes cash + règlements dettes clients.
+        cash_revenue = round(sales_cash + debt_repayments, 2)
         treasury = round(
-            cash_revenue + debt_repayments - expenses - supplier_debt_payments,
+            cash_revenue - expenses - supplier_debt_payments,
             2,
         )
         return {
             "revenue_today": cash_revenue,
             "cash_revenue_today": cash_revenue,
+            "sales_cash_today": sales_cash,
             "total_sales_today": total_sales,
-            "revenue_week": cls._period_cash_revenue(week_start, today),
-            "revenue_month": cls._period_cash_revenue(month_start, today),
-            "revenue_year": cls._period_cash_revenue(year_start, today),
+            "revenue_week": round(
+                cls._period_cash_revenue(week_start, today)
+                + cls._period_debt_repayments(week_start, today),
+                2,
+            ),
+            "revenue_month": round(
+                cls._period_cash_revenue(month_start, today)
+                + cls._period_debt_repayments(month_start, today),
+                2,
+            ),
+            "revenue_year": round(
+                cls._period_cash_revenue(year_start, today)
+                + cls._period_debt_repayments(year_start, today),
+                2,
+            ),
             "profit_gross_today": profit_gross,
             "profit_net_today": round(profit_gross - expenses, 2),
             "expenses_today": expenses,
@@ -151,6 +166,11 @@ class DashboardService:
     def _period_cash_revenue(cls, start: date, end: date) -> float:
         with session_scope() as session:
             return cls._cash_revenue(session, start, end)
+
+    @classmethod
+    def _period_debt_repayments(cls, start: date, end: date) -> float:
+        with session_scope() as session:
+            return cls._client_debt_payments(session, start, end)
 
     @staticmethod
     def best_client(start: date, end: date) -> Optional[Tuple[str, float]]:

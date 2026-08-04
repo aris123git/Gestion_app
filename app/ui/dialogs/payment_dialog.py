@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -25,6 +24,7 @@ from app import config
 from app.controllers.client_controller import ClientController
 from app.controllers.sale_controller import PaymentLine
 from app.services import settings_service
+from app.ui.widgets.client_search import ClientSearchField
 from app.utils.helpers import format_money
 
 
@@ -75,29 +75,29 @@ class PaymentDialog(QDialog):
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header)
 
-        # --- Client / téléphone (requis pour Dette et facture nominative) ---
+        # --- Client (nom / téléphone) : suggestions progressives ----------------
         client_card = QFrame()
         client_card.setObjectName("Card")
         client_form = QFormLayout(client_card)
         client_form.setContentsMargins(16, 16, 16, 16)
         client_form.setSpacing(10)
 
-        phone_row = QHBoxLayout()
-        self.phone_input = QLineEdit()
-        self.phone_input.setPlaceholderText("Numéro de téléphone du client")
-        self.phone_input.setText(str(client_phone or "").strip())
-        self.phone_input.returnPressed.connect(self._resolve_client_from_phone)
-        self.phone_input.textChanged.connect(self._on_phone_edited)
-        phone_row.addWidget(self.phone_input, 1)
-        find_btn = QPushButton("Rechercher")
-        find_btn.clicked.connect(self._resolve_client_from_phone)
-        phone_row.addWidget(find_btn)
-        client_form.addRow("Téléphone", phone_row)
+        self.client_search = ClientSearchField(
+            placeholder="Tapez un nom ou un téléphone…",
+        )
+        self.client_search.client_selected.connect(self._on_client_picked)
+        client_form.addRow("Client", self.client_search)
 
         self.client_status = QLabel()
         self.client_status.setWordWrap(True)
-        client_form.addRow("Client", self.client_status)
+        client_form.addRow("", self.client_status)
         layout.addWidget(client_card)
+
+        if client_id:
+            self.client_search.set_client(client_id)
+        elif client_phone:
+            self.client_search.input.setText(str(client_phone).strip())
+            self.client_search._refresh_suggestions()
 
         hint = QLabel("Saisissez un ou plusieurs modes de paiement (paiement mixte).")
         hint.setStyleSheet("color: #64748b;")
@@ -194,26 +194,26 @@ class PaymentDialog(QDialog):
         return spin
 
     # --- Client / téléphone ------------------------------------------------
-    def _on_phone_edited(self, _text: str = "") -> None:
-        # Si l'utilisateur modifie le téléphone, on invalide la résolution
-        # sauf si elle correspond encore.
-        phone = self.phone_input.text().strip()
-        if self.result_client_id:
-            client = ClientController.get(self.result_client_id)
-            phones = {
-                (client.phone or "").strip(),
-                (client.phone2 or "").strip(),
-            } if client else set()
-            if phone and phone not in phones and not any(
-                phone in p for p in phones if p
-            ):
-                # Conservé tant qu'on n'a pas re-recherché ; le statut reste.
-                pass
+    def _on_client_picked(self, client_id) -> None:
+        if client_id:
+            client = ClientController.get(int(client_id))
+            self.result_client_id = int(client_id)
+            self._resolved_client_name = client.name if client else ""
+        else:
+            self.result_client_id = None
+            self._resolved_client_name = ""
         self._refresh_client_status()
         self._recalculate()
 
-    def _resolve_client_from_phone(self) -> None:
-        phone = self.phone_input.text().strip()
+    def _typed_phone(self) -> str:
+        text = self.client_search.text()
+        return "".join(ch for ch in text if ch.isdigit() or ch == "+")
+
+    def _resolve_client_from_typed(self) -> None:
+        if self.client_search.client_id:
+            self._on_client_picked(self.client_search.client_id)
+            return
+        phone = self._typed_phone()
         if not phone:
             self.result_client_id = None
             self._resolved_client_name = ""
@@ -224,6 +224,7 @@ class PaymentDialog(QDialog):
         if client:
             self.result_client_id = client.id
             self._resolved_client_name = client.name
+            self.client_search.set_client(client.id)
         else:
             client = self._confirm_create_client(phone)
             if client:
@@ -236,7 +237,7 @@ class PaymentDialog(QDialog):
         answer = QMessageBox.question(
             self,
             "Nouveau client",
-            f"Aucun client trouvé pour le numéro {phone}.\n\nCréer une fiche client ?",
+            f"Aucun client trouvé pour « {phone} ».\n\nCréer une fiche client ?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -251,15 +252,24 @@ class PaymentDialog(QDialog):
         )
         if not ok:
             return None
-        return ClientController.find_or_create_by_phone(
+        client = ClientController.find_or_create_by_phone(
             phone, name=(name or default_name).strip()
         )
+        if client:
+            self.client_search.set_client(client.id)
+        return client
 
     def _ensure_client_for_credit(self) -> Optional[int]:
-        """Garantit un client_id si Dette > 0 (recherche / création via téléphone)."""
+        """Garantit un client_id si Dette > 0 (sélection ou création via téléphone)."""
         if self.result_client_id:
             return self.result_client_id
-        phone = self.phone_input.text().strip()
+        if self.client_search.client_id:
+            self.result_client_id = self.client_search.client_id
+            client = ClientController.get(self.result_client_id)
+            self._resolved_client_name = client.name if client else ""
+            self._refresh_client_status()
+            return self.result_client_id
+        phone = self._typed_phone()
         if not phone:
             return None
         client = ClientController.find_by_phone(phone)
@@ -268,6 +278,7 @@ class PaymentDialog(QDialog):
         if client:
             self.result_client_id = client.id
             self._resolved_client_name = client.name
+            self.client_search.set_client(client.id)
             self._refresh_client_status()
         return self.result_client_id
 
@@ -282,10 +293,9 @@ class PaymentDialog(QDialog):
             )
             return
         if self.result_client_id and self._resolved_client_name:
-            phone = self.phone_input.text().strip()
-            suffix = f" — {phone}" if phone else ""
             self.client_status.setText(
-                f"<span style='color:#16a34a;'>{self._resolved_client_name}{suffix}</span>"
+                f"<span style='color:#16a34a;'>Client sélectionné : "
+                f"{self._resolved_client_name}</span>"
             )
             self.credit_hint.setText(
                 "Choisissez « Dette » pour porter le montant sur le compte client."
@@ -293,21 +303,20 @@ class PaymentDialog(QDialog):
             self.quick_debt.setEnabled(True)
             self.credit_input.setEnabled(True)
         else:
-            phone = self.phone_input.text().strip()
-            if phone:
+            typed = self.client_search.text()
+            if typed:
                 self.client_status.setText(
-                    "<span style='color:#b45309;'>Appuyez sur Rechercher "
-                    "(le client sera créé s'il n'existe pas).</span>"
+                    "<span style='color:#b45309;'>Sélectionnez une suggestion "
+                    "ou validez pour créer le client (téléphone).</span>"
                 )
             else:
                 self.client_status.setText(
-                    "<span style='color:#64748b;'>Client de passage — "
-                    "saisissez un téléphone pour facturer ou mettre en dette.</span>"
+                    "<span style='color:#64748b;'>Tapez un nom ou un téléphone — "
+                    "les suggestions s'affichent au fur et à mesure.</span>"
                 )
             self.credit_hint.setText(
-                "Pour porter le montant en dette, indiquez le téléphone du client."
+                "Pour une dette, sélectionnez (ou créez) d'abord le client."
             )
-            # Dette saisissable même sans client : la validation créera / liera le client.
             self.quick_debt.setEnabled(True)
             self.credit_input.setEnabled(True)
 
@@ -334,9 +343,8 @@ class PaymentDialog(QDialog):
     def _pay_all_credit(self) -> None:
         if not self.allow_credit:
             return
-        phone = self.phone_input.text().strip()
-        if not self.result_client_id and phone:
-            self._resolve_client_from_phone()
+        if not self.result_client_id and self.client_search.text().strip():
+            self._resolve_client_from_typed()
         for method, spin in self.method_inputs.items():
             spin.blockSignals(True)
             spin.setValue(self.total if method == self.credit_method else 0)
@@ -369,9 +377,9 @@ class PaymentDialog(QDialog):
                 f"<span style='color:#f59e0b;'>Dette client : "
                 f"{format_money(credit, self.currency)}</span>"
             )
-            if not self.result_client_id and not self.phone_input.text().strip():
+            if not self.result_client_id and not self.client_search.text().strip():
                 parts.append(
-                    "<span style='color:#dc2626;'>Indiquez le téléphone du client "
+                    "<span style='color:#dc2626;'>Sélectionnez un client "
                     "pour valider une dette.</span>"
                 )
         if remaining > 0:
@@ -380,7 +388,7 @@ class PaymentDialog(QDialog):
                 f"({format_money(remaining, self.currency)} manquant)</span>"
             )
         elif credit > 0 and cash_paid <= 0 and (
-            self.result_client_id or self.phone_input.text().strip()
+            self.result_client_id or self.client_search.text().strip()
         ):
             parts.append(
                 "<span style='color:#f59e0b;'>Vente entièrement portée en dette</span>"
@@ -393,7 +401,7 @@ class PaymentDialog(QDialog):
         self.summary.setText("<br>".join(parts))
 
         credit_ok = credit <= 0 or bool(
-            self.result_client_id or self.phone_input.text().strip()
+            self.result_client_id or self.client_search.text().strip()
         )
         self.validate.setEnabled(covered >= self.total and credit_ok)
 
@@ -408,13 +416,13 @@ class PaymentDialog(QDialog):
             client_id = self._ensure_client_for_credit()
             if not client_id:
                 self.summary.setText(
-                    "<span style='color:#dc2626;'>Indiquez le téléphone du client "
+                    "<span style='color:#dc2626;'>Sélectionnez un client "
                     "pour valider une dette.</span>"
                 )
                 return
-        elif self.phone_input.text().strip() and not self.result_client_id:
+        elif self.client_search.text().strip() and not self.result_client_id:
             # Facture nominative même sans dette.
-            self._resolve_client_from_phone()
+            self._resolve_client_from_typed()
 
         self.result_payments = [
             PaymentLine(method=method, amount=spin.value())
