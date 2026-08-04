@@ -12,7 +12,7 @@ from sqlalchemy.orm import joinedload
 from app.database.connection import session_scope
 from app.models.product import Product
 from app.models.purchase import Purchase, PurchaseItem
-from app.models.stock import MOVEMENT_IN, StockMovement
+from app.models.stock import MOVEMENT_IN, MOVEMENT_OUT, StockMovement
 from app.services import audit_service
 from app.services.supplier_debt_service import SupplierDebtService
 from app.utils.helpers import to_float
@@ -149,6 +149,72 @@ class PurchaseService:
             if purchase:
                 session.expunge_all()
             return purchase
+
+    @classmethod
+    def cancel_purchase(
+        cls,
+        purchase_id: int,
+        *,
+        user_id: Optional[int] = None,
+        username: str = "",
+    ) -> None:
+        """Annule un achat, retire le stock reçu et annule la dette liée."""
+        cancelled_debts = 0
+        with session_scope() as session:
+            purchase = session.execute(
+                select(Purchase)
+                .options(joinedload(Purchase.items))
+                .where(Purchase.id == purchase_id)
+            ).unique().scalar_one_or_none()
+            if not purchase or purchase.status == "cancelled":
+                return
+
+            for item in purchase.items:
+                if not item.product_id:
+                    continue
+                product = session.get(Product, item.product_id)
+                if not product:
+                    continue
+                qty = to_float(item.quantity)
+                before = float(product.quantity)
+                if before + 0.0001 < qty:
+                    raise ValueError(
+                        f"Stock insuffisant pour annuler l'achat : « {product.name} » "
+                        f"dispose de {before:g}, reçu {qty:g}."
+                    )
+                after = before - qty
+                product.quantity = after
+                session.add(
+                    StockMovement(
+                        product_id=product.id,
+                        movement_type=MOVEMENT_OUT,
+                        quantity=qty,
+                        quantity_before=before,
+                        quantity_after=after,
+                        unit_cost=float(item.unit_cost or 0),
+                        reason=f"Annulation achat #{purchase.id}",
+                        invoice_number=purchase.invoice_number or "",
+                        supplier_id=purchase.supplier_id,
+                        user_id=user_id,
+                    )
+                )
+
+            cancelled_debts = SupplierDebtService.cancel_debts_for_purchase(
+                purchase.id,
+                user_id=user_id,
+                username=username,
+                session=session,
+            )
+            purchase.status = "cancelled"
+            purchase.note = ((purchase.note or "") + " | Annulé").strip(" |")
+
+        audit_service.log_action(
+            "Annulation achat",
+            "Purchase",
+            f"#{purchase_id} dettes_annulées={cancelled_debts}",
+            user_id,
+            username,
+        )
 
     @staticmethod
     def list(limit: int = 300) -> List[Purchase]:

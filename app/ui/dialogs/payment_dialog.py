@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QDateEdit,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
@@ -50,6 +54,7 @@ class PaymentDialog(QDialog):
         self.amount_received = 0.0
         self.change_due = 0.0
         self.use_credit = False
+        self.credit_due_date = None
         self.result_client_id: Optional[int] = client_id
         self._resolved_client_name = ""
         self.allow_credit = allow_credit
@@ -123,6 +128,15 @@ class PaymentDialog(QDialog):
         self.credit_hint.setWordWrap(True)
         self.credit_hint.setStyleSheet("color: #b45309; font-size: 12px;")
         form.addRow("", self.credit_hint)
+        self.credit_due_enabled = QCheckBox("Définir une échéance")
+        self.credit_due_date_edit = QDateEdit(QDate.currentDate())
+        self.credit_due_date_edit.setCalendarPopup(True)
+        self.credit_due_date_edit.setEnabled(False)
+        self.credit_due_enabled.toggled.connect(self.credit_due_date_edit.setEnabled)
+        due_row = QHBoxLayout()
+        due_row.addWidget(self.credit_due_enabled)
+        due_row.addWidget(self.credit_due_date_edit)
+        form.addRow("Échéance dette", due_row)
         layout.addWidget(methods_card)
 
         quick_row = QHBoxLayout()
@@ -137,6 +151,8 @@ class PaymentDialog(QDialog):
             self.credit_label.setVisible(False)
             self.credit_input.setVisible(False)
             self.credit_hint.setVisible(False)
+            self.credit_due_enabled.setVisible(False)
+            self.credit_due_date_edit.setVisible(False)
             self.quick_debt.setVisible(False)
         layout.addLayout(quick_row)
 
@@ -209,13 +225,35 @@ class PaymentDialog(QDialog):
             self.result_client_id = client.id
             self._resolved_client_name = client.name
         else:
-            # Création automatique pour pouvoir facturer / mettre en dette.
-            client = ClientController.find_or_create_by_phone(phone)
+            client = self._confirm_create_client(phone)
             if client:
                 self.result_client_id = client.id
                 self._resolved_client_name = client.name
         self._refresh_client_status()
         self._recalculate()
+
+    def _confirm_create_client(self, phone: str):
+        answer = QMessageBox.question(
+            self,
+            "Nouveau client",
+            f"Aucun client trouvé pour le numéro {phone}.\n\nCréer une fiche client ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return None
+        default_name = f"Client {phone}"
+        name, ok = QInputDialog.getText(
+            self,
+            "Nom du client",
+            "Nom du client :",
+            text=default_name,
+        )
+        if not ok:
+            return None
+        return ClientController.find_or_create_by_phone(
+            phone, name=(name or default_name).strip()
+        )
 
     def _ensure_client_for_credit(self) -> Optional[int]:
         """Garantit un client_id si Dette > 0 (recherche / création via téléphone)."""
@@ -224,7 +262,9 @@ class PaymentDialog(QDialog):
         phone = self.phone_input.text().strip()
         if not phone:
             return None
-        client = ClientController.find_or_create_by_phone(phone)
+        client = ClientController.find_by_phone(phone)
+        if not client:
+            client = self._confirm_create_client(phone)
         if client:
             self.result_client_id = client.id
             self._resolved_client_name = client.name
@@ -233,7 +273,7 @@ class PaymentDialog(QDialog):
 
     def _refresh_client_status(self) -> None:
         if not self.allow_credit:
-            self.credit_hint.setText("La vente à crédit est réservée au gestionnaire.")
+            self.credit_hint.setText("Vous n'avez pas l'autorisation de vendre à crédit.")
             self.quick_debt.setEnabled(False)
             self.credit_input.setValue(0)
             self.credit_input.setEnabled(False)
@@ -381,7 +421,12 @@ class PaymentDialog(QDialog):
             for method, spin in self.method_inputs.items()
             if spin.value() > 0
         ]
-        self.amount_received = self.received_input.value() or cash_paid
-        self.change_due = max(0.0, self.amount_received - self._cash_method_amount())
+        cash_due = self._cash_method_amount()
+        self.amount_received = self.received_input.value() or cash_due
+        self.change_due = max(0.0, self.amount_received - cash_due)
         self.use_credit = credit > 0
+        if credit > 0 and self.credit_due_enabled.isChecked():
+            self.credit_due_date = self.credit_due_date_edit.date().toPython()
+        else:
+            self.credit_due_date = None
         self.accept()

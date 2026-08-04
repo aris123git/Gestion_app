@@ -103,6 +103,23 @@ def _migrate_schema() -> None:
             "last_visit": "VARCHAR(40) DEFAULT ''",
             "purchase_count": "INTEGER DEFAULT 0",
         },
+        "products": {
+            "is_active": "BOOLEAN DEFAULT 1",
+        },
+        "purchases": {
+            "status": "VARCHAR(20) DEFAULT 'completed'",
+        },
+        "sales": {
+            "status": "VARCHAR(20) DEFAULT 'completed'",
+        },
+        "debts": {
+            "due_date": "DATE",
+            "status": "VARCHAR(40) DEFAULT 'en_cours'",
+        },
+        "supplier_debts": {
+            "due_date": "DATE",
+            "status": "VARCHAR(40) DEFAULT 'en_cours'",
+        },
     }
     with engine.begin() as conn:
         for table, columns in alterations.items():
@@ -125,7 +142,8 @@ def _backfill_client_debts() -> None:
     from sqlalchemy import func, select
 
     from app.models.client import Client
-    from app.models.debt import STATUS_OPEN, Debt
+    from app.models.debt import ACTIVE_DEBT_STATUSES, STATUS_OPEN, Debt
+    from app.services.debt_service import DebtService
 
     with session_scope() as session:
         if not _table_exists(session.connection(), "debts"):
@@ -133,20 +151,26 @@ def _backfill_client_debts() -> None:
         clients = list(session.scalars(select(Client)).all())
         for client in clients:
             balance = float(client.debt or 0)
-            if balance <= 0:
-                continue
             existing = session.scalar(
                 select(func.count()).select_from(Debt).where(Debt.client_id == client.id)
             )
-            if existing:
-                continue
-            session.add(
-                Debt(
-                    client_id=client.id,
-                    sale_id=None,
-                    amount_initial=balance,
-                    amount_remaining=balance,
-                    status=STATUS_OPEN,
-                    note="Solde repris à la migration (Sprint 1)",
+            if balance > 0 and not existing:
+                session.add(
+                    Debt(
+                        client_id=client.id,
+                        sale_id=None,
+                        amount_initial=balance,
+                        amount_remaining=balance,
+                        status=STATUS_OPEN,
+                        note="Solde repris à la migration (Sprint 1)",
+                    )
+                )
+                session.flush()
+            ledger_balance = session.scalar(
+                select(func.coalesce(func.sum(Debt.amount_remaining), 0)).where(
+                    Debt.client_id == client.id,
+                    Debt.status.in_(ACTIVE_DEBT_STATUSES),
                 )
             )
+            if abs(float(ledger_balance or 0) - float(client.debt or 0)) >= 0.01:
+                DebtService.sync_client_debt_cache(session, client.id)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.database.connection import session_scope
 from app.models.client import Client
@@ -105,6 +105,7 @@ class ClientController:
             DebtService.create_debt(
                 client_id,
                 opening_debt,
+                due_date=data.get("debt_due_date"),
                 note="Solde d'ouverture",
                 user_id=user_id,
                 username=username,
@@ -134,7 +135,22 @@ class ClientController:
         with session_scope() as session:
             client = session.get(Client, client_id)
             if client:
+                sales_count = session.scalar(
+                    select(func.count()).select_from(Sale).where(Sale.client_id == client_id)
+                ) or 0
+                if sales_count:
+                    raise ValueError(
+                        "Impossible de supprimer un client ayant un historique de ventes."
+                    )
                 session.delete(client)
+
+    @staticmethod
+    def has_sales(client_id: int) -> bool:
+        with session_scope() as session:
+            count = session.scalar(
+                select(func.count()).select_from(Sale).where(Sale.client_id == client_id)
+            ) or 0
+            return count > 0
 
     @staticmethod
     def add_debt(

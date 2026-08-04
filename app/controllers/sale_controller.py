@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import List, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import joinedload
 
 from app import config
@@ -80,6 +81,20 @@ class SaleController:
                 raise ValueError("Le prix unitaire ne peut pas être négatif.")
 
     @staticmethod
+    def _begin_immediate_if_sqlite(session) -> None:
+        """Prend le verrou d'écriture SQLite avant la vérification du stock."""
+        conn = session.connection()
+        if conn.dialect.name != "sqlite":
+            return
+        try:
+            conn.execute(text("BEGIN IMMEDIATE"))
+        except DatabaseError as exc:
+            message = str(exc).lower()
+            if "cannot start a transaction within a transaction" in message:
+                return
+            raise
+
+    @staticmethod
     def _reverse_loyalty_points(session, sale: Sale, user_id: Optional[int]) -> None:
         if not sale.client_id:
             return
@@ -123,6 +138,7 @@ class SaleController:
         client_id: Optional[int] = None,
         user_id: Optional[int] = None,
         allow_credit: bool = False,
+        debt_due_date: Optional[date] = None,
     ) -> SaleResult:
         """Enregistre une vente complète, met à jour le stock et les paiements.
 
@@ -135,7 +151,7 @@ class SaleController:
         cls._validate_lines(lines)
 
         subtotal = round(sum(line.total for line in lines), 2)
-        discount = max(0.0, to_float(discount))
+        discount = min(subtotal, max(0.0, to_float(discount)))
         total = round(max(0.0, subtotal - discount), 2)
 
         credit_method = config.PAYMENT_METHOD_CREDIT
@@ -195,6 +211,7 @@ class SaleController:
         profit = 0.0
 
         with session_scope() as session:
+            cls._begin_immediate_if_sqlite(session)
             ticket_number = cls._next_ticket_number(session)
             sale = Sale(
                 ticket_number=ticket_number,
@@ -218,7 +235,7 @@ class SaleController:
                     required[line.product_id] = (
                         required.get(line.product_id, 0.0) + float(line.quantity)
                     )
-            min_prices: dict[int, float] = {}
+            min_prices: dict[int, tuple[float, str]] = {}
             for product_id, needed in required.items():
                 product = session.execute(
                     select(Product)
@@ -321,6 +338,7 @@ class SaleController:
                     client_id,
                     credit_amount,
                     sale_id=sale.id,
+                    due_date=debt_due_date,
                     note=f"Crédit vente {ticket_number}",
                     user_id=user_id,
                     session=session,
@@ -375,7 +393,7 @@ class SaleController:
             raise ValueError("Le panier est vide.")
         cls._validate_lines(lines)
         subtotal = round(sum(line.total for line in lines), 2)
-        discount = max(0.0, to_float(discount))
+        discount = min(subtotal, max(0.0, to_float(discount)))
         total = round(max(0.0, subtotal - discount), 2)
         with session_scope() as session:
             ticket_number = cls._next_ticket_number(session)
@@ -521,7 +539,8 @@ class SaleController:
         search: str = "",
         start: Optional[date] = None,
         end: Optional[date] = None,
-        limit: int = 500,
+        limit: int = 5000,
+        offset: int = 0,
     ) -> List[Sale]:
         with session_scope() as session:
             query = select(Sale).options(
@@ -536,6 +555,8 @@ class SaleController:
             if end:
                 query = query.where(Sale.date <= datetime.combine(end, datetime.max.time()))
             query = query.order_by(Sale.date.desc()).limit(limit)
+            if offset > 0:
+                query = query.offset(offset)
             rows = session.scalars(query).unique().all()
             session.expunge_all()
             return list(rows)

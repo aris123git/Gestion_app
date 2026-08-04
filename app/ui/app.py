@@ -6,6 +6,7 @@ quitter l'application).
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from PySide6.QtWidgets import QApplication
@@ -19,6 +20,8 @@ from app.ui.main_window import MainWindow
 from app.ui.setup_wizard import SetupWizard
 from app.ui.state import AppState
 from app.ui.theme import apply_theme
+
+logger = logging.getLogger(__name__)
 
 _controller: Optional["AppController"] = None
 
@@ -94,7 +97,7 @@ def run() -> int:
     try:
         backup_service.run_startup_auto_backup()
     except Exception:
-        pass  # Une sauvegarde automatique ne doit jamais bloquer le démarrage.
+        logger.exception("Échec de la sauvegarde automatique au démarrage.")
 
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Gestion Commerciale")

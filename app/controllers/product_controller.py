@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 
 from app.database.connection import session_scope
 from app.models.product import Product
+from app.models.sale import SaleItem
 from app.models.stock import MOVEMENT_CORRECTION, StockMovement
 from app.utils.helpers import to_float
 
@@ -57,6 +58,7 @@ class ProductController:
         search: str = "",
         category_id: Optional[int] = None,
         only_active: bool = True,
+        limit: int = 5000,
     ) -> List[Product]:
         """Liste les produits, avec recherche instantanée et filtre catégorie."""
         with session_scope() as session:
@@ -76,7 +78,7 @@ class ProductController:
                         Product.reference.ilike(pattern),
                     )
                 )
-            query = query.order_by(Product.name).limit(1000)
+            query = query.order_by(Product.name).limit(limit)
             rows = session.scalars(query).unique().all()
             session.expunge_all()
             return list(rows)
@@ -232,11 +234,22 @@ class ProductController:
         )
 
     @staticmethod
-    def delete(product_id: int) -> None:
+    def delete(product_id: int) -> str:
+        """Supprime si possible, sinon désactive pour préserver l'historique."""
         with session_scope() as session:
             product = session.get(Product, product_id)
-            if product:
-                session.delete(product)
+            if not product:
+                return "missing"
+            sale_count = session.scalar(
+                select(func.count()).select_from(SaleItem).where(
+                    SaleItem.product_id == product_id
+                )
+            ) or 0
+            if sale_count:
+                product.is_active = False
+                return "deactivated"
+            session.delete(product)
+            return "deleted"
 
     @staticmethod
     def count() -> int:

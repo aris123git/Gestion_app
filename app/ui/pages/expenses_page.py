@@ -105,7 +105,16 @@ class ExpensesPage(QWidget):
             warn(self, "Vous n'avez pas l'autorisation de supprimer une dépense.")
             return
         if confirm(self, "Supprimer cette dépense ?"):
-            ExpenseController.delete(self._ids[row])
+            try:
+                ExpenseController.delete(
+                    self._ids[row],
+                    is_admin=(
+                        getattr(self.state.current_user, "role", "") == perms.ROLE_ADMIN
+                    ),
+                )
+            except ValueError as exc:
+                warn(self, str(exc))
+                return
             self.refresh()
             self.state.notify_data_changed()
 

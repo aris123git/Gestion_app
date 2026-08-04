@@ -24,6 +24,7 @@ Tous les chemins reposent sur ``pathlib`` et sur les constantes de ``config``
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sqlite3
 import tempfile
@@ -34,6 +35,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from app import __version__, config
+
+logger = logging.getLogger(__name__)
 
 # Dossiers de données inclus dans chaque sauvegarde (nom relatif -> chemin).
 _DATA_FOLDERS = {
@@ -172,6 +175,7 @@ def create_full_backup(
                 activation_file = config.DATA_DIR / _ACTIVATION_ARCNAME
                 if activation_file.exists():
                     archive.write(activation_file, _ACTIVATION_ARCNAME)
+                    manifest["contents"].append(_ACTIVATION_ARCNAME)
                 archive.writestr(_MANIFEST_ARCNAME, json.dumps(manifest, indent=2))
     except (OSError, sqlite3.Error, zipfile.BadZipFile) as exc:
         if zip_path.exists():
@@ -249,7 +253,7 @@ def restore_backup(zip_path: str | Path, safety_backup: bool = True) -> Optional
 
         connection.engine.dispose()
     except Exception:
-        pass
+        logger.debug("Impossible de libérer le moteur SQLAlchemy avant restauration.", exc_info=True)
 
     try:
         with tempfile.TemporaryDirectory() as tmp:
@@ -362,7 +366,7 @@ def _remember_last_backup(path: Path) -> None:
 
         settings_service.set_setting(SETTING_LAST_PATH, str(path))
     except Exception:
-        pass  # La mémorisation ne doit jamais bloquer une sauvegarde réussie.
+        logger.debug("Impossible de mémoriser la dernière sauvegarde.", exc_info=True)
 
 
 def is_auto_enabled() -> bool:

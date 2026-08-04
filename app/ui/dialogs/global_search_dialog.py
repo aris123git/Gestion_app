@@ -18,8 +18,9 @@ from app.services.search_service import SearchService
 
 
 class GlobalSearchDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, state=None):
         super().__init__(parent)
+        self.state = state or getattr(parent, "state", None)
         self.setWindowTitle("Recherche universelle")
         self.setModal(True)
         self.resize(560, 420)
@@ -63,7 +64,8 @@ class GlobalSearchDialog(QDialog):
     def _search(self) -> None:
         self.list.clear()
         text = self.query.text()
-        hits = SearchService.search(text)
+        user = self.state.current_user if self.state is not None else None
+        hits = SearchService.search(text, user=user)
         if len(text.strip()) < 2:
             self.hint.setText("Saisissez au moins 2 caractères.")
         else:

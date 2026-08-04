@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QPushButton,
     QTableWidget,
@@ -28,6 +29,7 @@ from app.utils.helpers import format_money, format_quantity
 
 class ProductsPage(QWidget):
     HEADERS = ["Nom", "Catégorie", "Code-barres", "Prix vente", "Stock", "Unité"]
+    LIST_LIMIT = 5000
 
     def __init__(self, state: AppState):
         super().__init__()
@@ -59,6 +61,11 @@ class ProductsPage(QWidget):
         filters.addWidget(self.search, 3)
         filters.addWidget(self.category_filter, 1)
         layout.addLayout(filters)
+
+        self.limit_note = QLabel("")
+        self.limit_note.setStyleSheet("color: #b45309; font-size: 12px;")
+        self.limit_note.setWordWrap(True)
+        layout.addWidget(self.limit_note)
 
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
@@ -96,6 +103,13 @@ class ProductsPage(QWidget):
         products = ProductController.list(
             search=self.search.text().strip(),
             category_id=self.category_filter.currentData(),
+            limit=self.LIST_LIMIT,
+        )
+        self.limit_note.setText(
+            f"Affichage limité aux {self.LIST_LIMIT} premiers produits. "
+            "Affinez la recherche ou la catégorie si le produit recherché n'apparaît pas."
+            if len(products) == self.LIST_LIMIT
+            else ""
         )
         currency = settings_service.get_currency()
         self._ids = [p.id for p in products]
@@ -187,16 +201,23 @@ class ProductsPage(QWidget):
         if not self.state.can(perms.DELETE_PRODUCTS):
             warn(self, "Vous n'avez pas l'autorisation de supprimer un produit.")
             return
-        if confirm(self, "Supprimer définitivement ce produit ?"):
-            ProductController.delete(product_id)
+        if confirm(
+            self,
+            "Supprimer ce produit ?\n\n"
+            "S'il existe dans des ventes, il sera simplement désactivé pour "
+            "conserver l'historique.",
+        ):
+            result = ProductController.delete(product_id)
             audit_service.log_action(
                 "Suppression produit", "Product", str(product_id),
                 self.state.user_id, getattr(self.state.current_user, "username", ""),
             )
             self.refresh()
             self.state.notify_data_changed()
+            if result == "deactivated":
+                info(self, "Produit désactivé : il n'apparaît plus en caisse.")
 
     def _export(self) -> None:
-        products = ProductController.list(only_active=False)
+        products = ProductController.list(only_active=False, limit=100_000)
         path = export_products_excel(products)
         info(self, f"Export réalisé :\n{path}")

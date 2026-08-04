@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import config
-from app.services import audit_service, permissions as perms
+from app.services import permissions as perms
 from app.services.auth_service import AuthService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, page_title, warn
@@ -175,15 +175,12 @@ class UsersPage(QWidget):
                     dialog.data["password"],
                     dialog.data["full_name"],
                     dialog.data["role"],
+                    audit_user_id=self.state.user_id,
+                    audit_username=getattr(self.state.current_user, "username", ""),
                 )
             except ValueError as exc:
                 warn(self, str(exc))
                 return
-            audit_service.log_action(
-                "Création utilisateur", "User",
-                f"{dialog.data['username']} ({dialog.data['role']})",
-                self.state.user_id, getattr(self.state.current_user, "username", ""),
-            )
             self.refresh()
 
     def _edit(self) -> None:
@@ -203,15 +200,12 @@ class UsersPage(QWidget):
                     role=dialog.data["role"],
                     is_active=dialog.data["is_active"],
                     password=dialog.data["password"] or None,
+                    audit_user_id=self.state.user_id,
+                    audit_username=getattr(self.state.current_user, "username", ""),
                 )
             except ValueError as exc:
                 warn(self, str(exc))
                 return
-            audit_service.log_action(
-                "Modification utilisateur", "User",
-                f"{dialog.data['username']} ({dialog.data['role']})",
-                self.state.user_id, getattr(self.state.current_user, "username", ""),
-            )
             self.refresh()
 
     def _delete(self) -> None:
@@ -226,12 +220,12 @@ class UsersPage(QWidget):
             return
         if confirm(self, "Supprimer cet utilisateur ?"):
             try:
-                AuthService.delete_user(user_id)
+                AuthService.delete_user(
+                    user_id,
+                    audit_user_id=self.state.user_id,
+                    audit_username=getattr(self.state.current_user, "username", ""),
+                )
             except ValueError as exc:
                 warn(self, str(exc))
                 return
-            audit_service.log_action(
-                "Suppression utilisateur", "User", str(user_id),
-                self.state.user_id, getattr(self.state.current_user, "username", ""),
-            )
             self.refresh()

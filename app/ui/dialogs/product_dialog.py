@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
@@ -55,6 +56,8 @@ class ProductDialog(QDialog):
         self.min_price = self._money_spin()
         self.quantity = self._qty_spin()
         self.min_stock = self._qty_spin()
+        self.is_active = QCheckBox("Produit actif")
+        self.is_active.setChecked(True)
 
         form.addRow("Nom *", self.name)
         form.addRow("Catégorie", self.category)
@@ -66,6 +69,7 @@ class ProductDialog(QDialog):
         form.addRow("Quantité", self.quantity)
         form.addRow("Stock minimum", self.min_stock)
         form.addRow("Unité", self.unit)
+        form.addRow("Statut", self.is_active)
         layout.addLayout(form)
 
         buttons = QHBoxLayout()
@@ -113,6 +117,7 @@ class ProductDialog(QDialog):
         self.min_price.setValue(float(product.min_price))
         self.quantity.setValue(float(product.quantity))
         self.min_stock.setValue(float(product.min_stock))
+        self.is_active.setChecked(bool(product.is_active))
 
     def _save(self) -> None:
         if not self.name.text().strip():
@@ -129,6 +134,6 @@ class ProductDialog(QDialog):
             "min_price": self.min_price.value(),
             "quantity": self.quantity.value(),
             "min_stock": self.min_stock.value(),
-            "is_active": True,
+            "is_active": self.is_active.isChecked(),
         }
         self.accept()

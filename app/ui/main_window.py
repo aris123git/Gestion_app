@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Optional
 
@@ -35,6 +36,8 @@ from app.ui.pages.suppliers_page import SuppliersPage
 from app.ui.pages.users_page import UsersPage
 from app.ui.dialogs.global_search_dialog import GlobalSearchDialog
 from app.ui.state import AppState
+
+logger = logging.getLogger(__name__)
 
 # (libellé, icône, classe de page, permission requise ou None = tous les rôles)
 NAV_ITEMS = [
@@ -81,6 +84,7 @@ class MainWindow(QWidget):
         self._idle_timer = QTimer(self)
         self._idle_timer.setInterval(60_000)
         self._idle_timer.timeout.connect(self._check_idle_timeout)
+        self._idle_timer.timeout.connect(self._refresh_auth_user)
         self._idle_timer.start()
         # Sauvegarde automatique périodique (vérifie l'échéance sans bloquer).
         self._backup_timer = QTimer(self)
@@ -104,7 +108,7 @@ class MainWindow(QWidget):
 
             backup_service.run_startup_auto_backup()
         except Exception:
-            pass  # Une sauvegarde en tâche de fond ne doit jamais gêner l'utilisateur.
+            logger.exception("Échec de la sauvegarde automatique périodique.")
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -135,6 +139,8 @@ class MainWindow(QWidget):
                 continue
             button = QPushButton(f"{icon}  {label}")
             button.setObjectName("NavButton")
+            button.setToolTip(label)
+            button.setAccessibleName(label)
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _=False, i=index: self.select_page(i))
@@ -147,6 +153,8 @@ class MainWindow(QWidget):
         if self._can_search():
             search_btn = QPushButton("🔎  Recherche")
             search_btn.setObjectName("NavButton")
+            search_btn.setToolTip("Recherche")
+            search_btn.setAccessibleName("Recherche")
             search_btn.clicked.connect(self._open_search)
             layout.addWidget(search_btn)
 
@@ -159,6 +167,8 @@ class MainWindow(QWidget):
 
         logout = QPushButton("Se déconnecter")
         logout.setObjectName("NavButton")
+        logout.setToolTip("Se déconnecter")
+        logout.setAccessibleName("Se déconnecter")
         logout.clicked.connect(self._logout)
         layout.addWidget(logout)
 
@@ -177,7 +187,13 @@ class MainWindow(QWidget):
             self.pages.append(page)
             self.stack.addWidget(page)
 
-    def select_page(self, index: int) -> Optional[QWidget]:
+    def select_page(self, index: int, refresh_auth: bool = True) -> Optional[QWidget]:
+        if refresh_auth and not self._refresh_auth_user():
+            return None
+        if index >= len(NAV_ITEMS):
+            return None
+        if not self._allowed(NAV_ITEMS[index][3]):
+            return None
         page = self.pages[index] if index < len(self.pages) else None
         if page is None:
             return None
@@ -196,6 +212,8 @@ class MainWindow(QWidget):
         return None
 
     def _refresh_current(self) -> None:
+        if not self._refresh_auth_user():
+            return
         current = self.stack.currentWidget()
         if current and hasattr(current, "refresh"):
             current.refresh()
@@ -243,6 +261,33 @@ class MainWindow(QWidget):
                 perms.MANAGE_SUPPLIERS,
             )
         )
+
+    def _refresh_auth_user(self) -> bool:
+        """Recharge l'utilisateur courant et invalide les accès retirés."""
+        if self._idle_logging_out:
+            return False
+        had_user = self.state.current_user is not None
+        user = self.state.auth.refresh_current_user()
+        if had_user and user is None:
+            self._idle_logging_out = True
+            self._logout()
+            return False
+        if user and hasattr(self, "_user_label"):
+            self._user_label.setText(f"👤 {user.full_name or user.username}\n{user.role}")
+        for index, button in enumerate(self._nav_buttons):
+            if button is not None:
+                button.setEnabled(self._allowed(NAV_ITEMS[index][3]))
+        current = self.stack.currentWidget()
+        current_index = next(
+            (i for i, page in enumerate(self.pages) if page is current),
+            None,
+        )
+        if current_index is not None and not self._allowed(NAV_ITEMS[current_index][3]):
+            for index, page in enumerate(self.pages):
+                if page is not None and self._allowed(NAV_ITEMS[index][3]):
+                    self.select_page(index, refresh_auth=False)
+                    break
+        return True
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if event.type() in {

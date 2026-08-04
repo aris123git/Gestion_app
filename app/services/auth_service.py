@@ -87,6 +87,22 @@ class AuthService:
             )
         self._current_user = None
 
+    def refresh_current_user(self) -> Optional[User]:
+        """Recharge l'utilisateur courant afin de refléter les changements de rôle."""
+        if not self._current_user:
+            return None
+        user_id = self._current_user.id
+        with session_scope() as session:
+            user = session.get(User, user_id)
+            if not user or not user.is_active:
+                self._current_user = None
+                return None
+            session.expunge(user)
+            self._current_user = user
+            return user
+
+    reload_current_user = refresh_current_user
+
     def require_admin(self) -> bool:
         return bool(self._current_user and self._current_user.is_admin)
 
@@ -171,6 +187,9 @@ class AuthService:
         password: str,
         full_name: str = "",
         role: str = "Caissier",
+        *,
+        audit_user_id: Optional[int] = None,
+        audit_username: str = "",
     ) -> User:
         username = username.strip()
         if not username:
@@ -195,7 +214,14 @@ class AuthService:
             except IntegrityError as exc:
                 raise ValueError("Ce nom d'utilisateur existe déjà.") from exc
             session.expunge(user)
-            return user
+        audit_service.log_action(
+            "Création utilisateur",
+            "User",
+            f"{user.username} ({user.role})",
+            audit_user_id,
+            audit_username,
+        )
+        return user
 
     @staticmethod
     def update_user(
@@ -204,9 +230,16 @@ class AuthService:
         role: Optional[str] = None,
         is_active: Optional[bool] = None,
         password: Optional[str] = None,
+        *,
+        audit_user_id: Optional[int] = None,
+        audit_username: str = "",
     ) -> None:
         if password is not None:
             validate_password(password)
+        target_username = ""
+        target_role = ""
+        target_active = None
+        password_changed = password is not None
         with session_scope() as session:
             user = session.get(User, user_id)
             if not user:
@@ -220,14 +253,43 @@ class AuthService:
                 user.is_active = is_active
             if password is not None:
                 user.password_hash = hash_password(password)
+            target_username = user.username
+            target_role = user.role
+            target_active = user.is_active
+        audit_service.log_action(
+            "Modification utilisateur",
+            "User",
+            (
+                f"{target_username} ({target_role}) "
+                f"actif={'oui' if target_active else 'non'} "
+                f"mot_de_passe={'modifié' if password_changed else 'inchangé'}"
+            ),
+            audit_user_id,
+            audit_username,
+        )
 
     @staticmethod
-    def delete_user(user_id: int) -> None:
+    def delete_user(
+        user_id: int,
+        *,
+        audit_user_id: Optional[int] = None,
+        audit_username: str = "",
+    ) -> None:
+        target = ""
         with session_scope() as session:
             user = session.get(User, user_id)
             if user:
                 AuthService._ensure_not_last_admin_delete(session, user)
+                target = f"{user.username} ({user.role})"
                 session.delete(user)
+        if target:
+            audit_service.log_action(
+                "Suppression utilisateur",
+                "User",
+                target,
+                audit_user_id,
+                audit_username,
+            )
 
     @staticmethod
     def _active_admin_count(session) -> int:
