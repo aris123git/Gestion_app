@@ -72,8 +72,9 @@ class AppController:
 
     def show_main(self) -> None:
         self.window = MainWindow(self.state)
-        # Plein écran (maximisé) pour profiter de toute la zone d'affichage.
-        self.window.showMaximized()
+        # Vrai plein écran (pas seulement maximisé / adaptatif).
+        # Échap ou Alt+F4 pour quitter ; F11 peut basculer selon le WM.
+        self.window.showFullScreen()
 
     def restart_login(self) -> None:
         """Après déconnexion : réaffiche la connexion puis la fenêtre."""

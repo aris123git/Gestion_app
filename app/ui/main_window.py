@@ -62,8 +62,9 @@ class MainWindow(QWidget):
         super().__init__()
         self.state = state
         self.setWindowTitle("Gestion Commerciale")
-        self.setMinimumSize(1024, 700)
-        # Taille initiale ; l'affichage réel est maximisé dans AppController.show_main.
+        # Cible d'affichage : écran 22" Full HD (1920×1080) en plein écran.
+        self.setMinimumSize(1280, 720)
+        self.resize(1920, 1080)
         self._idle_timeout_seconds = 120 * 60
         self._last_activity = time.monotonic()
         self._idle_logging_out = False
@@ -315,6 +316,23 @@ class MainWindow(QWidget):
         from app.ui.app import restart_login
 
         restart_login()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        # F11 : bascule plein écran / fenêtre. Échap : quitte le plein écran.
+        if event.key() == Qt.Key.Key_F11:
+            if self.isFullScreen():
+                self.showNormal()
+                self.resize(1920, 1080)
+            else:
+                self.showFullScreen()
+            event.accept()
+            return
+        if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
+            self.showNormal()
+            self.resize(1920, 1080)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._idle_timer.stop()
