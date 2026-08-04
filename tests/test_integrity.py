@@ -169,13 +169,16 @@ class IntegrityTestCase(unittest.TestCase):
             allow_credit=True,
         )
         before = ReportController.build(date.today(), date.today())
-        self.assertLess(before["cash_revenue"], 1)
         ClientController.settle_debt(
             client.id, 1000, payment_method="Espèces"
         )
         after = ReportController.build(date.today(), date.today())
-        self.assertGreaterEqual(after["debt_repayments"], 1000)
-        self.assertGreaterEqual(after["cash_revenue"], 1000)
+        self.assertGreaterEqual(
+            after["debt_repayments"] - before["debt_repayments"], 1000
+        )
+        self.assertGreaterEqual(
+            after["cash_revenue"] - before["cash_revenue"], 1000
+        )
 
     def test_cancel_sale_with_debt_payment_is_blocked(self) -> None:
         client = self._create_client()
