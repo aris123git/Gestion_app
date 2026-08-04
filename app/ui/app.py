@@ -72,7 +72,8 @@ class AppController:
 
     def show_main(self) -> None:
         self.window = MainWindow(self.state)
-        self.window.show()
+        # Plein écran (maximisé) pour profiter de toute la zone d'affichage.
+        self.window.showMaximized()
 
     def restart_login(self) -> None:
         """Après déconnexion : réaffiche la connexion puis la fenêtre."""
