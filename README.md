@@ -25,10 +25,14 @@ le logiciel : seuls changent les **produits**, **catégories** et **unités**.
 - **Stock** : entrées, sorties, inventaire, correction, historique, alertes de
   rupture. Les achats fournisseur peuvent être annulés avec reprise du stock et
   annulation de la dette liée lorsque cela reste cohérent.
-- **Fournisseurs** et **Clients** : dettes, règlements, historique et points de fidélité.
+- **Fournisseurs** et **Clients** : dettes, règlements (« Régler dette »), historique
+  et points de fidélité. Un règlement de dette alimente le **CA encaissé** des
+  rapports (ventes cash + règlements).
 - **Caisse (POS)** : interface rapide, ajout/modification/suppression d'articles,
   modification du prix directement dans le panier (avec choix « uniquement cette
-  vente » ou « mise à jour définitive du prix »).
+  vente » ou « mise à jour définitive du prix »). Recherche client **progressive**
+  par nom ou téléphone (suggestions au fur et à mesure) pour facturer / mettre
+  en dette puis imprimer le ticket.
 - **Paiement** : espèces, Orange Money, Moov Money, carte bancaire, virement,
   **paiement mixte** et ventes à crédit client pour les rôles autorisés. Le
   caissier peut encaisser, appliquer une remise, vendre à crédit, consulter le

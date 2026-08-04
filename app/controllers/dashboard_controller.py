@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 
 from app import config
 from app.database.connection import session_scope
+from app.models.debt import DebtPayment
 from app.models.expense import Expense
 from app.models.product import Product
 from app.models.sale import Payment, Sale, SaleItem
@@ -21,18 +22,31 @@ def _range(start: date, end: date) -> Tuple[datetime, datetime]:
 class DashboardController:
     @staticmethod
     def _cash_revenue(session, start: date, end: date) -> float:
+        """CA encaissé = paiements ventes (hors Dette) + règlements de dettes."""
         lo, hi = _range(start, end)
-        total = session.scalar(
-            select(func.coalesce(func.sum(Payment.amount), 0))
-            .join(Sale, Sale.id == Payment.sale_id)
-            .where(
-                Sale.date >= lo,
-                Sale.date <= hi,
-                Sale.status == "completed",
-                Payment.method != config.PAYMENT_METHOD_CREDIT,
+        sales_cash = float(
+            session.scalar(
+                select(func.coalesce(func.sum(Payment.amount), 0))
+                .join(Sale, Sale.id == Payment.sale_id)
+                .where(
+                    Sale.date >= lo,
+                    Sale.date <= hi,
+                    Sale.status == "completed",
+                    Payment.method != config.PAYMENT_METHOD_CREDIT,
+                )
             )
+            or 0
         )
-        return float(total or 0)
+        debt_repayments = float(
+            session.scalar(
+                select(func.coalesce(func.sum(DebtPayment.amount), 0)).where(
+                    DebtPayment.payment_date >= lo,
+                    DebtPayment.payment_date <= hi,
+                )
+            )
+            or 0
+        )
+        return round(sales_cash + debt_repayments, 2)
 
     @staticmethod
     def _profit(session, start: date, end: date) -> float:

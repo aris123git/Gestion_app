@@ -72,10 +72,13 @@ def export_report_pdf(
 
     summary = [
         ["Indicateur", "Valeur"],
-        ["CA encaissé", format_money(report["cash_revenue"], currency)],
+        ["CA encaissé (ventes + règlements)", format_money(report["cash_revenue"], currency)],
+        [
+            "dont règlements dettes clients",
+            format_money(report["debt_repayments"], currency),
+        ],
         ["Total ventes TTC", format_money(report["total_sales"], currency)],
         ["Nombre de ventes", str(report["sales_count"])],
-        ["Remboursements clients", format_money(report["debt_repayments"], currency)],
         [
             "Paiements dettes fournisseurs",
             format_money(report["supplier_debt_payments"], currency),
