@@ -17,25 +17,34 @@ le logiciel : seuls changent les **produits**, **catégories** et **unités**.
 - **Tableau de bord** : CA encaissé du jour / du mois, nombre de ventes, produits les
   plus vendus, stock faible, ruptures, dépenses du jour, bénéfice estimé.
 - **Produits** : nom, catégorie, code-barres, référence, prix d'achat / vente /
-  minimum, quantité, stock minimum, unité.
+  minimum, quantité, stock minimum, unité, activation/désactivation. Les produits
+  déjà vendus sont désactivés plutôt que supprimés afin de préserver l'historique.
 - **Catégories & Unités** : création, modification, suppression, recherche
   (unités par défaut : kg, g, carton, pièce, boîte, sac, litre, bidon +
   unités personnalisées).
 - **Stock** : entrées, sorties, inventaire, correction, historique, alertes de
-  rupture.
+  rupture. Les achats fournisseur peuvent être annulés avec reprise du stock et
+  annulation de la dette liée lorsque cela reste cohérent.
 - **Fournisseurs** et **Clients** : dettes, règlements, historique et points de fidélité.
 - **Caisse (POS)** : interface rapide, ajout/modification/suppression d'articles,
   modification du prix directement dans le panier (avec choix « uniquement cette
   vente » ou « mise à jour définitive du prix »).
 - **Paiement** : espèces, Orange Money, Moov Money, carte bancaire, virement,
-  **paiement mixte** et ventes à crédit client pour les rôles autorisés. Calcul
+  **paiement mixte** et ventes à crédit client pour les rôles autorisés. Le
+  caissier peut encaisser, appliquer une remise, vendre à crédit, consulter le
+  stock et régler les dettes client selon la matrice de permissions. Calcul
   automatique de la **monnaie rendue** et message « Montant insuffisant » le cas échéant.
+- **Annulations / retours** : l'application gère aujourd'hui l'annulation complète
+  d'une vente depuis l'historique, avec restockage si possible. Les retours
+  partiels ligne par ligne ne sont pas encore modélisés.
 - **Ticket thermique** 58 mm / 80 mm (nom, logo si configuré, adresse, numéro, date, heure,
   caissier, produits, totaux, monnaie, mode de paiement, message de
-  remerciement) + **réimpression**.
+  remerciement), archivage texte sans écrasement et **réimpression depuis
+  l'historique des ventes**.
 - **Dépenses** : loyer, salaire, transport, électricité, internet, autres.
-- **Rapports** : journalier, hebdomadaire, mensuel, annuel, avec CA encaissé —
-  export **PDF** et **Excel**.
+- **Rapports** : journalier, hebdomadaire, mensuel, annuel, avec **CA encaissé**,
+  ventes à crédit, dépenses, trésorerie, ventilation par mode de paiement,
+  **Z de caisse journalier** — export **PDF**, **Excel** et texte pour le Z.
 - **Utilisateurs** : administrateur / gestionnaire / caissier, permissions, connexion
   sécurisée (mots de passe hachés PBKDF2).
 - **Sauvegarde** : automatique, manuelle, restauration.
@@ -46,7 +55,9 @@ le logiciel : seuls changent les **produits**, **catégories** et **unités**.
 - **Interface moderne** : navigation latérale, grandes cartes, compatible écran
   tactile, **mode clair / sombre**.
 - **Sécurité** : journal d'audit des actions importantes, suppression de vente
-  réservée à l'administrateur.
+  réservée à l'administrateur. L'activation est liée à la machine ; le fichier
+  `activation.dat` peut être inclus dans les sauvegardes pour une restauration
+  cohérente sur le même poste.
 
 ---
 
@@ -145,6 +156,10 @@ dans le dossier de données de l'utilisateur :
 
 Vous pouvez surcharger cet emplacement via la variable d'environnement
 `GESTION_DATA_DIR` (utile pour les tests).
+
+> Note multi-session : l'application est conçue pour un usage local hors ligne
+> sur un poste principal. Plusieurs fenêtres ou postes pointant simultanément
+> vers la même base SQLite ne constituent pas encore un mode supporté.
 
 ---
 

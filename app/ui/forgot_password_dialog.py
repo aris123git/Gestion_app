@@ -6,6 +6,7 @@ administrateur existant d'autoriser la redéfinition du mot de passe d'un compte
 
 from __future__ import annotations
 
+import logging
 import os
 
 from PySide6.QtCore import Qt
@@ -26,6 +27,8 @@ from PySide6.QtWidgets import (
 from app.services import audit_service
 from app.services.auth_service import AuthService
 from app.ui.widgets.helpers import activate_and_center
+
+logger = logging.getLogger(__name__)
 
 
 class ForgotPasswordDialog(QDialog):
@@ -107,6 +110,7 @@ class ForgotPasswordDialog(QDialog):
         try:
             users = AuthService.list_users()
         except Exception:
+            logger.exception("Impossible de charger les utilisateurs pour la récupération.")
             users = []
         for user in users:
             label = f"{user.full_name or user.username} ({user.role})"

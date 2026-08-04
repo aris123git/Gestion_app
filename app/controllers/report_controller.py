@@ -35,6 +35,13 @@ def period_bounds(kind: str, reference: date | None = None) -> Tuple[date, date]
 
 class ReportController:
     @staticmethod
+    def z_report(day: date) -> Dict:
+        """Résumé fin de caisse pour une journée."""
+        report = ReportController.build(day, day)
+        report["day"] = day
+        return report
+
+    @staticmethod
     def build(start: date, end: date) -> Dict:
         """Construit un rapport complet pour la période [start, end]."""
         lo = datetime.combine(start, time.min)

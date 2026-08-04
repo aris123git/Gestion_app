@@ -410,7 +410,11 @@ class SettingsPage(QWidget):
         # remplacement de la base de données.
         from PySide6.QtWidgets import QApplication
 
-        QApplication.quit()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+        else:
+            QApplication.quit()
 
     def _restore_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

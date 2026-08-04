@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
+    QDialog,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import config
 from app.controllers.report_controller import ReportController, period_bounds
 from app.controllers.sale_controller import SaleController
 from app.reports.excel_report import export_report_excel
@@ -38,6 +41,8 @@ from app.utils.helpers import format_datetime, format_money
 
 
 class ReportsPage(QWidget):
+    HISTORY_LIMIT = 5000
+
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
@@ -60,6 +65,8 @@ class ReportsPage(QWidget):
         generate = QPushButton("Générer")
         generate.setObjectName("Primary")
         generate.clicked.connect(self._generate)
+        z_report = QPushButton("Z de caisse (jour)")
+        z_report.clicked.connect(self._show_z_report)
         controls.addWidget(QLabel("Période :"))
         controls.addWidget(self.period)
         controls.addWidget(QLabel("Du"))
@@ -67,6 +74,7 @@ class ReportsPage(QWidget):
         controls.addWidget(QLabel("Au"))
         controls.addWidget(self.end)
         controls.addWidget(generate)
+        controls.addWidget(z_report)
         controls.addStretch()
         layout.addLayout(controls)
         self._period_changed(self.period.currentText())
@@ -94,6 +102,10 @@ class ReportsPage(QWidget):
 
         # Historique détaillé des ventes (avec date et heure).
         layout.addWidget(section_title("Historique des ventes (date et heure)"))
+        self.history_note = QLabel("")
+        self.history_note.setStyleSheet("color: #b45309; font-size: 12px;")
+        self.history_note.setWordWrap(True)
+        layout.addWidget(self.history_note)
         self.history_table = QTableWidget(0, 5)
         self.history_table.setHorizontalHeaderLabels(
             ["Ticket", "Date et heure", "Caissier", "Paiement", "Total"]
@@ -107,7 +119,7 @@ class ReportsPage(QWidget):
         # Annulation : admin direct, gestionnaire avec autorisation admin.
         history_actions = QHBoxLayout()
         history_actions.addStretch()
-        self.reprint_button = QPushButton("Réimprimer le ticket")
+        self.reprint_button = QPushButton("Réimprimer ticket")
         self.reprint_button.clicked.connect(self._reprint_selected_sale)
         history_actions.addWidget(self.reprint_button)
         self.cancel_sale_button = QPushButton("Annuler la vente sélectionnée")
@@ -183,7 +195,13 @@ class ReportsPage(QWidget):
             self.top_table.setItem(row, 2, QTableWidgetItem(format_money(total, currency)))
 
         # Historique des ventes de la période (le plus récent d'abord).
-        sales = SaleController.list(start=start, end=end, limit=1000)
+        sales = SaleController.list(start=start, end=end, limit=self.HISTORY_LIMIT)
+        self.history_note.setText(
+            f"Historique limité aux {self.HISTORY_LIMIT} ventes les plus récentes "
+            "sur la période. Réduisez la plage de dates pour afficher un sous-ensemble précis."
+            if len(sales) == self.HISTORY_LIMIT
+            else ""
+        )
         self._sale_ids = [s.id for s in sales]
         self.history_table.setRowCount(len(sales))
         for row, sale in enumerate(sales):
@@ -195,6 +213,67 @@ class ReportsPage(QWidget):
             if sale.status == "cancelled":
                 total_item.setText(format_money(sale.total, currency) + " (annulée)")
             self.history_table.setItem(row, 4, total_item)
+
+    def _format_z_report(self, report: dict) -> str:
+        currency = settings_service.get_currency()
+        day = report.get("day") or report["start"]
+        lines = [
+            "Z DE CAISSE",
+            f"Date : {day:%d/%m/%Y}",
+            f"Généré le : {datetime.now():%d/%m/%Y %H:%M}",
+            "",
+            f"CA encaissé : {format_money(report['cash_revenue'], currency)}",
+            f"Crédit client : {format_money(report['credit_sales'], currency)}",
+            f"Remboursements clients : {format_money(report['debt_repayments'], currency)}",
+            f"Dépenses : {format_money(report['expenses'], currency)}",
+            f"Règlements fournisseurs : {format_money(report['supplier_debt_payments'], currency)}",
+            f"Trésorerie : {format_money(report['treasury'], currency)}",
+            "",
+            "Détail par mode de paiement :",
+        ]
+        payments = report.get("payments") or []
+        if payments:
+            lines.extend(
+                f"- {method} : {format_money(amount, currency)}"
+                for method, amount in payments
+            )
+        else:
+            lines.append("- Aucun encaissement")
+        return "\n".join(lines)
+
+    def _show_z_report(self) -> None:
+        qdate = self.start.date()
+        day = date(qdate.year(), qdate.month(), qdate.day())
+        report = ReportController.z_report(day)
+        content = self._format_z_report(report)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Z de caisse")
+        dialog.setMinimumSize(520, 480)
+        layout = QVBoxLayout(dialog)
+        preview = QPlainTextEdit()
+        preview.setReadOnly(True)
+        preview.setPlainText(content)
+        layout.addWidget(preview)
+
+        buttons = QHBoxLayout()
+        close = QPushButton("Fermer")
+        close.clicked.connect(dialog.accept)
+        save = QPushButton("Enregistrer le texte")
+        save.setObjectName("Primary")
+
+        def _save() -> None:
+            config.ensure_directories()
+            path = config.EXPORT_DIR / f"z_caisse_{day:%Y%m%d}_{datetime.now():%H%M%S}.txt"
+            path.write_text(content, encoding="utf-8")
+            info(dialog, f"Z de caisse enregistré :\n{path}")
+
+        save.clicked.connect(_save)
+        buttons.addWidget(close)
+        buttons.addStretch()
+        buttons.addWidget(save)
+        layout.addLayout(buttons)
+        dialog.exec()
 
     def _reprint_selected_sale(self) -> None:
         """Réimprime (aperçu + impression) le ticket de la vente sélectionnée."""

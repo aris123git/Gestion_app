@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QFormLayout,
     QFrame,
@@ -106,9 +105,11 @@ class LoginDialog(QDialog):
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("color: #64748b;")
 
-        # Sélection de l'utilisateur dans une liste déroulante (clic + choix).
-        self.user_combo = QComboBox()
-        self.user_combo.setMinimumHeight(38)
+        # Saisie libre pour éviter d'exposer la liste des comptes.
+        self.username = QLineEdit()
+        self.username.setPlaceholderText("Nom d'utilisateur")
+        self.username.setMinimumHeight(38)
+        self.username.returnPressed.connect(self._attempt_login)
 
         # Mot de passe avec possibilité d'afficher / masquer le code.
         self.password = QLineEdit()
@@ -135,13 +136,13 @@ class LoginDialog(QDialog):
         self.hint = QLabel("Astuce : compte par défaut admin / admin")
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hint.setStyleSheet("color: #94a3b8; font-size: 12px;")
-        self._load_users()
+        self.hint.setVisible(AuthService.default_admin_uses_default_password())
 
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addSpacing(8)
         layout.addWidget(QLabel("Utilisateur"))
-        layout.addWidget(self.user_combo)
+        layout.addWidget(self.username)
         layout.addWidget(QLabel("Mot de passe"))
         layout.addWidget(self.password)
         layout.addWidget(self.show_password)
@@ -152,28 +153,9 @@ class LoginDialog(QDialog):
 
         outer.addWidget(card)
 
-    def _load_users(self) -> None:
-        """Remplit la liste avec les comptes actifs (nom affiché + identifiant)."""
-        self.user_combo.clear()
-        try:
-            users = [u for u in AuthService.list_users() if u.is_active]
-        except Exception:
-            users = []
-        for user in users:
-            display = user.full_name.strip() or user.username
-            if user.full_name.strip():
-                display = f"{user.full_name} ({user.username})"
-            self.user_combo.addItem(display, user.username)
-        if self.user_combo.count() == 0:
-            self.user_combo.addItem("admin", "admin")
-        self.hint.setVisible(AuthService.default_admin_uses_default_password())
-
     def _selected_username(self) -> str:
-        """Retourne l'identifiant sélectionné (data) ou le texte saisi."""
-        data = self.user_combo.currentData()
-        if data:
-            return str(data)
-        return self.user_combo.currentText().strip()
+        """Retourne l'identifiant saisi sans énumérer les comptes existants."""
+        return self.username.text().strip()
 
     def _toggle_password(self, checked: bool) -> None:
         self.password.setEchoMode(
@@ -186,14 +168,13 @@ class LoginDialog(QDialog):
 
         dialog = ForgotPasswordDialog(self)
         if dialog.exec():
-            # Recharge la liste des comptes après une éventuelle réinitialisation.
-            self._load_users()
+            self.hint.setVisible(AuthService.default_admin_uses_default_password())
             self.password.setFocus()
 
     def showEvent(self, event) -> None:  # noqa: N802 - signature Qt
         super().showEvent(event)
         activate_and_center(self)
-        self.password.setFocus()
+        self.username.setFocus()
 
     def _attempt_login(self) -> None:
         username = self._selected_username()

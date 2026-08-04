@@ -105,10 +105,20 @@ class ClientsPage(QWidget):
         clients = ClientController.list(self.search.text().strip())
         mode = self.debt_filter.currentData()
         currency = settings_service.get_currency()
+        client_ids = [client.id for client in clients]
+        debt_summaries = DebtService.summaries_for_clients(client_ids)
 
         rows_data = []
         for client in clients:
-            summary = DebtService.client_summary(client.id)
+            summary = debt_summaries.get(
+                client.id,
+                {
+                    "total_remaining": 0.0,
+                    "active_count": 0,
+                    "overdue_count": 0,
+                    "debts": [],
+                },
+            )
             if mode == "with_debt" and summary["total_remaining"] <= 0:
                 continue
             if mode == "overdue" and summary["overdue_count"] <= 0:
@@ -119,21 +129,36 @@ class ClientsPage(QWidget):
         search = self.search.text().strip()
         if search:
             seen = {c.id for c, _ in rows_data}
+            extra_clients = []
             for debt in DebtService.list_debts(search=search, limit=300):
                 if debt.client_id in seen:
                     continue
                 client = ClientController.get(debt.client_id)
                 if not client:
                     continue
-                summary = DebtService.client_summary(client.id)
+                extra_clients.append(client)
+                seen.add(client.id)
+            extra_summaries = DebtService.summaries_for_clients(
+                [client.id for client in extra_clients]
+            )
+            for client in extra_clients:
+                summary = extra_summaries.get(
+                    client.id,
+                    {
+                        "total_remaining": 0.0,
+                        "active_count": 0,
+                        "overdue_count": 0,
+                        "debts": [],
+                    },
+                )
                 if mode == "with_debt" and summary["total_remaining"] <= 0:
                     continue
                 if mode == "overdue" and summary["overdue_count"] <= 0:
                     continue
                 rows_data.append((client, summary))
-                seen.add(client.id)
 
         self._ids = [c.id for c, _ in rows_data]
+        loyalty_balances = LoyaltyService.balances_for_clients(self._ids)
         self.table.setRowCount(len(rows_data))
         for row, (client, summary) in enumerate(rows_data):
             self.table.setItem(row, 0, QTableWidgetItem(client.name))
@@ -151,7 +176,7 @@ class ClientsPage(QWidget):
             self.table.setItem(
                 row,
                 5,
-                QTableWidgetItem(format_quantity(LoyaltyService.get_balance(client.id))),
+                QTableWidgetItem(format_quantity(loyalty_balances.get(client.id, 0.0))),
             )
             self.table.setItem(row, 6, QTableWidgetItem(client.last_visit or ""))
             self.table.setItem(row, 7, QTableWidgetItem(str(client.purchase_count or 0)))
@@ -304,7 +329,18 @@ class ClientsPage(QWidget):
                 "Réglez ou conservez la fiche pour la traçabilité.",
             )
             return
+        if ClientController.has_sales(client_id):
+            warn(
+                self,
+                "Impossible de supprimer un client ayant un historique de ventes. "
+                "Conservez la fiche pour la traçabilité.",
+            )
+            return
         if confirm(self, "Supprimer ce client ?"):
-            ClientController.delete(client_id)
+            try:
+                ClientController.delete(client_id)
+            except ValueError as exc:
+                warn(self, str(exc))
+                return
             self.refresh()
             self.state.notify_data_changed()

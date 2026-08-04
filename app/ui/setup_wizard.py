@@ -35,7 +35,17 @@ SHOP_TYPES = [
     "Autre commerce",
 ]
 
-CURRENCIES = ["FCFA", "EUR", "USD", "MAD", "DZD", "TND", "GNF", "XOF", "XAF"]
+CURRENCIES = [
+    "FCFA",
+    "XOF (UEMOA)",
+    "XAF (CEMAC)",
+    "EUR",
+    "USD",
+    "MAD",
+    "DZD",
+    "TND",
+    "GNF",
+]
 
 
 class SetupWizard(QDialog):

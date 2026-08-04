@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QPushButton,
     QTableWidget,
@@ -29,6 +30,7 @@ from app.utils.helpers import format_datetime, format_quantity
 
 
 class StockPage(QWidget):
+    HISTORY_LIMIT = 1000
     HISTORY_HEADERS = [
         "Date",
         "Utilisateur",
@@ -115,6 +117,10 @@ class StockPage(QWidget):
         wrap = QWidget()
         layout = QVBoxLayout(wrap)
         layout.setContentsMargins(0, 12, 0, 0)
+        self.history_note = QLabel("")
+        self.history_note.setStyleSheet("color: #b45309; font-size: 12px;")
+        self.history_note.setWordWrap(True)
+        layout.addWidget(self.history_note)
         self.history_table = QTableWidget(0, len(self.HISTORY_HEADERS))
         self.history_table.setHorizontalHeaderLabels(self.HISTORY_HEADERS)
         header = self.history_table.horizontalHeader()
@@ -285,7 +291,12 @@ class StockPage(QWidget):
         self.supplier_combo.blockSignals(False)
 
     def _reload_history(self) -> None:
-        movements = StockController.history(limit=300)
+        movements = StockController.history(limit=self.HISTORY_LIMIT)
+        self.history_note.setText(
+            f"Historique limité aux {self.HISTORY_LIMIT} derniers mouvements."
+            if len(movements) == self.HISTORY_LIMIT
+            else ""
+        )
         self.history_table.setRowCount(len(movements))
         for row, movement in enumerate(movements):
             product_name = movement.product.name if movement.product else "—"

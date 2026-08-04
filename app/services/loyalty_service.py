@@ -35,6 +35,23 @@ class LoyaltyService:
             )
             return float(account.points) if account else 0.0
 
+    @staticmethod
+    def balances_for_clients(client_ids: list[int]) -> dict[int, float]:
+        """Retourne les soldes de points de plusieurs clients en une requête."""
+        ids = [int(client_id) for client_id in client_ids if client_id]
+        if not ids:
+            return {}
+        balances = {client_id: 0.0 for client_id in ids}
+        with session_scope() as session:
+            rows = session.execute(
+                select(CustomerPoints.client_id, CustomerPoints.points).where(
+                    CustomerPoints.client_id.in_(ids)
+                )
+            ).all()
+        for client_id, points in rows:
+            balances[int(client_id)] = float(points or 0)
+        return balances
+
     @classmethod
     def add_points_for_sale(
         cls,

@@ -93,7 +93,9 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             SELL,
             PRINT_TICKET,
             VIEW_PRODUCTS,
+            MANAGE_STOCK,
             MANAGE_CLIENTS,
+            MANAGE_CLIENT_DEBTS,
             VIEW_DASHBOARD,
             # Remise et vente à crédit (dette) autorisées en caisse.
             APPLY_DISCOUNT,

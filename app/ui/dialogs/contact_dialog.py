@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Optional
 
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QDateEdit,
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
@@ -59,6 +62,16 @@ class ContactDialog(QDialog):
             if contact is not None:
                 self.debt.setReadOnly(True)
                 self.debt.setEnabled(False)
+            else:
+                self.debt_due_enabled = QCheckBox("Définir une échéance")
+                self.debt_due_date = QDateEdit(QDate.currentDate())
+                self.debt_due_date.setCalendarPopup(True)
+                self.debt_due_date.setEnabled(False)
+                self.debt_due_enabled.toggled.connect(self.debt_due_date.setEnabled)
+                due_row = QHBoxLayout()
+                due_row.addWidget(self.debt_due_enabled)
+                due_row.addWidget(self.debt_due_date)
+                form.addRow("Échéance", due_row)
 
         form.addRow("Notes", self.notes)
         layout.addLayout(form)
@@ -102,4 +115,11 @@ class ContactDialog(QDialog):
         # Dette saisissable uniquement à la création (solde d'ouverture).
         if self.with_debt and self.debt.isEnabled():
             self.data["debt"] = self.debt.value()
+            if (
+                self.debt.value() > 0
+                and hasattr(self, "debt_due_enabled")
+                and self.debt_due_enabled.isChecked()
+            ):
+                qdate = self.debt_due_date.date()
+                self.data["debt_due_date"] = qdate.toPython()
         self.accept()

@@ -22,7 +22,7 @@ from app.controllers.supplier_controller import SupplierController
 from app.services import permissions as perms, settings_service
 from app.services.purchase_service import PurchaseLine, PurchaseService
 from app.ui.state import AppState
-from app.ui.widgets.helpers import info, make_card, page_title, warn
+from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_money, format_quantity
 
 
@@ -31,6 +31,7 @@ class PurchasesPage(QWidget):
         super().__init__()
         self.state = state
         self._lines: list[PurchaseLine] = []
+        self._purchase_ids: list[int] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -81,17 +82,31 @@ class PurchasesPage(QWidget):
         self.lines_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.lines_table)
 
-        self.history = QTableWidget(0, 5)
+        self.history = QTableWidget(0, 6)
         self.history.setHorizontalHeaderLabels(
-            ["Date", "Fournisseur", "Facture", "Total", "Payé"]
+            ["Date", "Fournisseur", "Facture", "Total", "Payé", "Statut"]
         )
         self.history.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
         self.history.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.history.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.history)
 
+        history_actions = QHBoxLayout()
+        history_actions.addStretch()
+        self.cancel_purchase_button = QPushButton("Annuler l'achat sélectionné")
+        self.cancel_purchase_button.setObjectName("Danger")
+        self.cancel_purchase_button.clicked.connect(self._cancel_selected_purchase)
+        history_actions.addWidget(self.cancel_purchase_button)
+        layout.addLayout(history_actions)
+        self._apply_permissions()
+
+    def _apply_permissions(self) -> None:
+        self.cancel_purchase_button.setVisible(self.state.can(perms.MANAGE_PURCHASES))
+
     def refresh(self) -> None:
+        self._apply_permissions()
         self.supplier.blockSignals(True)
         self.supplier.clear()
         self.supplier.addItem("— Aucun —", None)
@@ -131,9 +146,7 @@ class PurchasesPage(QWidget):
             self.lines_table.setItem(row, 3, QTableWidgetItem(format_money(line.total, currency)))
 
     def _save(self) -> None:
-        if not self.state.can(perms.MANAGE_SUPPLIERS) and not self.state.can(
-            perms.MANAGE_STOCK
-        ):
+        if not self.state.can(perms.MANAGE_PURCHASES):
             warn(self, "Autorisation insuffisante.")
             return
         if not self._lines:
@@ -164,6 +177,7 @@ class PurchasesPage(QWidget):
     def _reload_history(self) -> None:
         currency = settings_service.get_currency()
         rows = PurchaseService.list(limit=100)
+        self._purchase_ids = [p.id for p in rows]
         self.history.setRowCount(len(rows))
         for i, p in enumerate(rows):
             supplier = p.supplier.name if p.supplier else "—"
@@ -172,3 +186,35 @@ class PurchasesPage(QWidget):
             self.history.setItem(i, 2, QTableWidgetItem(p.invoice_number or "—"))
             self.history.setItem(i, 3, QTableWidgetItem(format_money(p.total, currency)))
             self.history.setItem(i, 4, QTableWidgetItem(format_money(p.amount_paid, currency)))
+            label = "Annulé" if p.status == "cancelled" else "Terminé"
+            self.history.setItem(i, 5, QTableWidgetItem(label))
+
+    def _cancel_selected_purchase(self) -> None:
+        row = self.history.currentRow()
+        if row < 0 or row >= len(self._purchase_ids):
+            warn(self, "Sélectionnez un achat dans l'historique.")
+            return
+        if not self.state.can(perms.MANAGE_PURCHASES):
+            warn(self, "Autorisation insuffisante.")
+            return
+        purchase_id = self._purchase_ids[row]
+        if not confirm(
+            self,
+            f"Annuler l'achat #{purchase_id} ?\n\n"
+            "Le stock reçu sera retiré et la dette fournisseur liée sera annulée "
+            "si aucun remboursement n'existe.",
+        ):
+            return
+        try:
+            PurchaseService.cancel_purchase(
+                purchase_id,
+                user_id=self.state.user_id,
+                username=getattr(self.state.current_user, "username", ""),
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        self._reload_history()
+        self.refresh()
+        self.state.notify_data_changed()
+        info(self, f"Achat #{purchase_id} annulé.")

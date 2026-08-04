@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import List, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.database.connection import session_scope
@@ -34,8 +34,6 @@ class DebtService:
     @staticmethod
     def sync_client_debt_cache(session: Session, client_id: int) -> float:
         """Recalcule ``Client.debt`` à partir des dettes actives. Retourne le solde."""
-        from sqlalchemy import func
-
         total = session.scalar(
             select(func.coalesce(func.sum(Debt.amount_remaining), 0)).where(
                 Debt.client_id == client_id,
@@ -409,3 +407,56 @@ class DebtService:
             "overdue_count": len(overdue),
             "debts": debts,
         }
+
+    @staticmethod
+    def summaries_for_clients(client_ids: list[int]) -> dict[int, dict]:
+        """Résumés de dettes pour plusieurs clients en une seule agrégation SQL."""
+        ids = [int(client_id) for client_id in client_ids if client_id]
+        if not ids:
+            return {}
+        def empty_summary() -> dict:
+            return {
+                "total_remaining": 0.0,
+                "active_count": 0,
+                "overdue_count": 0,
+                "debts": [],
+            }
+
+        summaries = {client_id: empty_summary() for client_id in ids}
+        today = date.today()
+        with session_scope() as session:
+            rows = session.execute(
+                select(
+                    Debt.client_id,
+                    func.coalesce(func.sum(Debt.amount_remaining), 0),
+                    func.count(Debt.id),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (
+                                    (Debt.due_date.is_not(None))
+                                    & (Debt.due_date < today)
+                                    & (Debt.amount_remaining > 0),
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ),
+                )
+                .where(
+                    Debt.client_id.in_(ids),
+                    Debt.status.in_(ACTIVE_DEBT_STATUSES),
+                    Debt.amount_remaining > 0,
+                )
+                .group_by(Debt.client_id)
+            ).all()
+        for client_id, total_remaining, active_count, overdue_count in rows:
+            summaries[int(client_id)] = {
+                "total_remaining": round(float(total_remaining or 0), 2),
+                "active_count": int(active_count or 0),
+                "overdue_count": int(overdue_count or 0),
+                "debts": [],
+            }
+        return summaries

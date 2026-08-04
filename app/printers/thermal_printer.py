@@ -14,6 +14,7 @@ réimprimer une vente.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ from typing import Optional
 from app import config
 from app.services import settings_service
 from app.utils.helpers import format_money, format_quantity
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -131,6 +134,13 @@ def save_ticket_file(sale, shop=None, paper: str = "80mm") -> Path:
     config.ensure_directories()
     content = render_ticket_text(sale, shop, paper)
     path = config.TICKET_DIR / f"{sale.ticket_number}.txt"
+    if path.exists():
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = config.TICKET_DIR / f"{sale.ticket_number}_{stamp}.txt"
+        counter = 1
+        while path.exists():
+            path = config.TICKET_DIR / f"{sale.ticket_number}_{stamp}_{counter}.txt"
+            counter += 1
     path.write_text(content, encoding="utf-8")
     return path
 
@@ -175,7 +185,7 @@ def list_printers() -> list[str]:
 
 
 def default_printer() -> str:
-    """Retourne le nom de l'imprimante par défaut (Windows), sinon chaîne vide."""
+    """Retourne le nom de l'imprimante par défaut du système."""
     if sys.platform.startswith("win"):  # pragma: no cover - dépend de Windows
         try:
             import win32print
@@ -183,6 +193,19 @@ def default_printer() -> str:
             return win32print.GetDefaultPrinter() or ""
         except Exception:
             return ""
+    try:
+        proc = subprocess.run(
+            ["lpstat", "-d"], capture_output=True, timeout=5, text=True, check=False
+        )
+        if proc.returncode != 0:
+            return ""
+        # Exemple CUPS : "system default destination: Epson_TM_T20"
+        marker = ":"
+        line = proc.stdout.strip()
+        if marker in line:
+            return line.split(marker, 1)[1].strip()
+    except Exception:
+        return ""
     return ""
 
 
@@ -207,6 +230,7 @@ def _load_logo_image(logo_path: Optional[str], paper: str):
             image = image.resize((max_width, max(1, int(image.height * ratio))))
         return image
     except Exception:
+        logger.debug("Impossible de charger le logo du ticket thermique.", exc_info=True)
         return None
 
 
@@ -237,7 +261,7 @@ def _build_escpos_bytes(
                 dummy.image(logo)
                 dummy.set(align="left")
             except Exception:
-                pass
+                logger.debug("Logo thermique ignoré par le générateur ESC/POS.", exc_info=True)
         dummy.text(content)
         if feed_lines:
             dummy.text("\n" * feed_lines)
@@ -250,7 +274,7 @@ def _build_escpos_bytes(
                 try:
                     dummy.cut()
                 except Exception:
-                    pass
+                    logger.debug("Commande de coupe ESC/POS ignorée.", exc_info=True)
         return dummy.output
     except Exception:
         # Repli complet : texte brut + avance + commande de coupe ESC/POS brute.

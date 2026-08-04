@@ -170,7 +170,7 @@ class POSPage(QWidget):
         if not self.state.can(perms.APPLY_DISCOUNT):
             self.discount_input.setEnabled(False)
             self.discount_input.setToolTip(
-                "Les remises sont réservées au gestionnaire."
+                "Vous n'avez pas l'autorisation d'appliquer une remise."
             )
         discount_row.addWidget(self.discount_input)
         discount_row.addStretch()
@@ -326,7 +326,24 @@ class POSPage(QWidget):
                     available -= float(line.quantity)
         return available
 
+    def _min_price_for_product(self, product_id: Optional[int]) -> float:
+        if not product_id:
+            return 0.0
+        product = ProductController.get(product_id)
+        return float(product.min_price) if product else 0.0
+
     def _add_product(self, product) -> None:
+        min_price = float(product.min_price or 0)
+        sale_price = float(product.sale_price)
+        if min_price > 0 and sale_price < min_price:
+            warn(
+                self,
+                f"Impossible d'ajouter « {product.name} » : le prix de vente "
+                f"{format_money(sale_price, settings_service.get_currency())} est inférieur "
+                f"au prix minimum {format_money(min_price, settings_service.get_currency())}.",
+                "Prix minimum",
+            )
+            return
         available = self._available_stock(product.id)
         requested = 1.0
         if available + 0.0001 < requested:
@@ -436,6 +453,16 @@ class POSPage(QWidget):
             if new_price <= 0:
                 self._render_cart()
                 return
+            min_price = self._min_price_for_product(line.product_id)
+            if min_price > 0 and new_price < min_price:
+                warn(
+                    self,
+                    f"Prix minimum pour « {line.name} » : "
+                    f"{format_money(min_price, settings_service.get_currency())}.",
+                    "Prix minimum",
+                )
+                self._render_cart()
+                return
             if new_price != float(line.unit_price):
                 dialog = PriceChangeDialog(line.name, self)
                 if dialog.exec():
@@ -451,11 +478,27 @@ class POSPage(QWidget):
                         )
                 self._render_cart()
 
+    def _cart_subtotal(self) -> float:
+        return round(sum(line.total for line in self.cart), 2)
+
+    def _discount_value(self) -> float:
+        return min(self._cart_subtotal(), float(self.discount_input.value()))
+
     def _cart_total(self) -> float:
-        subtotal = sum(line.total for line in self.cart)
-        return max(0.0, subtotal - self.discount_input.value())
+        return max(0.0, self._cart_subtotal() - self._discount_value())
 
     def _update_total(self) -> None:
+        subtotal = self._cart_subtotal()
+        if self.discount_input.value() > subtotal:
+            self.discount_input.blockSignals(True)
+            self.discount_input.setValue(subtotal)
+            self.discount_input.blockSignals(False)
+            if subtotal > 0:
+                warn(
+                    self,
+                    "La remise ne peut pas dépasser le sous-total du panier.",
+                    "Remise plafonnée",
+                )
         currency = settings_service.get_currency()
         self.total_label.setText(f"Total : {format_money(self._cart_total(), currency)}")
 
@@ -482,7 +525,7 @@ class POSPage(QWidget):
         try:
             sale = SaleController.hold_sale(
                 list(self.cart),
-                discount=self.discount_input.value(),
+                discount=self._discount_value(),
                 client_id=self.client_combo.currentData(),
                 user_id=self.state.user_id,
             )
@@ -565,10 +608,11 @@ class POSPage(QWidget):
                 lines=list(self.cart),
                 payments=dialog.result_payments,
                 amount_received=dialog.amount_received,
-                discount=self.discount_input.value(),
+                discount=self._discount_value(),
                 client_id=client_id,
                 user_id=self.state.user_id,
                 allow_credit=credit_requested,
+                debt_due_date=dialog.credit_due_date,
             )
         except InsufficientPaymentError as exc:
             warn(self, str(exc), "Paiement insuffisant")

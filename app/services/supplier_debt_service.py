@@ -145,6 +145,62 @@ class SupplierDebtService:
         )
         return [p for pid in created if (p := cls.get_payment(pid))]
 
+    @classmethod
+    def cancel_debts_for_purchase(
+        cls,
+        purchase_id: int,
+        *,
+        user_id: Optional[int] = None,
+        username: str = "",
+        session: Optional[Session] = None,
+    ) -> int:
+        """Annule les dettes fournisseur liées à un achat non remboursé."""
+
+        def _do(sess: Session) -> int:
+            payment_count = (
+                sess.scalar(
+                    select(func.count())
+                    .select_from(SupplierDebtPayment)
+                    .join(SupplierDebt, SupplierDebt.id == SupplierDebtPayment.debt_id)
+                    .where(SupplierDebt.purchase_id == purchase_id)
+                )
+                or 0
+            )
+            if payment_count:
+                raise ValueError(
+                    "Impossible d'annuler : des remboursements existent sur la dette "
+                    "fournisseur de cet achat."
+                )
+            debts = list(
+                sess.scalars(
+                    select(SupplierDebt).where(SupplierDebt.purchase_id == purchase_id)
+                ).all()
+            )
+            count = 0
+            for debt in debts:
+                if debt.status == STATUS_CANCELLED:
+                    continue
+                debt.status = STATUS_CANCELLED
+                debt.amount_remaining = 0
+                debt.note = ((debt.note or "") + " | Annulation achat").strip(" |")
+                count += 1
+            return count
+
+        if session is not None:
+            return _do(session)
+
+        with session_scope() as sess:
+            count = _do(sess)
+        if count:
+            audit_service.log_action(
+                "Annulation dette fournisseur",
+                "SupplierDebt",
+                f"purchase={purchase_id} dettes_annulées={count}",
+                user_id,
+                username,
+            )
+        return count
+
     @staticmethod
     def total_remaining(supplier_id: Optional[int] = None) -> float:
         with session_scope() as session:

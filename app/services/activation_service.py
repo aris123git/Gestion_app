@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import socket
 import sys
@@ -24,6 +25,8 @@ from datetime import datetime
 from pathlib import Path
 
 from app import config
+
+logger = logging.getLogger(__name__)
 
 # Code d'activation maître par défaut. Modifiable ici ou via la variable
 # d'environnement NEXAPOS_ACTIVATION_KEY.
@@ -60,7 +63,7 @@ def _set_hidden(path: Path) -> None:
             FILE_ATTRIBUTE_HIDDEN = 0x02
             ctypes.windll.kernel32.SetFileAttributesW(str(path), FILE_ATTRIBUTE_HIDDEN)
         except Exception:
-            pass
+            logger.debug("Impossible de masquer le fichier d'activation.", exc_info=True)
 
 
 def _is_frozen_build() -> bool:
