@@ -62,7 +62,8 @@ class MainWindow(QWidget):
         super().__init__()
         self.state = state
         self.setWindowTitle("Gestion Commerciale")
-        self.resize(1280, 800)
+        self.setMinimumSize(1024, 700)
+        # Taille initiale ; l'affichage réel est maximisé dans AppController.show_main.
         self._idle_timeout_seconds = 120 * 60
         self._last_activity = time.monotonic()
         self._idle_logging_out = False
