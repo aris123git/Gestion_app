@@ -16,6 +16,9 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QVBoxLayout,
     QWidget,
+    QSplitter,
+    QScrollArea,
+    QSizePolicy,
 )
 
 from app import __version__
@@ -36,6 +39,7 @@ from app.ui.pages.suppliers_page import SuppliersPage
 from app.ui.pages.users_page import UsersPage
 from app.ui.dialogs.global_search_dialog import GlobalSearchDialog
 from app.ui.state import AppState
+from app.ui import theme
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +66,14 @@ class MainWindow(QWidget):
         super().__init__()
         self.state = state
         self.setWindowTitle("Gestion Commerciale")
-        # Cible d'affichage : écran 22" Full HD (1920×1080) en plein écran.
-        self.setMinimumSize(1280, 720)
-        self.resize(1920, 1080)
+        # Valeurs minimales raisonnables : autoriser des petites fenêtres
+        self.setMinimumSize(800, 480)
+        # Ne pas forcer une taille initiale trop grande — laisser l'OS gérer la taille
+        # self.resize(1920, 1080)  # supprimé pour ne pas imposer une taille fixe
+
+        # stocke la taille normale avant plein écran
+        self._last_normal_size = self.size()
+
         self._idle_timeout_seconds = 120 * 60
         self._last_activity = time.monotonic()
         self._idle_logging_out = False
@@ -72,14 +81,30 @@ class MainWindow(QWidget):
         self.pages: list[Optional[QWidget]] = []
         self._nav_buttons: list[Optional[QPushButton]] = []
 
+        # Conteneur principal : splitter pour permettre redimensionnement manuel
+        split = QSplitter(Qt.Orientation.Horizontal, self)
+        split.setChildrenCollapsible(False)
+
+        self._sidebar_widget = self._build_sidebar()
+        split.addWidget(self._sidebar_widget)
+
+        self.stack = QStackedWidget()
+        # Mettre la stack dans un QScrollArea pour autoriser le scroll vertical si besoin
+        stack_container = QScrollArea()
+        stack_container.setWidgetResizable(True)
+        stack_container.setFrameShape(QScrollArea.NoFrame)
+        stack_container.setWidget(self.stack)
+        split.addWidget(stack_container)
+
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+        root.addWidget(split, 1)
 
-        root.addWidget(self._build_sidebar())
-
-        self.stack = QStackedWidget()
-        root.addWidget(self.stack, 1)
+        # Appliquer le thème responsive initial selon la largeur actuelle
+        app = QApplication.instance()
+        if app is not None:
+            theme.apply_responsive_theme(app, self)
 
         self._build_pages()
         self.state.data_changed.connect(self._refresh_current)
@@ -93,10 +118,16 @@ class MainWindow(QWidget):
         self._backup_timer.setInterval(30 * 60_000)  # toutes les 30 minutes
         self._backup_timer.timeout.connect(self._run_periodic_backup)
         self._backup_timer.start()
-        app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
         self.select_page(0)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        # recalculer police responsive sur redimensionnement
+        app = QApplication.instance()
+        if app is not None:
+            theme.apply_responsive_theme(app, self)
+        super().resizeEvent(event)
 
     def _allowed(self, permission: Optional[str]) -> bool:
         if permission is None:
@@ -115,10 +146,21 @@ class MainWindow(QWidget):
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(240)
+        # Ne pas fixer la largeur — laisser le splitter gérer l'espace
+        sidebar.setMinimumWidth(56)
+        sidebar.setMaximumWidth(420)
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(14, 18, 14, 18)
         layout.setSpacing(6)
+
+        # Toggle compact / full
+        toggle = QPushButton("☰")
+        toggle.setObjectName("NavButton")
+        toggle.setToolTip("Réduire / agrandir la barre latérale")
+        toggle.setCheckable(True)
+        toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        toggle.toggled.connect(lambda checked: self._set_sidebar_compact(checked))
+        layout.addWidget(toggle)
 
         shop = settings_service.get_shop_info()
         title = QLabel(shop.name or "Gestion")
@@ -178,7 +220,33 @@ class MainWindow(QWidget):
         version.setStyleSheet("color: #475569; font-size: 11px;")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
+
         return sidebar
+
+    def _set_sidebar_compact(self, compact: bool) -> None:
+        # Compact: garder une largeur réduite (icônes) — ne pas recouvrir le contenu
+        if not hasattr(self, "_sidebar_widget") or self._sidebar_widget is None:
+            return
+        if compact:
+            self._sidebar_widget.setMaximumWidth(72)
+            self._sidebar_widget.setMinimumWidth(56)
+            # réduire le texte sur les boutons (afficher icône seulement)
+            for btn in self._nav_buttons:
+                if isinstance(btn, QPushButton) and btn is not None:
+                    text = btn.text()
+                    # garder uniquement le premier caractère d'emoji + espace si possible
+                    parts = text.split("  ")
+                    if parts:
+                        btn.setText(parts[0])
+        else:
+            self._sidebar_widget.setMaximumWidth(420)
+            self._sidebar_widget.setMinimumWidth(56)
+            # restaurer labels complets
+            for index, btn in enumerate(self._nav_buttons):
+                if isinstance(btn, QPushButton) and btn is not None:
+                    label = NAV_ITEMS[index][0]
+                    icon = NAV_ITEMS[index][1]
+                    btn.setText(f"{icon}  {label}")
 
     def _build_pages(self) -> None:
         for label, _icon, page_class, permission in NAV_ITEMS:
@@ -322,14 +390,22 @@ class MainWindow(QWidget):
         if event.key() == Qt.Key.Key_F11:
             if self.isFullScreen():
                 self.showNormal()
-                self.resize(1920, 1080)
+                try:
+                    self.resize(self._last_normal_size)
+                except Exception:
+                    pass
             else:
+                # stocker la taille normale avant le plein écran
+                self._last_normal_size = self.size()
                 self.showFullScreen()
             event.accept()
             return
         if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
             self.showNormal()
-            self.resize(1920, 1080)
+            try:
+                self.resize(self._last_normal_size)
+            except Exception:
+                pass
             event.accept()
             return
         super().keyPressEvent(event)
