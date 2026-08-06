@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,
 )
 
 from app import config
@@ -92,14 +93,26 @@ class POSPage(QWidget):
 
         self.product_table = QTableWidget(0, 3)
         self.product_table.setHorizontalHeaderLabels(["Produit", "Prix", "Stock"])
+        # colonne 0 : nom -> s'étire
         self.product_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
+        )
+        # colonnes prix/stock : interactives (permettent scroll horizontal si nécessaire)
+        self.product_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Interactive
+        )
+        self.product_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Interactive
         )
         self.product_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.product_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
+        # meilleur mode de scroll horizontal fin
+        self.product_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.product_table.doubleClicked.connect(self._add_selected_product)
+        # permettre au tableau de s'étendre
+        self.product_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.product_table)
 
         add_button = QPushButton("Ajouter au panier")
@@ -146,13 +159,27 @@ class POSPage(QWidget):
         self.cart_table.setHorizontalHeaderLabels(
             ["Produit", "Qté", "Prix U.", "Total", ""]
         )
+        # nom s'étire
         self.cart_table.horizontalHeader().setSectionResizeMode(
             self.COL_NAME, QHeaderView.ResizeMode.Stretch
         )
-        self.cart_table.setColumnWidth(self.COL_QTY, 70)
-        self.cart_table.setColumnWidth(self.COL_PRICE, 100)
-        self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
-        self.cart_table.setColumnWidth(self.COL_DEL, 44)
+        # autres colonnes interactives (éviter largeur fixe qui casse la mise en page)
+        self.cart_table.horizontalHeader().setSectionResizeMode(
+            self.COL_QTY, QHeaderView.ResizeMode.Interactive
+        )
+        self.cart_table.horizontalHeader().setSectionResizeMode(
+            self.COL_PRICE, QHeaderView.ResizeMode.Interactive
+        )
+        self.cart_table.horizontalHeader().setSectionResizeMode(
+            self.COL_TOTAL, QHeaderView.ResizeMode.Interactive
+        )
+        self.cart_table.horizontalHeader().setSectionResizeMode(
+            self.COL_DEL, QHeaderView.ResizeMode.Interactive
+        )
+        # éviter colonnes trop étroites
+        self.cart_table.horizontalHeader().setMinimumSectionSize(40)
+        self.cart_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.cart_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.cart_table.itemChanged.connect(self._on_cart_edited)
         layout.addWidget(self.cart_table)
 
@@ -189,7 +216,9 @@ class POSPage(QWidget):
 
         pay_button = QPushButton("Encaisser (Payer)")
         pay_button.setObjectName("Success")
-        pay_button.setMinimumHeight(52)
+        # conserver une taille confortable mais sans forcer excessivement
+        pay_button.setMinimumHeight(44)
+        pay_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         pay_button.clicked.connect(self._checkout)
         layout.addWidget(pay_button)
 
@@ -268,7 +297,8 @@ class POSPage(QWidget):
         product = ProductController.find_by_barcode(code)
         self.barcode_input.clear()
         if not product:
-            warn(self, f"Aucun produit avec le code-barres « {code} ».")
+            warn(self, f"Aucun produit avec le code-barres « {code} »."
+            )
             return
         self._add_product(product)
 
