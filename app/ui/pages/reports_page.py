@@ -6,6 +6,7 @@ from datetime import date, datetime
 
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDateEdit,
     QDialog,
@@ -19,6 +20,9 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,
+    QScrollArea,
+    QAbstractItemView,
 )
 
 from app import config
@@ -49,7 +53,18 @@ class ReportsPage(QWidget):
         self._report = None
         self._sale_ids: list[int] = []
 
-        layout = QVBoxLayout(self)
+        # Use a scroll area so the page can be smaller than its content
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        container = QWidget()
+        scroll.setWidget(container)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(scroll)
+
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
         layout.addWidget(page_title("Rapports"))
@@ -104,8 +119,14 @@ class ReportsPage(QWidget):
         layout.addWidget(section_title("Top produits sur la période"))
         self.top_table = QTableWidget(0, 3)
         self.top_table.setHorizontalHeaderLabels(["Produit", "Quantité", "Total ventes"])
+        # Nom s'étire, autres colonnes interactives
         self.top_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.top_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self.top_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        # fine horizontal scrolling when needed
+        self.top_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.top_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.top_table)
 
         # Historique détaillé des ventes (avec date et heure).
@@ -118,10 +139,13 @@ class ReportsPage(QWidget):
         self.history_table.setHorizontalHeaderLabels(
             ["Ticket", "Date et heure", "Caissier", "Paiement", "Total"]
         )
-        self.history_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        # Date/heure s'étire, autres colonnes interactives
+        self.history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for col in (0, 2, 3, 4):
+            self.history_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.history_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.history_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.history_table)
 
         # Annulation : admin direct, gestionnaire avec autorisation admin.
@@ -260,11 +284,19 @@ class ReportsPage(QWidget):
 
         dialog = QDialog(self)
         dialog.setWindowTitle("Z de caisse")
-        dialog.setMinimumSize(520, 480)
+        # limiter la taille de la modale à 90% de l'écran disponible
+        try:
+            screen = QApplication.primaryScreen().availableGeometry()
+            dialog.setMaximumSize(int(screen.width() * 0.9), int(screen.height() * 0.9))
+            dialog.resize(min(900, int(screen.width() * 0.9)), min(600, int(screen.height() * 0.9)))
+        except Exception:
+            dialog.resize(800, 600)
+
         layout = QVBoxLayout(dialog)
         preview = QPlainTextEdit()
         preview.setReadOnly(True)
         preview.setPlainText(content)
+        preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(preview)
 
         buttons = QHBoxLayout()
