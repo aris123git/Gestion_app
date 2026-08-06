@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,
 )
 
 from app.controllers.category_controller import CategoryController
@@ -69,12 +70,18 @@ class ProductsPage(QWidget):
 
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
+        # nom s'étire
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        # colonnes restantes : interactive pour laisser la possibilité de scroll
+        for col in range(1, len(self.HEADERS)):
+            self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
+        # permettre scroll horizontal fin
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        # permettre au tableau d'occuper l'espace disponible
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.table)
 
         actions = QHBoxLayout()
