@@ -242,34 +242,44 @@ class PaymentDialog(QDialog):
         self._recalculate()
 
     def _confirm_create_client(self, phone: str = "", name_hint: str = ""):
-        """Propose de créer un client à partir d'un téléphone et/ou d'un nom."""
-        default_name = name_hint or (f"Client {phone}" if phone else "")
+        """Ouvre un formulaire complet (nom + téléphone) pour créer un nouveau client.
+
+        Pré-remplit les champs avec ce qui a déjà été saisi dans le champ client,
+        afin que le premier enregistrement capture toujours les deux informations.
+        """
+        from app.ui.dialogs.contact_dialog import ContactDialog
+
         display = phone or name_hint
         answer = QMessageBox.question(
             self,
             "Nouveau client",
-            f"Aucun client trouvé pour « {display} ».\n\nCréer une fiche client ?",
+            f"Aucun client trouvé pour « {display} ».\n\n"
+            "Créer une fiche client ? (nom et téléphone recommandés)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return None
-        name, ok = QInputDialog.getText(
-            self,
-            "Nom du client",
-            "Nom du client :",
-            text=default_name,
-        )
-        if not ok:
-            return None
-        final_name = (name or default_name).strip()
-        if not final_name:
-            return None
+
+        # Ouvre le formulaire complet pré-rempli avec ce qui a été saisi.
+        dialog = ContactDialog("Nouveau client", with_debt=False, parent=self)
+        if name_hint:
+            dialog.name.setText(name_hint)
         if phone:
-            client = ClientController.find_or_create_by_phone(phone, name=final_name)
-        else:
-            # Création par nom uniquement (sans téléphone).
-            client = ClientController.create({"name": final_name})
+            dialog.phone.setText(phone)
+
+        if not dialog.exec() or not dialog.data:
+            return None
+
+        final_phone = dialog.data.get("phone", "").strip()
+        # Si un téléphone est fourni, vérifie d'abord qu'il n'existe pas déjà.
+        if final_phone:
+            existing = ClientController.find_by_phone(final_phone)
+            if existing:
+                self.client_search.set_client(existing.id)
+                return existing
+
+        client = ClientController.create(dialog.data)
         if client:
             self.client_search.set_client(client.id)
         return client
