@@ -129,7 +129,7 @@ class ClientSearchField(QWidget):
             self.status.setText(f"{len(labels)} correspondance(s)")
             self.status.setStyleSheet("color: #64748b; font-size: 12px;")
         else:
-            self.status.setText("Aucun client — Entrée pour créer via téléphone")
+            self.status.setText("Aucun client — appuyez sur Entrée pour créer")
             self.status.setStyleSheet("color: #b45309; font-size: 12px;")
 
     def _on_completer_activated(self, label: str) -> None:

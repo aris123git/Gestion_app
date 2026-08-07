@@ -213,37 +213,47 @@ class PaymentDialog(QDialog):
         if self.client_search.client_id:
             self._on_client_picked(self.client_search.client_id)
             return
-        phone = self._typed_phone()
-        if not phone:
+        typed = self.client_search.text()
+        if not typed:
             self.result_client_id = None
             self._resolved_client_name = ""
             self._refresh_client_status()
             self._recalculate()
             return
-        client = ClientController.find_by_phone(phone)
-        if client:
-            self.result_client_id = client.id
-            self._resolved_client_name = client.name
-            self.client_search.set_client(client.id)
+        phone = self._typed_phone()
+        if phone:
+            client = ClientController.find_by_phone(phone)
+            if client:
+                self.result_client_id = client.id
+                self._resolved_client_name = client.name
+                self.client_search.set_client(client.id)
+            else:
+                client = self._confirm_create_client(phone=phone)
+                if client:
+                    self.result_client_id = client.id
+                    self._resolved_client_name = client.name
         else:
-            client = self._confirm_create_client(phone)
+            # Texte alphabétique → recherche / création par nom.
+            client = self._confirm_create_client(name_hint=typed)
             if client:
                 self.result_client_id = client.id
                 self._resolved_client_name = client.name
         self._refresh_client_status()
         self._recalculate()
 
-    def _confirm_create_client(self, phone: str):
+    def _confirm_create_client(self, phone: str = "", name_hint: str = ""):
+        """Propose de créer un client à partir d'un téléphone et/ou d'un nom."""
+        default_name = name_hint or (f"Client {phone}" if phone else "")
+        display = phone or name_hint
         answer = QMessageBox.question(
             self,
             "Nouveau client",
-            f"Aucun client trouvé pour « {phone} ».\n\nCréer une fiche client ?",
+            f"Aucun client trouvé pour « {display} ».\n\nCréer une fiche client ?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return None
-        default_name = f"Client {phone}"
         name, ok = QInputDialog.getText(
             self,
             "Nom du client",
@@ -252,15 +262,20 @@ class PaymentDialog(QDialog):
         )
         if not ok:
             return None
-        client = ClientController.find_or_create_by_phone(
-            phone, name=(name or default_name).strip()
-        )
+        final_name = (name or default_name).strip()
+        if not final_name:
+            return None
+        if phone:
+            client = ClientController.find_or_create_by_phone(phone, name=final_name)
+        else:
+            # Création par nom uniquement (sans téléphone).
+            client = ClientController.create({"name": final_name})
         if client:
             self.client_search.set_client(client.id)
         return client
 
     def _ensure_client_for_credit(self) -> Optional[int]:
-        """Garantit un client_id si Dette > 0 (sélection ou création via téléphone)."""
+        """Garantit un client_id si Dette > 0 (sélection, téléphone ou nom)."""
         if self.result_client_id:
             return self.result_client_id
         if self.client_search.client_id:
@@ -269,12 +284,17 @@ class PaymentDialog(QDialog):
             self._resolved_client_name = client.name if client else ""
             self._refresh_client_status()
             return self.result_client_id
-        phone = self._typed_phone()
-        if not phone:
+        typed = self.client_search.text()
+        if not typed:
             return None
-        client = ClientController.find_by_phone(phone)
-        if not client:
-            client = self._confirm_create_client(phone)
+        phone = self._typed_phone()
+        if phone:
+            client = ClientController.find_by_phone(phone)
+            if not client:
+                client = self._confirm_create_client(phone=phone)
+        else:
+            # Texte alphabétique → recherche / création par nom.
+            client = self._confirm_create_client(name_hint=typed)
         if client:
             self.result_client_id = client.id
             self._resolved_client_name = client.name

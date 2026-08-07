@@ -174,16 +174,21 @@ class DashboardService:
 
     @staticmethod
     def best_client(start: date, end: date) -> Optional[Tuple[str, float]]:
+        """Meilleur client classé sur les encaissements réels (hors part dette)."""
         lo, hi = _range(start, end)
         with session_scope() as session:
             row = session.execute(
-                select(Client.name, func.sum(Sale.total))
+                select(Client.name, func.sum(Payment.amount))
                 .join(Sale, Sale.client_id == Client.id)
+                .join(Payment, Payment.sale_id == Sale.id)
                 .where(
-                    Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
+                    Sale.date >= lo,
+                    Sale.date <= hi,
+                    Sale.status == "completed",
+                    Payment.method != config.PAYMENT_METHOD_CREDIT,
                 )
                 .group_by(Client.id)
-                .order_by(func.sum(Sale.total).desc())
+                .order_by(func.sum(Payment.amount).desc())
                 .limit(1)
             ).first()
             if not row:

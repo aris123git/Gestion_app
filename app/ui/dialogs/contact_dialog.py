@@ -45,7 +45,7 @@ class ContactDialog(QDialog):
         self.notes = QPlainTextEdit()
         self.notes.setFixedHeight(70)
 
-        form.addRow("Nom *", self.name)
+        form.addRow("Nom", self.name)
         form.addRow("Téléphone", self.phone)
         form.addRow("Téléphone 2", self.phone2)
         form.addRow("Adresse", self.address)
@@ -101,12 +101,18 @@ class ContactDialog(QDialog):
             self.debt.setValue(float(contact.debt))
 
     def _save(self) -> None:
-        if not self.name.text().strip():
-            warn(self, "Le nom est obligatoire.")
+        name = self.name.text().strip()
+        phone = self.phone.text().strip()
+        # Au moins le nom OU le téléphone est requis.
+        if not name and not phone:
+            warn(self, "Le nom ou le téléphone est obligatoire.")
             return
+        # Si seul le téléphone est fourni, on génère un nom automatique.
+        if not name:
+            name = f"Client {phone}"
         self.data = {
-            "name": self.name.text().strip(),
-            "phone": self.phone.text().strip(),
+            "name": name,
+            "phone": phone,
             "phone2": self.phone2.text().strip(),
             "address": self.address.text().strip(),
             "email": self.email.text().strip(),

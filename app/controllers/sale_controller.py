@@ -266,13 +266,35 @@ class SaleController:
                     + "\n- ".join(below_min)
                 )
 
+            # Vérifie que la remise globale ne fait pas chuter le total
+            # en dessous du plancher de prix minimum (somme des minima × qté).
+            if discount > 0:
+                min_floor = sum(
+                    min_prices[l.product_id][0] * float(l.quantity)
+                    for l in lines
+                    if l.product_id in min_prices and min_prices[l.product_id][0] > 0
+                )
+                if min_floor > 0 and total < min_floor - 0.001:
+                    raise BelowMinPriceError(
+                        f"La remise ({discount:g}) ramène le total ({total:g}) en dessous "
+                        f"du seuil plancher ({min_floor:g}) imposé par les prix minimums."
+                    )
+
             for line in lines:
                 product = (
                     session.get(Product, line.product_id) if line.product_id else None
                 )
-                purchase_price = (
-                    float(product.purchase_price) if product else line.purchase_price
-                )
+                # Utilise le prix d'achat capturé au moment de l'ajout au panier
+                # (line.purchase_price) afin de ne pas fausser la marge si un
+                # nouvel achat fournisseur a mis à jour product.purchase_price
+                # entre l'ajout et la validation de la vente.
+                line_pp = float(line.purchase_price)
+                if line_pp > 0:
+                    purchase_price = line_pp
+                elif product:
+                    purchase_price = float(product.purchase_price)
+                else:
+                    purchase_price = 0.0
                 profit += (line.unit_price - purchase_price) * line.quantity
 
                 session.add(
