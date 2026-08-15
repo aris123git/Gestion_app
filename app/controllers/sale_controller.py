@@ -29,10 +29,28 @@ class CartLine:
     unit_price: float
     quantity: float
     purchase_price: float = 0.0
+    free_amount: bool = False
+    amount: float = 0.0
+    pack_content: float = 0.0
 
     @property
     def total(self) -> float:
+        if self.free_amount:
+            return round(float(self.amount), 2)
         return round(self.unit_price * self.quantity, 2)
+
+    @property
+    def stock_quantity(self) -> float:
+        """Quantité à déduire du stock produit (unités d'achat / cartons)."""
+        if self.free_amount and float(self.pack_content or 0) > 0:
+            return round(float(self.quantity) / float(self.pack_content), 6)
+        return float(self.quantity)
+
+    @property
+    def line_profit(self) -> float:
+        if self.free_amount:
+            return round(float(self.amount) - float(self.purchase_price) * float(self.quantity), 2)
+        return round((float(self.unit_price) - float(self.purchase_price)) * float(self.quantity), 2)
 
 
 @dataclass
@@ -75,6 +93,17 @@ class SaleController:
     @staticmethod
     def _validate_lines(lines: List[CartLine]) -> None:
         for line in lines:
+            if line.free_amount:
+                if to_float(line.amount) <= 0:
+                    raise ValueError("Le montant vendu doit être supérieur à zéro.")
+                if to_float(line.unit_price) <= 0:
+                    raise ValueError(
+                        "Le prix de vente de référence est requis pour une vente "
+                        "au montant libre (estimation de marge)."
+                    )
+                if to_float(line.quantity) <= 0:
+                    raise ValueError("La quantité estimée doit être supérieure à zéro.")
+                continue
             if to_float(line.quantity) <= 0:
                 raise ValueError("La quantité vendue doit être supérieure à zéro.")
             if to_float(line.unit_price) < 0:
@@ -233,7 +262,7 @@ class SaleController:
             for line in lines:
                 if line.product_id:
                     required[line.product_id] = (
-                        required.get(line.product_id, 0.0) + float(line.quantity)
+                        required.get(line.product_id, 0.0) + float(line.stock_quantity)
                     )
             min_prices: dict[int, tuple[float, str]] = {}
             for product_id, needed in required.items():
@@ -253,8 +282,11 @@ class SaleController:
                 min_prices[product_id] = (float(product.min_price), product.name)
 
             # Empêche de vendre en dessous du prix minimum défini sur le produit.
+            # Montant libre : le montant client n'est pas un prix unitaire.
             below_min = []
             for line in lines:
+                if line.free_amount:
+                    continue
                 info = min_prices.get(line.product_id)
                 if info and info[0] > 0 and float(line.unit_price) < info[0]:
                     below_min.append(
@@ -272,7 +304,11 @@ class SaleController:
                 min_floor = sum(
                     min_prices[l.product_id][0] * float(l.quantity)
                     for l in lines
-                    if l.product_id in min_prices and min_prices[l.product_id][0] > 0
+                    if (
+                        not l.free_amount
+                        and l.product_id in min_prices
+                        and min_prices[l.product_id][0] > 0
+                    )
                 )
                 if min_floor > 0 and total < min_floor - 0.001:
                     raise BelowMinPriceError(
@@ -295,7 +331,10 @@ class SaleController:
                     purchase_price = float(product.purchase_price)
                 else:
                     purchase_price = 0.0
-                profit += (line.unit_price - purchase_price) * line.quantity
+                if line.free_amount:
+                    profit += float(line.amount) - purchase_price * float(line.quantity)
+                else:
+                    profit += (line.unit_price - purchase_price) * line.quantity
 
                 session.add(
                     SaleItem(
@@ -310,14 +349,15 @@ class SaleController:
                 )
 
                 if product:
+                    stock_out = float(line.stock_quantity)
                     before = float(product.quantity)
-                    after = before - line.quantity
+                    after = before - stock_out
                     product.quantity = after
                     session.add(
                         StockMovement(
                             product_id=product.id,
                             movement_type=MOVEMENT_SALE,
-                            quantity=line.quantity,
+                            quantity=stock_out,
                             quantity_before=before,
                             quantity_after=after,
                             reason=f"Vente {ticket_number}",
@@ -471,21 +511,40 @@ class SaleController:
             return list(rows)
 
     @staticmethod
+    def _cart_line_from_item(item) -> CartLine:
+        """Reconstruit une ligne panier ; détecte le montant libre si besoin."""
+        from app.controllers.product_controller import ProductController
+
+        unit_price = float(item.unit_price or 0)
+        quantity = float(item.quantity or 0)
+        line_total = float(item.line_total or 0)
+        expected = round(unit_price * quantity, 2)
+        free_amount = abs(expected - line_total) > 0.01 and line_total > 0
+        pack_content = 0.0
+        if item.product_id:
+            product = ProductController.get(item.product_id)
+            if product:
+                pack_content = float(getattr(product, "pack_content", 0) or 0)
+                if bool(getattr(product, "free_amount_sale", False)):
+                    free_amount = True
+        return CartLine(
+            product_id=item.product_id,
+            name=item.product_name,
+            unit_price=unit_price,
+            quantity=quantity,
+            purchase_price=float(item.purchase_price or 0),
+            free_amount=free_amount,
+            amount=line_total if free_amount else 0.0,
+            pack_content=pack_content,
+        )
+
+    @staticmethod
     def pending_to_cart(sale_id: int) -> tuple[List[CartLine], float, Optional[int]]:
         """Retourne (lignes, remise, client_id) d'une vente en attente."""
         sale = SaleController.get(sale_id)
         if not sale or sale.status != "pending":
             raise ValueError("Vente en attente introuvable.")
-        lines = [
-            CartLine(
-                product_id=item.product_id,
-                name=item.product_name,
-                unit_price=float(item.unit_price),
-                quantity=float(item.quantity),
-                purchase_price=float(item.purchase_price),
-            )
-            for item in sale.items
-        ]
+        lines = [SaleController._cart_line_from_item(item) for item in sale.items]
         return lines, float(sale.discount), sale.client_id
 
     @staticmethod
@@ -501,16 +560,7 @@ class SaleController:
             ).unique().scalar_one_or_none()
             if not sale:
                 raise ValueError("Vente en attente introuvable ou déjà reprise.")
-            lines = [
-                CartLine(
-                    product_id=item.product_id,
-                    name=item.product_name,
-                    unit_price=float(item.unit_price),
-                    quantity=float(item.quantity),
-                    purchase_price=float(item.purchase_price),
-                )
-                for item in sale.items
-            ]
+            lines = [SaleController._cart_line_from_item(item) for item in sale.items]
             discount = float(sale.discount)
             client_id = sale.client_id
             ticket_number = sale.ticket_number
@@ -617,14 +667,24 @@ class SaleController:
                     if item.product_id:
                         product = session.get(Product, item.product_id)
                         if product:
+                            restock_qty = float(item.quantity)
+                            # Montant libre : quantity stockée = unités de vente (kg) ;
+                            # le stock produit est en unités d'achat (cartons).
+                            if (
+                                bool(getattr(product, "free_amount_sale", False))
+                                and float(getattr(product, "pack_content", 0) or 0) > 0
+                            ):
+                                restock_qty = round(
+                                    restock_qty / float(product.pack_content), 6
+                                )
                             before = float(product.quantity)
-                            after = before + float(item.quantity)
+                            after = before + restock_qty
                             product.quantity = after
                             session.add(
                                 StockMovement(
                                     product_id=product.id,
                                     movement_type=MOVEMENT_IN,
-                                    quantity=float(item.quantity),
+                                    quantity=restock_qty,
                                     quantity_before=before,
                                     quantity_after=after,
                                     reason="Annulation vente",

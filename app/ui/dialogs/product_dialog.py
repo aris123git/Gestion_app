@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPushButton,
     QVBoxLayout,
@@ -29,7 +30,7 @@ class ProductDialog(QDialog):
         self.product = product
         self.setWindowTitle("Produit")
         self.setModal(True)
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(500)
         self.data: Optional[dict] = None
 
         layout = QVBoxLayout(self)
@@ -54,8 +55,21 @@ class ProductDialog(QDialog):
         self.purchase_price = self._money_spin()
         self.sale_price = self._money_spin()
         self.min_price = self._money_spin()
+        self.pack_content = self._qty_spin()
         self.quantity = self._qty_spin()
         self.min_stock = self._qty_spin()
+        self.free_amount_sale = QCheckBox("Vente : montant libre")
+        self.free_amount_sale.setToolTip(
+            "Le caissier saisit un montant (ex. 300 F) au lieu d'une quantité. "
+            "Le prix de vente sert à estimer la marge."
+        )
+        self.free_hint = QLabel(
+            "Exemple poissonnerie : achat 10 000 F/carton, contenu 10 kg, "
+            "vente 1 500 F/kg → à la caisse on saisit « 300 F »."
+        )
+        self.free_hint.setWordWrap(True)
+        self.free_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.free_amount_sale.toggled.connect(self._toggle_free_mode)
         self.is_active = QCheckBox("Produit actif")
         self.is_active.setChecked(True)
 
@@ -63,12 +77,15 @@ class ProductDialog(QDialog):
         form.addRow("Catégorie", self.category)
         form.addRow("Code-barres", self.barcode)
         form.addRow("Référence", self.reference)
-        form.addRow("Prix d'achat", self.purchase_price)
-        form.addRow("Prix de vente", self.sale_price)
+        form.addRow("Prix d'achat (ex. F / carton)", self.purchase_price)
+        form.addRow("Contenu estimatif (ex. kg / carton)", self.pack_content)
+        form.addRow("Prix de vente (ex. F / kg)", self.sale_price)
         form.addRow("Prix minimum", self.min_price)
-        form.addRow("Quantité", self.quantity)
+        form.addRow("Stock (ex. cartons)", self.quantity)
         form.addRow("Stock minimum", self.min_stock)
-        form.addRow("Unité", self.unit)
+        form.addRow("Unité de stock", self.unit)
+        form.addRow("Mode de vente", self.free_amount_sale)
+        form.addRow("", self.free_hint)
         form.addRow("Statut", self.is_active)
         layout.addLayout(form)
 
@@ -85,6 +102,7 @@ class ProductDialog(QDialog):
 
         if product:
             self._fill(product)
+        self._toggle_free_mode(self.free_amount_sale.isChecked())
 
     def _money_spin(self) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
@@ -99,6 +117,10 @@ class ProductDialog(QDialog):
         spin.setDecimals(3)
         spin.setSingleStep(1)
         return spin
+
+    def _toggle_free_mode(self, enabled: bool) -> None:
+        self.free_hint.setVisible(bool(enabled))
+        self.pack_content.setEnabled(bool(enabled) or self.pack_content.value() > 0)
 
     def _fill(self, product) -> None:
         self.name.setText(product.name)
@@ -115,14 +137,31 @@ class ProductDialog(QDialog):
         self.purchase_price.setValue(float(product.purchase_price))
         self.sale_price.setValue(float(product.sale_price))
         self.min_price.setValue(float(product.min_price))
+        self.pack_content.setValue(float(getattr(product, "pack_content", 0) or 0))
         self.quantity.setValue(float(product.quantity))
         self.min_stock.setValue(float(product.min_stock))
+        self.free_amount_sale.setChecked(bool(getattr(product, "free_amount_sale", False)))
         self.is_active.setChecked(bool(product.is_active))
 
     def _save(self) -> None:
         if not self.name.text().strip():
             warn(self, "Le nom du produit est obligatoire.")
             return
+        if self.free_amount_sale.isChecked():
+            if self.sale_price.value() <= 0:
+                warn(
+                    self,
+                    "En montant libre, le prix de vente (référence / kg) est obligatoire "
+                    "pour estimer la marge.",
+                )
+                return
+            if self.pack_content.value() <= 0:
+                warn(
+                    self,
+                    "Indiquez le contenu estimatif (ex. 10 kg par carton) pour convertir "
+                    "le stock et estimer le coût.",
+                )
+                return
         self.data = {
             "name": self.name.text().strip(),
             "barcode": self.barcode.text().strip(),
@@ -132,8 +171,10 @@ class ProductDialog(QDialog):
             "purchase_price": self.purchase_price.value(),
             "sale_price": self.sale_price.value(),
             "min_price": self.min_price.value(),
+            "pack_content": self.pack_content.value(),
             "quantity": self.quantity.value(),
             "min_stock": self.min_stock.value(),
+            "free_amount_sale": self.free_amount_sale.isChecked(),
             "is_active": self.is_active.isChecked(),
         }
         self.accept()

@@ -139,8 +139,10 @@ class ProductController:
                 purchase_price=to_float(data.get("purchase_price")),
                 sale_price=to_float(data.get("sale_price")),
                 min_price=to_float(data.get("min_price")),
+                pack_content=to_float(data.get("pack_content")),
                 quantity=quantity,
                 min_stock=to_float(data.get("min_stock")),
+                free_amount_sale=bool(data.get("free_amount_sale", False)),
                 is_active=bool(data.get("is_active", True)),
             )
             session.add(product)
@@ -189,8 +191,12 @@ class ProductController:
             product.purchase_price = to_float(data.get("purchase_price"))
             # Le prix de vente est mis à jour via PriceHistoryService si modifié.
             product.min_price = to_float(data.get("min_price"))
+            product.pack_content = to_float(data.get("pack_content", product.pack_content))
             product.quantity = new_quantity
             product.min_stock = to_float(data.get("min_stock"))
+            product.free_amount_sale = bool(
+                data.get("free_amount_sale", product.free_amount_sale)
+            )
             product.is_active = bool(data.get("is_active", True))
             ProductController._record_quantity_adjustment(
                 session,

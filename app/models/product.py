@@ -35,6 +35,13 @@ class Product(Base, TimestampMixin):
     quantity: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     min_stock: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
 
+    # Vente au montant libre (ex. poissonnerie : client demande « 300 F »).
+    # - purchase_price = prix d'achat par unité de stock (carton)
+    # - pack_content = contenu estimatif (kg / carton)
+    # - sale_price = prix de vente de référence (F / kg) pour marge estimée
+    free_amount_sale: Mapped[bool] = mapped_column(Boolean, default=False)
+    pack_content: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     category: Mapped[Optional["Category"]] = relationship(  # noqa: F821
@@ -53,6 +60,14 @@ class Product(Base, TimestampMixin):
     @property
     def is_out_of_stock(self) -> bool:
         return float(self.quantity) <= 0
+
+    @property
+    def cost_per_sale_unit(self) -> float:
+        """Coût d'achat estimé par unité de vente (ex. F/kg)."""
+        content = float(self.pack_content or 0)
+        if content <= 0:
+            return float(self.purchase_price or 0)
+        return float(self.purchase_price or 0) / content
 
     @property
     def unit_name(self) -> str:

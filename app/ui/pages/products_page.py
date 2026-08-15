@@ -115,12 +115,17 @@ class ProductsPage(QWidget):
         self._ids = [p.id for p in products]
         self.table.setRowCount(len(products))
         for row, product in enumerate(products):
-            self.table.setItem(row, 0, QTableWidgetItem(product.name))
+            name = product.name
+            if getattr(product, "free_amount_sale", False):
+                name = f"{product.name} · montant libre"
+            self.table.setItem(row, 0, QTableWidgetItem(name))
             self.table.setItem(row, 1, QTableWidgetItem(product.category_name))
             self.table.setItem(row, 2, QTableWidgetItem(product.barcode))
-            self.table.setItem(
-                row, 3, QTableWidgetItem(format_money(product.sale_price, currency))
-            )
+            if getattr(product, "free_amount_sale", False):
+                price_txt = f"réf. {format_money(product.sale_price, currency)}/kg"
+            else:
+                price_txt = format_money(product.sale_price, currency)
+            self.table.setItem(row, 3, QTableWidgetItem(price_txt))
             stock_item = QTableWidgetItem(format_quantity(product.quantity))
             if product.is_out_of_stock:
                 stock_item.setForeground(Qt.GlobalColor.red)

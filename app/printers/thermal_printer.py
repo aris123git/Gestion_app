@@ -93,8 +93,14 @@ def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
         name = item.product_name
         lines.append(name[:width])
         qty = format_quantity(item.quantity)
-        detail = f"{qty} x {format_money(item.unit_price, currency)}"
-        lines.append(_row(f"  {detail}", format_money(item.line_total, currency), width))
+        unit_price = float(item.unit_price or 0)
+        line_total = float(item.line_total or 0)
+        expected = round(unit_price * float(item.quantity or 0), 2)
+        if abs(expected - line_total) > 0.01:
+            detail = f"montant {format_money(line_total, currency)}"
+        else:
+            detail = f"{qty} x {format_money(unit_price, currency)}"
+        lines.append(_row(f"  {detail}", format_money(line_total, currency), width))
 
     lines.append(_line("-", width))
     lines.append(_row("Sous-total", format_money(sale.subtotal, currency), width))
