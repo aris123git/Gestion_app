@@ -33,6 +33,7 @@ from app.controllers.sale_controller import (
     SaleController,
 )
 from app.services import audit_service, permissions as perms, settings_service
+from app.ui.dialogs.free_amount_dialog import FreeAmountDialog
 from app.ui.dialogs.payment_dialog import PaymentDialog
 from app.ui.dialogs.price_change_dialog import PriceChangeDialog
 from app.ui.dialogs.ticket_dialog import TicketDialog
@@ -247,12 +248,21 @@ class POSPage(QWidget):
         currency = settings_service.get_currency()
         self.product_table.setRowCount(len(products))
         for row, product in enumerate(products):
-            name_item = QTableWidgetItem(product.name)
+            label = product.name
+            if getattr(product, "free_amount_sale", False):
+                label = f"{product.name} · montant libre"
+            name_item = QTableWidgetItem(label)
             name_item.setData(Qt.ItemDataRole.UserRole, product.id)
             self.product_table.setItem(row, 0, name_item)
-            self.product_table.setItem(
-                row, 1, QTableWidgetItem(format_money(product.sale_price, currency))
-            )
+            if getattr(product, "free_amount_sale", False):
+                price_txt = (
+                    f"réf. {format_money(product.sale_price, currency)}/kg"
+                    if float(product.sale_price or 0) > 0
+                    else "montant libre"
+                )
+            else:
+                price_txt = format_money(product.sale_price, currency)
+            self.product_table.setItem(row, 1, QTableWidgetItem(price_txt))
             stock_item = QTableWidgetItem(
                 f"{format_quantity(product.quantity)} {product.unit_name}".strip()
             )
@@ -282,7 +292,7 @@ class POSPage(QWidget):
             self._add_product(product)
 
     def _available_stock(self, product_id: int, exclude_cart: bool = False) -> float:
-        """Stock restant pour un produit, en tenant compte du panier courant."""
+        """Stock restant (unités d'achat), en tenant compte du panier courant."""
         product = ProductController.get(product_id)
         if not product:
             return 0.0
@@ -290,7 +300,7 @@ class POSPage(QWidget):
         if not exclude_cart:
             for line in self.cart:
                 if line.product_id == product_id:
-                    available -= float(line.quantity)
+                    available -= float(line.stock_quantity)
         return available
 
     def _min_price_for_product(self, product_id: Optional[int]) -> float:
@@ -300,6 +310,10 @@ class POSPage(QWidget):
         return float(product.min_price) if product else 0.0
 
     def _add_product(self, product) -> None:
+        if getattr(product, "free_amount_sale", False):
+            self._add_free_amount_product(product)
+            return
+
         min_price = float(product.min_price or 0)
         sale_price = float(product.sale_price)
         if min_price > 0 and sale_price < min_price:
@@ -322,7 +336,7 @@ class POSPage(QWidget):
             )
             return
         for line in self.cart:
-            if line.product_id == product.id:
+            if line.product_id == product.id and not line.free_amount:
                 line.quantity += 1
                 self._render_cart()
                 return
@@ -337,6 +351,64 @@ class POSPage(QWidget):
         )
         self._render_cart()
 
+    def _add_free_amount_product(self, product) -> None:
+        """Ajoute une ligne au montant demandé (ex. 300 F de chinchard)."""
+        sale_price = float(product.sale_price or 0)
+        if sale_price <= 0:
+            warn(
+                self,
+                f"« {product.name} » : définissez un prix de vente de référence "
+                "(ex. F/kg) pour estimer la marge.",
+            )
+            return
+        available = self._available_stock(product.id)
+        if available + 0.0001 <= 0:
+            warn(
+                self,
+                f"Stock insuffisant pour « {product.name} » : "
+                f"disponible {format_quantity(available)}.",
+                "Stock insuffisant",
+            )
+            return
+
+        dialog = FreeAmountDialog(product.name, sale_price, parent=self)
+        if not dialog.exec() or not dialog.amount:
+            return
+
+        amount = float(dialog.amount)
+        estimated_qty = amount / sale_price
+        pack = float(getattr(product, "pack_content", 0) or 0)
+        cost_per_unit = float(product.cost_per_sale_unit)
+        stock_needed = (
+            round(estimated_qty / pack, 6) if pack > 0 else estimated_qty
+        )
+        if stock_needed > available + 0.0001:
+            warn(
+                self,
+                f"Stock insuffisant pour « {product.name} » : "
+                f"disponible {format_quantity(available)} "
+                f"{product.unit_name or 'unité'}(s), "
+                f"besoin estimé {format_quantity(stock_needed)}.",
+                "Stock insuffisant",
+            )
+            return
+
+        currency = settings_service.get_currency()
+        display_name = f"{product.name} — {format_money(amount, currency)}"
+        self.cart.append(
+            CartLine(
+                product_id=product.id,
+                name=display_name,
+                unit_price=sale_price,
+                quantity=estimated_qty,
+                purchase_price=cost_per_unit,
+                free_amount=True,
+                amount=amount,
+                pack_content=pack,
+            )
+        )
+        self._render_cart()
+
     # --- Rendu et édition du panier ---------------------------------------
     def _render_cart(self) -> None:
         self._updating = True
@@ -346,17 +418,34 @@ class POSPage(QWidget):
             name_item = QTableWidgetItem(line.name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
-            qty_item = QTableWidgetItem(format_quantity(line.quantity))
-            qty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if line.free_amount:
+                qty_item = QTableWidgetItem(f"≈ {format_quantity(line.quantity)}")
+                qty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                qty_item.setFlags(qty_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                qty_item.setToolTip(
+                    "Quantité estimée (montant ÷ prix de référence). Non modifiable."
+                )
 
-            price_item = QTableWidgetItem(f"{float(line.unit_price):g}")
-            price_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            if not self.state.can(perms.MANAGE_PRICES):
+                price_item = QTableWidgetItem(f"{float(line.unit_price):g}/kg")
+                price_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 price_item.setFlags(price_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                price_item.setToolTip("Prix de référence pour la marge estimée.")
+            else:
+                qty_item = QTableWidgetItem(format_quantity(line.quantity))
+                qty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                price_item = QTableWidgetItem(f"{float(line.unit_price):g}")
+                price_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if not self.state.can(perms.MANAGE_PRICES):
+                    price_item.setFlags(
+                        price_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                    )
 
             total_item = QTableWidgetItem(format_money(line.total, currency))
             total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            total_item.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
 
             self.cart_table.setItem(row, self.COL_NAME, name_item)
             self.cart_table.setItem(row, self.COL_QTY, qty_item)
@@ -383,6 +472,11 @@ class POSPage(QWidget):
         if row >= len(self.cart):
             return
         line = self.cart[row]
+
+        if line.free_amount:
+            # Montant libre : quantité et prix de référence ne sont pas éditables.
+            self._render_cart()
+            return
 
         if item.column() == self.COL_QTY:
             qty = to_float(item.text())
