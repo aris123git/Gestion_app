@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from app import config
 from app.controllers.expense_controller import ExpenseController
 from app.services import audit_service, permissions as perms, settings_service
+from app.ui.responsive import EXPENSE_COLUMNS, LayoutProfile, TableColumnController
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_money
@@ -63,6 +64,7 @@ class ExpensesPage(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.table)
+        self._columns = TableColumnController(self.table, EXPENSE_COLUMNS)
 
         actions = QHBoxLayout()
         actions.addStretch()
@@ -71,6 +73,12 @@ class ExpensesPage(QWidget):
         delete.clicked.connect(self._delete)
         actions.addWidget(delete)
         layout.addLayout(actions)
+        self.state.layout_changed.connect(self._on_layout_changed)
+        if self.state.layout is not None:
+            self._on_layout_changed(self.state.layout)
+
+    def _on_layout_changed(self, profile: LayoutProfile) -> None:
+        self._columns.apply(profile.content_width)
 
     def _add(self) -> None:
         if not self.state.can(perms.MANAGE_EXPENSES):

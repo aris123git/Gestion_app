@@ -20,6 +20,7 @@ from app.services import permissions as perms, settings_service
 from app.services.dashboard_service import DashboardService
 from app.services.inventory_service import InventoryService
 from app.ui.state import AppState
+from app.ui.responsive import LayoutProfile
 from app.ui.theme import DANGER, PRIMARY, SUCCESS, WARNING
 from app.ui.widgets.helpers import make_card, page_title, section_title
 from app.ui.widgets.stat_card import StatCard
@@ -44,6 +45,7 @@ class DashboardPage(QWidget):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(18)
+        self._page_layout = layout
 
         self.title = page_title("Tableau de bord")
         layout.addWidget(self.title)
@@ -63,7 +65,7 @@ class DashboardPage(QWidget):
         self.card_net = StatCard("Bénéfice net après dépenses", "0", "#4c1d95", "💹")
 
         # Les dettes se gèrent uniquement dans Clients / Fournisseurs (menu gauche).
-        cards = [
+        self._cards = [
             self.card_revenue_today,
             self.card_revenue_month,
             self.card_sales,
@@ -75,7 +77,7 @@ class DashboardPage(QWidget):
             self.card_out,
             self.card_products,
         ]
-        for index, card in enumerate(cards):
+        for index, card in enumerate(self._cards):
             grid.addWidget(card, index // 4, index % 4)
         layout.addLayout(grid)
         self._cards_grid = grid
@@ -83,6 +85,7 @@ class DashboardPage(QWidget):
         # --- Listes : top produits + alertes ------------------------------
         lists = QHBoxLayout()
         lists.setSpacing(16)
+        self._lists_layout = lists
 
         top_wrap = QWidget()
         top_layout = QVBoxLayout(top_wrap)
@@ -95,7 +98,8 @@ class DashboardPage(QWidget):
         )
         self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         top_layout.addWidget(self.top_table)
-        lists.addWidget(make_card(top_wrap))
+        self._top_card = make_card(top_wrap)
+        lists.addWidget(self._top_card)
 
         alert_wrap = QWidget()
         alert_layout = QVBoxLayout(alert_wrap)
@@ -110,7 +114,8 @@ class DashboardPage(QWidget):
         )
         self.alert_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         alert_layout.addWidget(self.alert_table)
-        lists.addWidget(make_card(alert_wrap))
+        self._alert_card = make_card(alert_wrap)
+        lists.addWidget(self._alert_card)
 
         layout.addLayout(lists)
 
@@ -121,6 +126,32 @@ class DashboardPage(QWidget):
         layout.addWidget(self.insights_label)
         layout.addStretch()
         self._apply_permissions()
+        self.state.layout_changed.connect(self._on_layout_changed)
+        if self.state.layout is not None:
+            self._on_layout_changed(self.state.layout)
+
+    def _reflow_cards(self, columns: int) -> None:
+        cols = max(1, int(columns))
+        visible_cards = [c for c in self._cards if c.isVisible()]
+        for card in self._cards:
+            self._cards_grid.removeWidget(card)
+        for index, card in enumerate(visible_cards):
+            self._cards_grid.addWidget(card, index // cols, index % cols)
+
+    def _on_layout_changed(self, profile: LayoutProfile) -> None:
+        self._reflow_cards(profile.card_columns)
+        margins = 12 if profile.density == "compact" else 24
+        spacing = 10 if profile.is_short else 18
+        self._page_layout.setContentsMargins(margins, margins, margins, margins)
+        self._page_layout.setSpacing(spacing)
+        self._cards_grid.setSpacing(8 if profile.is_short else 16)
+        self._lists_layout.setDirection(
+            QHBoxLayout.Direction.TopToBottom
+            if profile.width_mode == "mobile"
+            else QHBoxLayout.Direction.LeftToRight
+        )
+        for card in self._cards:
+            card.setMinimumHeight(72 if profile.density == "compact" else 120)
 
     def _apply_permissions(self) -> None:
         show_profits = self.state.can(perms.VIEW_PROFITS)
@@ -130,6 +161,8 @@ class DashboardPage(QWidget):
         self.card_net.setVisible(show_profits)
         self.insights.setVisible(show_profits)
         self.insights_label.setVisible(show_profits)
+        if self.state.layout is not None:
+            self._reflow_cards(self.state.layout.card_columns)
 
     def refresh(self) -> None:
         self._apply_permissions()

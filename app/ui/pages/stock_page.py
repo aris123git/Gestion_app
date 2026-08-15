@@ -24,6 +24,7 @@ from app.controllers.stock_controller import StockController
 from app.controllers.supplier_controller import SupplierController
 from app.services import audit_service, permissions as perms
 from app.services.inventory_service import InventoryService
+from app.ui.responsive import LayoutProfile, STOCK_HISTORY_COLUMNS, TableColumnController
 from app.ui.state import AppState
 from app.ui.widgets.helpers import info, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_quantity
@@ -131,7 +132,17 @@ class StockPage(QWidget):
             QAbstractItemView.SelectionBehavior.SelectRows
         )
         layout.addWidget(self.history_table)
+        self._history_columns = TableColumnController(
+            self.history_table, STOCK_HISTORY_COLUMNS
+        )
+        self.state.layout_changed.connect(self._on_layout_changed)
+        if self.state.layout is not None:
+            self._on_layout_changed(self.state.layout)
         return wrap
+
+    def _on_layout_changed(self, profile: LayoutProfile) -> None:
+        if hasattr(self, "_history_columns"):
+            self._history_columns.apply(profile.content_width)
 
     # --- Actions -----------------------------------------------------------
     def _current_product_id(self):
