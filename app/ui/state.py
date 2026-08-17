@@ -1,11 +1,14 @@
-"""État partagé de l'interface (utilisateur courant, thème)."""
+"""État partagé de l'interface (utilisateur courant, thème, layout)."""
 
 from __future__ import annotations
+
+from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
 from app.services import settings_service
 from app.services.auth_service import AuthService
+from app.ui.responsive import LayoutEngine, LayoutProfile
 
 
 class AppState(QObject):
@@ -13,11 +16,27 @@ class AppState(QObject):
 
     theme_changed = Signal(bool)
     data_changed = Signal()
+    layout_changed = Signal(object)  # LayoutProfile
 
     def __init__(self) -> None:
         super().__init__()
         self.auth = AuthService()
         self._dark = settings_service.get_setting("dark_mode", "0") == "1"
+        self.layout_engine = LayoutEngine(self)
+        self.layout_engine.changed.connect(self._on_layout_engine_changed)
+        self._layout: Optional[LayoutProfile] = None
+
+    def _on_layout_engine_changed(self, profile: LayoutProfile) -> None:
+        self._layout = profile
+        self.layout_changed.emit(profile)
+
+    @property
+    def layout(self) -> Optional[LayoutProfile]:
+        return self._layout
+
+    def update_viewport(self, width: int, height: int) -> LayoutProfile:
+        """Point d'entrée unique pour le shell (MainWindow.resizeEvent)."""
+        return self.layout_engine.update(width, height)
 
     @property
     def current_user(self):

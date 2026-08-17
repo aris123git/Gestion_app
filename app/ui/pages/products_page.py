@@ -22,6 +22,7 @@ from app.controllers.product_controller import ProductController
 from app.reports.excel_report import export_products_excel
 from app.services import audit_service, permissions as perms, settings_service
 from app.ui.dialogs.product_dialog import ProductDialog
+from app.ui.responsive import PRODUCT_COLUMNS, LayoutProfile, TableColumnController
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
 from app.utils.helpers import format_money, format_quantity
@@ -76,6 +77,7 @@ class ProductsPage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
+        self._columns = TableColumnController(self.table, PRODUCT_COLUMNS)
 
         actions = QHBoxLayout()
         actions.addStretch()
@@ -88,6 +90,14 @@ class ProductsPage(QWidget):
         actions.addWidget(self.delete_button)
         layout.addLayout(actions)
         self._apply_permissions()
+        self.state.layout_changed.connect(self._on_layout_changed)
+        if self.state.layout is not None:
+            self._on_layout_changed(self.state.layout)
+
+    def _on_layout_changed(self, profile: LayoutProfile) -> None:
+        self._columns.apply(profile.content_width)
+        margins = 12 if profile.density == "compact" else 24
+        self.layout().setContentsMargins(margins, margins, margins, margins)
 
     def _apply_permissions(self) -> None:
         can_manage = self.state.can(perms.MANAGE_PRODUCTS)

@@ -23,6 +23,7 @@ from app.services.loyalty_service import LoyaltyService
 from app.ui.dialogs.contact_dialog import ContactDialog
 from app.ui.dialogs.debt_history_dialog import DebtHistoryDialog
 from app.ui.dialogs.debt_payment_dialog import DebtPaymentDialog
+from app.ui.responsive import CLIENT_COLUMNS, LayoutProfile, TableColumnController
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
 from app.utils.helpers import format_money, format_quantity
@@ -84,6 +85,7 @@ class ClientsPage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
+        self._columns = TableColumnController(self.table, CLIENT_COLUMNS)
 
         actions = QHBoxLayout()
         actions.addStretch()
@@ -100,6 +102,12 @@ class ClientsPage(QWidget):
             button.clicked.connect(handler)
             actions.addWidget(button)
         layout.addLayout(actions)
+        self.state.layout_changed.connect(self._on_layout_changed)
+        if self.state.layout is not None:
+            self._on_layout_changed(self.state.layout)
+
+    def _on_layout_changed(self, profile: LayoutProfile) -> None:
+        self._columns.apply(profile.content_width)
 
     def refresh(self) -> None:
         clients = ClientController.list(self.search.text().strip())

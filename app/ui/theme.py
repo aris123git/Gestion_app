@@ -59,6 +59,8 @@ def build_stylesheet(dark: bool = False) -> str:
         color: #ffffff; font-size: 18px; font-weight: 700; padding: 4px;
     }}
     #SidebarSubtitle {{ color: {c['muted']}; font-size: 12px; }}
+    #SidebarUser {{ color: #94a3b8; font-size: 12px; }}
+    #SidebarVersion {{ color: #475569; font-size: 11px; }}
     QPushButton#NavButton {{
         color: {c['sidebar_text']};
         background: transparent;
@@ -74,6 +76,35 @@ def build_stylesheet(dark: bool = False) -> str:
         color: #ffffff;
         font-weight: 600;
     }}
+
+    /* Top bar (mode mobile / drawer) */
+    #TopBar {{
+        background-color: {c['sidebar']};
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+    }}
+    #TopBarTitle {{
+        color: #ffffff; font-size: 16px; font-weight: 700;
+    }}
+    #TopBarMeta {{ color: #94a3b8; font-size: 12px; }}
+    QPushButton#TopBarButton {{
+        background-color: rgba(255,255,255,0.08);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: 700;
+    }}
+    QPushButton#TopBarButton:hover {{ background-color: rgba(255,255,255,0.16); }}
+
+    /* Densité pilotée par le moteur responsive (propriétés dynamiques) */
+    #MainWindow[density="cozy"] QPushButton#NavButton {{ padding: 9px 12px; font-size: 14px; }}
+    #MainWindow[density="compact"] QPushButton#NavButton {{ padding: 7px 8px; font-size: 13px; }}
+    #MainWindow[density="cozy"] #PageTitle {{ font-size: 20px; }}
+    #MainWindow[density="compact"] #PageTitle {{ font-size: 18px; }}
+    #MainWindow[density="cozy"] #StatValue {{ font-size: 22px; }}
+    #MainWindow[density="compact"] #StatValue {{ font-size: 18px; }}
+    #MainWindow[heightMode="short"] #TopBar {{ max-height: 44px; }}
+    #MainWindow[heightMode="very_short"] #TopBar {{ max-height: 40px; }}
 
     /* Cartes */
     #Card, QFrame#Card {{

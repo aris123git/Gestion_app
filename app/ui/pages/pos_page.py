@@ -37,6 +37,7 @@ from app.ui.dialogs.free_amount_dialog import FreeAmountDialog
 from app.ui.dialogs.payment_dialog import PaymentDialog
 from app.ui.dialogs.price_change_dialog import PriceChangeDialog
 from app.ui.dialogs.ticket_dialog import TicketDialog
+from app.ui.responsive import LayoutProfile
 from app.ui.state import AppState
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.helpers import info, page_title, warn
@@ -57,12 +58,34 @@ class POSPage(QWidget):
         self._client_map: Dict[int, int] = {}
         self._pending_sale_id: Optional[int] = None
 
-        root = QHBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(16)
+        self._root = QHBoxLayout(self)
+        self._root.setContentsMargins(20, 20, 20, 20)
+        self._root.setSpacing(16)
 
-        root.addWidget(self._build_catalog(), 5)
-        root.addWidget(self._build_cart(), 4)
+        self._catalog = self._build_catalog()
+        self._cart_panel = self._build_cart()
+        self._root.addWidget(self._catalog, 5)
+        self._root.addWidget(self._cart_panel, 4)
+        self.state.layout_changed.connect(self._on_layout_changed)
+        if self.state.layout is not None:
+            self._on_layout_changed(self.state.layout)
+
+    def _on_layout_changed(self, profile: LayoutProfile) -> None:
+        margins = 10 if profile.density == "compact" else 20
+        self._root.setContentsMargins(margins, margins, margins, margins)
+        self._root.setSpacing(10 if profile.is_short else 16)
+        # Empile catalogue / panier sur narrow ; côte-à-côte sinon.
+        self._root.setDirection(
+            QHBoxLayout.Direction.TopToBottom
+            if profile.stack_panels
+            else QHBoxLayout.Direction.LeftToRight
+        )
+        if profile.stack_panels:
+            self._root.setStretch(0, 3)
+            self._root.setStretch(1, 2)
+        else:
+            self._root.setStretch(0, 5)
+            self._root.setStretch(1, 4)
 
     # --- Catalogue (gauche) -----------------------------------------------
     def _build_catalog(self) -> QWidget:

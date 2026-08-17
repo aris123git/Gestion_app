@@ -19,6 +19,7 @@ from app.services import permissions as perms, settings_service
 from app.services.supplier_debt_service import SupplierDebtService
 from app.ui.dialogs.contact_dialog import ContactDialog
 from app.ui.dialogs.debt_payment_dialog import DebtPaymentDialog
+from app.ui.responsive import LayoutProfile, SUPPLIER_COLUMNS, TableColumnController
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
 from app.utils.helpers import format_money
@@ -57,6 +58,7 @@ class SuppliersPage(QWidget):
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
+        self._columns = TableColumnController(self.table, SUPPLIER_COLUMNS)
 
         actions = QHBoxLayout()
         actions.addStretch()
@@ -72,6 +74,12 @@ class SuppliersPage(QWidget):
         actions.addWidget(settle)
         actions.addWidget(delete)
         layout.addLayout(actions)
+        self.state.layout_changed.connect(self._on_layout_changed)
+        if self.state.layout is not None:
+            self._on_layout_changed(self.state.layout)
+
+    def _on_layout_changed(self, profile: LayoutProfile) -> None:
+        self._columns.apply(profile.content_width)
 
     def refresh(self) -> None:
         suppliers = SupplierController.list(self.search.text().strip())
