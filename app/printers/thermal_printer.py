@@ -292,7 +292,12 @@ def _build_escpos_bytes(
 
 
 def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no cover
-    """Envoie les octets bruts à une imprimante Windows (nom ou par défaut)."""
+    """Envoie les octets bruts à une imprimante Windows (nom ou par défaut).
+
+    Important : on refuse d'empiler un job si l'imprimante est hors ligne /
+    en pause / en erreur. Sinon Windows garde les tickets en file et les
+    imprime tous d'un coup au prochain rallumage.
+    """
     try:
         import win32print
     except Exception as exc:
@@ -301,19 +306,229 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
     target = printer_name or win32print.GetDefaultPrinter()
     if not target:
         return PrintResult(False, Path(), "Aucune imprimante Windows configurée.")
+
+    # Pré-contrôle : ne pas alimenter la file si le périphérique est indisponible.
+    preflight = _windows_printer_preflight(target)
+    if preflight is not None:
+        return preflight
+
+    job_id = 0
+    written = 0
     try:
         handle = win32print.OpenPrinter(target)
         try:
-            win32print.StartDocPrinter(handle, 1, ("Ticket", None, "RAW"))
+            job_id = win32print.StartDocPrinter(handle, 1, ("Ticket", None, "RAW"))
             win32print.StartPagePrinter(handle)
-            win32print.WritePrinter(handle, raw)
+            written = win32print.WritePrinter(handle, raw) or 0
             win32print.EndPagePrinter(handle)
             win32print.EndDocPrinter(handle)
         finally:
             win32print.ClosePrinter(handle)
     except Exception as exc:
+        if job_id:
+            _windows_cancel_job(target, job_id)
         return PrintResult(False, Path(), f"Échec de l'impression Windows : {exc}")
-    return PrintResult(True, Path(), f"Imprimé sur « {target} ».")
+
+    if int(written) < len(raw):
+        _windows_cancel_job(target, job_id)
+        return PrintResult(
+            False,
+            Path(),
+            f"Envoi incomplet vers « {target} » "
+            f"({written}/{len(raw)} octets). Vérifiez le câble USB / le pilote.",
+        )
+
+    # Court contrôle post-envoi : si le job reste bloqué (offline / erreur),
+    # on l'annule pour éviter l'impression en rafale au redémarrage.
+    blocked = _windows_job_blocked(target, job_id, timeout_s=2.5)
+    if blocked:
+        _windows_cancel_job(target, job_id)
+        return PrintResult(
+            False,
+            Path(),
+            f"L'imprimante « {target} » n'a pas accepté le ticket ({blocked}). "
+            "Le job a été annulé pour ne pas s'accumuler dans la file Windows. "
+            "Vérifiez que l'imprimante est allumée et connectée, puis réessayez.",
+        )
+
+    return PrintResult(
+        True,
+        Path(),
+        f"Ticket envoyé à « {target} ». "
+        "Si rien ne sort, vérifiez papier / câble (ne redémarrez pas pour « forcer »).",
+    )
+
+
+# Drapeaux Windows indiquant qu'il ne faut PAS empiler de nouveaux jobs.
+_WIN_PRINTER_BAD = (
+    0x00000001  # PAUSED
+    | 0x00000002  # ERROR
+    | 0x00000008  # PAPER_JAM
+    | 0x00000010  # PAPER_OUT
+    | 0x00000040  # PAPER_PROBLEM
+    | 0x00000080  # OFFLINE
+    | 0x00001000  # NOT_AVAILABLE
+    | 0x00100000  # USER_INTERVENTION
+    | 0x00400000  # DOOR_OPEN
+)
+
+_WIN_JOB_BAD = (
+    0x00000002  # ERROR
+    | 0x00000020  # OFFLINE
+    | 0x00000040  # PAPEROUT
+    | 0x00000200  # BLOCKED_DEVQ
+    | 0x00000400  # USER_INTERVENTION
+)
+
+
+def windows_printer_status_reason(status: int) -> str:
+    """Interprète GetPrinter Status (testable hors Windows). Chaîne vide = OK."""
+    status = int(status or 0)
+    if not (status & _WIN_PRINTER_BAD):
+        return ""
+    reasons = []
+    if status & 0x00000080:
+        reasons.append("hors ligne")
+    if status & 0x00000001:
+        reasons.append("en pause")
+    if status & 0x00000010:
+        reasons.append("plus de papier")
+    if status & 0x00000002:
+        reasons.append("en erreur")
+    return ", ".join(reasons) or f"état 0x{status:X}"
+
+
+def windows_job_status_reason(status: int) -> str:
+    """Interprète EnumJobs Status. Chaîne vide = pas de blocage détecté."""
+    status = int(status or 0)
+    if not (status & _WIN_JOB_BAD):
+        return ""
+    if status & 0x00000020:
+        return "hors ligne"
+    if status & 0x00000040:
+        return "plus de papier"
+    if status & 0x00000002:
+        return "erreur"
+    return "bloqué"
+
+
+def _windows_printer_preflight(printer_name: str) -> Optional[PrintResult]:
+    """Refuse l'impression si l'imprimante Windows est clairement indisponible."""
+    try:
+        import win32print
+
+        handle = win32print.OpenPrinter(printer_name)
+        try:
+            info = win32print.GetPrinter(handle, 2)
+        finally:
+            win32print.ClosePrinter(handle)
+    except Exception as exc:
+        return PrintResult(
+            False,
+            Path(),
+            f"Impossible d'ouvrir « {printer_name} » : {exc}",
+        )
+
+    reason = windows_printer_status_reason(int(info.get("Status", 0) or 0))
+    if reason:
+        return PrintResult(
+            False,
+            Path(),
+            f"Imprimante « {printer_name} » indisponible ({reason}). "
+            "Allumez-la / reconnectez le USB avant de réimprimer. "
+            "Aucun ticket n'a été mis en file d'attente.",
+        )
+    return None
+
+
+def _windows_job_blocked(printer_name: str, job_id: int, timeout_s: float = 2.5) -> str:
+    """Retourne un motif si le job est bloqué ; chaîne vide sinon."""
+    if not job_id:
+        return ""
+    import time
+
+    try:
+        import win32print
+    except Exception:
+        return ""
+
+    deadline = time.monotonic() + max(0.5, float(timeout_s))
+    while time.monotonic() < deadline:
+        try:
+            handle = win32print.OpenPrinter(printer_name)
+            try:
+                jobs = win32print.EnumJobs(handle, 0, -1, 1)
+            finally:
+                win32print.ClosePrinter(handle)
+        except Exception:
+            return ""
+        match = next((j for j in jobs if int(j.get("JobId", 0)) == int(job_id)), None)
+        if match is None:
+            # Job disparu de la file → traité (imprimé ou consommé).
+            return ""
+        reason = windows_job_status_reason(int(match.get("Status", 0) or 0))
+        if reason:
+            return reason
+        # Encore en cours : on laisse une chance courte, puis on considère OK.
+        time.sleep(0.25)
+    return ""
+
+
+def _windows_cancel_job(printer_name: str, job_id: int) -> None:
+    if not job_id:
+        return
+    try:
+        import win32print
+
+        handle = win32print.OpenPrinter(printer_name)
+        try:
+            win32print.SetJob(handle, int(job_id), 0, None, win32print.JOB_CONTROL_DELETE)
+        finally:
+            win32print.ClosePrinter(handle)
+    except Exception:
+        logger.debug("Annulation du job d'impression impossible.", exc_info=True)
+
+
+def purge_printer_queue(printer_name: Optional[str] = None) -> PrintResult:
+    """Vide la file d'attente Windows de l'imprimante (évite la rafale au reboot)."""
+    if not sys.platform.startswith("win"):  # pragma: no cover
+        return PrintResult(
+            False, Path(), "La purge de file n'est disponible que sous Windows."
+        )
+    try:
+        import win32print
+    except Exception as exc:
+        return PrintResult(False, Path(), f"Module d'impression Windows absent : {exc}")
+
+    name = (printer_name or "").strip() or settings_service.get_setting("printer_name", "")
+    target = name or win32print.GetDefaultPrinter()
+    if not target:
+        return PrintResult(False, Path(), "Aucune imprimante à purger.")
+    try:
+        handle = win32print.OpenPrinter(target)
+        try:
+            jobs = win32print.EnumJobs(handle, 0, -1, 1)
+            cancelled = 0
+            for job in jobs:
+                job_id = int(job.get("JobId", 0) or 0)
+                if not job_id:
+                    continue
+                try:
+                    win32print.SetJob(
+                        handle, job_id, 0, None, win32print.JOB_CONTROL_DELETE
+                    )
+                    cancelled += 1
+                except Exception:
+                    logger.debug("Job %s non annulé.", job_id, exc_info=True)
+        finally:
+            win32print.ClosePrinter(handle)
+    except Exception as exc:
+        return PrintResult(False, Path(), f"Impossible de purger « {target} » : {exc}")
+    return PrintResult(
+        True,
+        Path(),
+        f"File d'attente de « {target} » vidée ({cancelled} job(s) annulé(s)).",
+    )
 
 
 def _print_posix(raw: bytes, printer_name: str) -> PrintResult:
@@ -323,6 +538,7 @@ def _print_posix(raw: bytes, printer_name: str) -> PrintResult:
         try:
             with open(printer_name, "wb") as device:
                 device.write(raw)
+                device.flush()
             return PrintResult(True, Path(), f"Imprimé sur « {printer_name} ».")
         except OSError as exc:
             return PrintResult(False, Path(), f"Accès imprimante impossible : {exc}")
