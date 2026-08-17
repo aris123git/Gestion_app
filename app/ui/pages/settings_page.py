@@ -181,12 +181,21 @@ class SettingsPage(QWidget):
         self.cut_mode.addItem("Coupe complète", "full")
         self.cut_mode.addItem("Coupe partielle", "partial")
         self.cut_mode.addItem("Pas de coupe (déchirer)", "none")
+        self.auto_print = QCheckBox(
+            "Imprimer automatiquement le ticket après chaque vente"
+        )
+        self.auto_print.setChecked(True)
+        self.auto_print.setToolTip(
+            "Si l'imprimante est éteinte, l'envoi est refusé (pas de file d'attente "
+            "qui se vide au redémarrage)."
+        )
 
         form.addRow("Thème", self.theme)
         form.addRow("Format du ticket", self.ticket_format)
         form.addRow("Imprimante", printer_row)
         form.addRow("Avance papier", self.feed_lines)
         form.addRow("Coupe", self.cut_mode)
+        form.addRow("Après vente", self.auto_print)
         form.addRow("Message du ticket", self.footer)
         outer.addWidget(make_card(form_widget))
 
@@ -196,12 +205,29 @@ class SettingsPage(QWidget):
         save.clicked.connect(self._save_appearance)
         test_print = QPushButton("Imprimer une page de test")
         test_print.clicked.connect(self._print_test_page)
+        purge = QPushButton("Vider la file d'attente")
+        purge.setToolTip(
+            "Annule les tickets en attente Windows (utile si plusieurs tickets "
+            "sortent d'un coup après un rallumage)."
+        )
+        purge.clicked.connect(self._purge_printer_queue)
         actions.addWidget(save)
         actions.addWidget(test_print)
+        actions.addWidget(purge)
         actions.addStretch()
         outer.addLayout(actions)
         outer.addStretch()
         return wrap
+
+    def _purge_printer_queue(self) -> None:
+        self._save_appearance(silent=True)
+        from app.printers import thermal_printer
+
+        result = thermal_printer.purge_printer_queue(self._printer_value())
+        if result.printed:
+            info(self, result.message, "File d'attente")
+        else:
+            warn(self, result.message, "File d'attente")
 
     def _print_test_page(self) -> None:
         # Applique d'abord les réglages saisis pour tester la configuration réelle.
@@ -252,6 +278,9 @@ class SettingsPage(QWidget):
         settings_service.set_setting("printer_name", self._printer_value())
         settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
         settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
+        settings_service.set_setting(
+            "auto_print_ticket", "1" if self.auto_print.isChecked() else "0"
+        )
         settings_service.save_shop_info(ticket_footer=self.footer.text().strip())
         if not silent:
             info(self, "Préférences appliquées.")
@@ -535,5 +564,8 @@ class SettingsPage(QWidget):
         )
         if cut_index >= 0:
             self.cut_mode.setCurrentIndex(cut_index)
+        self.auto_print.setChecked(
+            settings_service.get_setting("auto_print_ticket", "1") == "1"
+        )
         self._load_auto_options()
         self._reload_backups()
