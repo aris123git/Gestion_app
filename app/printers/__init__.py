@@ -1,1 +1,1 @@
-"""Impression des tickets thermiques (58 mm / 80 mm)."""
+"""Package d'impression : tickets thermiques et factures demi-A4."""
