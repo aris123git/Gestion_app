@@ -158,12 +158,12 @@ class SettingsPage(QWidget):
         self.theme = QComboBox()
         self.theme.addItems(["Clair", "Sombre"])
         self.ticket_format = QComboBox()
-        self.ticket_format.addItem("80 mm (thermique)", "80mm")
-        self.ticket_format.addItem("58 mm (thermique)", "58mm")
-        self.ticket_format.addItem("Demi-A4 (facture papier)", "demi-A4")
+        self.ticket_format.addItem("Ticket 80 mm", "80mm")
+        self.ticket_format.addItem("Ticket 58 mm", "58mm")
+        self.ticket_format.addItem("Facture papier (demi-A4)", "demi-A4")
         self.ticket_format.setToolTip(
-            "Demi-A4 : facture PDF 210×148,5 mm pour imprimante bureau "
-            "(papier A4 coupé en deux)."
+            "Par défaut : ticket thermique. « Facture papier » = PDF 210×148,5 mm "
+            "(A4 coupé en deux) pour imprimante bureau."
         )
         # Liste déroulante des imprimantes détectées (éditable pour saisir un
         # chemin de périphérique si besoin) + bouton d'actualisation.

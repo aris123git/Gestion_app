@@ -21,11 +21,11 @@ from app.services import settings_service
 from app.ui.widgets.helpers import info, warn
 
 
-# (libellé UI, valeur stockée)
+# (libellé UI, valeur stockée) — thermique d'abord = défaut caissier.
 PAPER_CHOICES = (
-    ("80 mm (thermique)", "80mm"),
-    ("58 mm (thermique)", "58mm"),
-    ("Demi-A4 (facture papier)", PAPER_HALF_A4),
+    ("Ticket 80 mm", "80mm"),
+    ("Ticket 58 mm", "58mm"),
+    ("Facture papier", PAPER_HALF_A4),
 )
 
 
@@ -48,12 +48,13 @@ class TicketDialog(QDialog):
         self.paper = QComboBox()
         for label, value in PAPER_CHOICES:
             self.paper.addItem(label, value)
+        # Toujours partir du thermique (80/58) : la facture papier est un choix explicite.
         default = settings_service.get_setting("ticket_format", "80mm")
-        index = self.paper.findData(default)
-        if index < 0 and is_half_a4(default):
-            index = self.paper.findData(PAPER_HALF_A4)
+        if is_half_a4(default):
+            default = "80mm"
+        index = self.paper.findData(default if default in ("80mm", "58mm") else "80mm")
         self.paper.setCurrentIndex(index if index >= 0 else 0)
-        self.paper.currentIndexChanged.connect(self._render)
+        self.paper.currentIndexChanged.connect(self._on_format_changed)
         top.addWidget(self.paper)
         top.addStretch()
         layout.addLayout(top)
@@ -76,7 +77,7 @@ class TicketDialog(QDialog):
         buttons = QHBoxLayout()
         close = QPushButton("Fermer")
         close.clicked.connect(self.accept)
-        self.print_button = QPushButton("Imprimer")
+        self.print_button = QPushButton("Imprimer le ticket")
         self.print_button.setObjectName("Primary")
         self.print_button.clicked.connect(self._print)
         buttons.addWidget(close)
@@ -86,14 +87,18 @@ class TicketDialog(QDialog):
 
         self._render()
 
+        # Auto-impression uniquement du ticket thermique (format défaut),
+        # jamais de la facture papier (choix manuel du caissier).
         if auto_print is None:
             auto_print = settings_service.get_setting("auto_print_ticket", "1") == "1"
-        if auto_print:
-            # Laisse le dialogue s'afficher avant d'imprimer (feedback caissier).
+        if auto_print and not is_half_a4(self._paper_value()):
             QTimer.singleShot(50, self._print)
 
     def _paper_value(self) -> str:
         return self.paper.currentData() or "80mm"
+
+    def _on_format_changed(self) -> None:
+        self._render()
 
     def _render(self) -> None:
         paper = self._paper_value()
@@ -101,13 +106,15 @@ class TicketDialog(QDialog):
         self.preview.setPlainText(text)
         if is_half_a4(paper):
             self.format_hint.setText(
-                "Facture PDF sur demi-feuille A4 (210 × 148,5 mm) — "
-                "utilisez une imprimante bureau avec du papier A4 coupé en deux."
+                "Facture sur papier A4 coupé en deux (210 × 148,5 mm). "
+                "Contenu : commerce, client, produits, totaux, paiements."
             )
             self.print_button.setText("Imprimer la facture")
             self.setWindowTitle(f"Facture {self.sale.ticket_number}")
         else:
-            self.format_hint.setText("Ticket thermique ESC/POS.")
+            self.format_hint.setText(
+                "Ticket thermique. Pour une facture A4/2, choisissez « Facture papier »."
+            )
             self.print_button.setText("Imprimer le ticket")
             self.setWindowTitle(f"Ticket {self.sale.ticket_number}")
 
