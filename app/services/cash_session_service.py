@@ -134,6 +134,15 @@ class CashSessionService:
             raise ValueError("Le montant compté ne peut pas être négatif.")
         expected = CashSessionService.compute_expected(session_id)
         variance = round(counted - expected, 2)
+        note_clean = (note or "").strip()
+        from app.services.cash_controls import get_variance_note_threshold
+
+        threshold = get_variance_note_threshold()
+        if abs(variance) >= threshold + 0.009 and len(note_clean) < 5:
+            raise ValueError(
+                f"Écart important (≥ {threshold:g}) : saisissez une note "
+                f"explicative (au moins 5 caractères)."
+            )
         with session_scope() as session:
             cash = session.get(CashSession, session_id)
             if not cash or cash.status != STATUS_OPEN:
@@ -143,11 +152,12 @@ class CashSessionService:
             cash.expected_cash = expected
             cash.variance = variance
             cash.status = STATUS_CLOSED
-            cash.note = (note or "").strip()
+            cash.note = note_clean
         audit_service.log_action(
             "Fermeture caisse",
             "CashSession",
-            f"id={session_id} compté={counted} attendu={expected} écart={variance}",
+            f"id={session_id} compté={counted} attendu={expected} écart={variance}"
+            + (f" note={note_clean}" if note_clean else ""),
             user_id,
             username,
         )

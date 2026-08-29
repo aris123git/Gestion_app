@@ -35,9 +35,13 @@ class Debt(Base, TimestampMixin):
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(40), default=STATUS_OPEN, index=True)
     note: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
 
     client: Mapped["Client"] = relationship()  # noqa: F821
     sale: Mapped[Optional["Sale"]] = relationship()  # noqa: F821
+    creator: Mapped[Optional["User"]] = relationship()  # noqa: F821
     payments: Mapped[List["DebtPayment"]] = relationship(
         back_populates="debt", cascade="all, delete-orphan"
     )

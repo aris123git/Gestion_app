@@ -318,8 +318,18 @@ class SettingsPage(QWidget):
         self.max_credit_amount.setRange(0, 1_000_000_000)
         self.max_credit_amount.setDecimals(0)
         self.max_credit_amount.setValue(cash_controls.get_max_credit_amount())
+        self.max_free_amount = QDoubleSpinBox()
+        self.max_free_amount.setRange(0, 1_000_000_000)
+        self.max_free_amount.setDecimals(0)
+        self.max_free_amount.setValue(cash_controls.get_max_free_amount())
+        self.variance_threshold = QDoubleSpinBox()
+        self.variance_threshold.setRange(0, 1_000_000_000)
+        self.variance_threshold.setDecimals(0)
+        self.variance_threshold.setValue(cash_controls.get_variance_note_threshold())
         form.addRow("Remise max caissier", self.max_discount_pct)
         form.addRow("Dette max caissier (par vente)", self.max_credit_amount)
+        form.addRow("Montant libre max (par ligne)", self.max_free_amount)
+        form.addRow("Écart caisse → note obligatoire", self.variance_threshold)
         outer.addWidget(make_card(form_widget))
 
         save = QPushButton("Enregistrer les plafonds")
@@ -333,13 +343,18 @@ class SettingsPage(QWidget):
         from app.services import cash_controls
 
         cash_controls.set_limits(
-            self.max_discount_pct.value(), self.max_credit_amount.value()
+            self.max_discount_pct.value(),
+            self.max_credit_amount.value(),
+            free_amount=self.max_free_amount.value(),
+            variance_threshold=self.variance_threshold.value(),
         )
         audit_service.log_action(
             "Plafonds caisse",
             "Setting",
             f"remise={self.max_discount_pct.value()}% "
-            f"crédit={self.max_credit_amount.value()}",
+            f"crédit={self.max_credit_amount.value()} "
+            f"libre={self.max_free_amount.value()} "
+            f"écart_note={self.variance_threshold.value()}",
             self.state.user_id,
             getattr(self.state.current_user, "username", ""),
         )
@@ -590,10 +605,11 @@ class SettingsPage(QWidget):
             self.audit_table.setItem(row, 3, QTableWidgetItem(log.details))
 
     def _on_tab(self, index: int) -> None:
-        if index == 2:
+        # Onglets : 0 Commerce, 1 Apparence, 2 Contrôles, 3 Sauvegarde, 4 Audit
+        if index == 3:
             self._load_auto_options()
             self._reload_backups()
-        elif index == 3:
+        elif index == 4:
             self._reload_audit()
 
     # --- Rafraîchissement --------------------------------------------------

@@ -35,6 +35,7 @@ MANAGE_PURCHASES = "manage_purchases"
 VIEW_ASSISTANT = "view_assistant"
 APPLY_DISCOUNT = "apply_discount"
 SELL_ON_CREDIT = "sell_on_credit"
+VIEW_AUDIT = "view_audit"
 
 _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
     {
@@ -62,6 +63,7 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         VIEW_ASSISTANT,
         APPLY_DISCOUNT,
         SELL_ON_CREDIT,
+        VIEW_AUDIT,
     }
 )
 
@@ -89,6 +91,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             VIEW_ASSISTANT,
             APPLY_DISCOUNT,
             SELL_ON_CREDIT,
+            VIEW_AUDIT,
         }
     ),
     ROLE_CASHIER: frozenset(

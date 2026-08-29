@@ -35,23 +35,29 @@ def period_bounds(kind: str, reference: date | None = None) -> Tuple[date, date]
 
 class ReportController:
     @staticmethod
-    def z_report(day: date) -> Dict:
-        """Résumé fin de caisse pour une journée."""
-        report = ReportController.build(day, day)
+    def z_report(day: date, *, user_id: int | None = None) -> Dict:
+        """Résumé fin de caisse pour une journée (optionnellement un caissier)."""
+        report = ReportController.build(day, day, user_id=user_id)
         report["day"] = day
+        report["user_id"] = user_id
         return report
 
     @staticmethod
-    def build(start: date, end: date) -> Dict:
+    def build(start: date, end: date, *, user_id: int | None = None) -> Dict:
         """Construit un rapport complet pour la période [start, end]."""
         lo = datetime.combine(start, time.min)
         hi = datetime.combine(end, time.max)
+        sale_filters = [
+            Sale.date >= lo,
+            Sale.date <= hi,
+            Sale.status == "completed",
+        ]
+        if user_id is not None:
+            sale_filters.append(Sale.user_id == user_id)
         with session_scope() as session:
             total_sales = float(
                 session.scalar(
-                    select(func.coalesce(func.sum(Sale.total), 0)).where(
-                        Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
-                    )
+                    select(func.coalesce(func.sum(Sale.total), 0)).where(*sale_filters)
                 )
                 or 0
             )
@@ -60,9 +66,7 @@ class ReportController:
                     select(func.coalesce(func.sum(Payment.amount), 0))
                     .join(Sale, Sale.id == Payment.sale_id)
                     .where(
-                        Sale.date >= lo,
-                        Sale.date <= hi,
-                        Sale.status == "completed",
+                        *sale_filters,
                         Payment.method != config.PAYMENT_METHOD_CREDIT,
                     )
                 )
@@ -73,9 +77,7 @@ class ReportController:
                     select(func.coalesce(func.sum(Payment.amount), 0))
                     .join(Sale, Sale.id == Payment.sale_id)
                     .where(
-                        Sale.date >= lo,
-                        Sale.date <= hi,
-                        Sale.status == "completed",
+                        *sale_filters,
                         Payment.method == config.PAYMENT_METHOD_CREDIT,
                     )
                 )
@@ -83,22 +85,26 @@ class ReportController:
             )
             profit = float(
                 session.scalar(
-                    select(func.coalesce(func.sum(Sale.profit), 0)).where(
-                        Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
-                    )
+                    select(func.coalesce(func.sum(Sale.profit), 0)).where(*sale_filters)
                 )
                 or 0
             )
             # Règlements de dettes hors vente (entrée libre) → bénéfice.
             from app.models.debt import Debt
 
+            debt_pay_filters = [
+                DebtPayment.payment_date >= lo,
+                DebtPayment.payment_date <= hi,
+            ]
+            if user_id is not None:
+                debt_pay_filters.append(DebtPayment.created_by == user_id)
+
             manual_debt_profit = float(
                 session.scalar(
                     select(func.coalesce(func.sum(DebtPayment.amount), 0))
                     .join(Debt, Debt.id == DebtPayment.debt_id)
                     .where(
-                        DebtPayment.payment_date >= lo,
-                        DebtPayment.payment_date <= hi,
+                        *debt_pay_filters,
                         Debt.sale_id.is_(None),
                     )
                 )
@@ -107,9 +113,7 @@ class ReportController:
             profit = round(profit + manual_debt_profit, 2)
             sales_count = int(
                 session.scalar(
-                    select(func.count()).select_from(Sale).where(
-                        Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
-                    )
+                    select(func.count()).select_from(Sale).where(*sale_filters)
                 )
                 or 0
             )
@@ -121,11 +125,13 @@ class ReportController:
                 )
                 or 0
             )
+            # Dépenses = magasin entier (pas filtrées par caissier).
+            if user_id is not None:
+                expenses = 0.0
             debt_repayments = float(
                 session.scalar(
                     select(func.coalesce(func.sum(DebtPayment.amount), 0)).where(
-                        DebtPayment.payment_date >= lo,
-                        DebtPayment.payment_date <= hi,
+                        *debt_pay_filters
                     )
                 )
                 or 0
@@ -141,6 +147,8 @@ class ReportController:
                 )
                 or 0
             )
+            if user_id is not None:
+                supplier_debt_payments = 0.0
 
             top = session.execute(
                 select(
@@ -149,7 +157,7 @@ class ReportController:
                     func.sum(SaleItem.line_total),
                 )
                 .join(Sale, Sale.id == SaleItem.sale_id)
-                .where(Sale.date >= lo, Sale.date <= hi, Sale.status == "completed")
+                .where(*sale_filters)
                 .group_by(SaleItem.product_name)
                 .order_by(func.sum(SaleItem.line_total).desc())
                 .limit(10)
@@ -159,9 +167,7 @@ class ReportController:
                 select(Payment.method, func.sum(Payment.amount))
                 .join(Sale, Sale.id == Payment.sale_id)
                 .where(
-                    Sale.date >= lo,
-                    Sale.date <= hi,
-                    Sale.status == "completed",
+                    *sale_filters,
                     Payment.method != config.PAYMENT_METHOD_CREDIT,
                 )
                 .group_by(Payment.method)
@@ -169,8 +175,7 @@ class ReportController:
             # Les règlements de dettes clients comptent aussi dans le CA encaissé.
             debt_by_method = session.execute(
                 select(DebtPayment.payment_method, func.sum(DebtPayment.amount)).where(
-                    DebtPayment.payment_date >= lo,
-                    DebtPayment.payment_date <= hi,
+                    *debt_pay_filters
                 ).group_by(DebtPayment.payment_method)
             ).all()
 
@@ -179,6 +184,34 @@ class ReportController:
                 .where(Expense.date >= lo, Expense.date <= hi)
                 .group_by(Expense.category)
             ).all()
+            if user_id is not None:
+                by_expense_cat = []
+
+            # Ventilation par caissier (Z magasin uniquement).
+            by_cashier: List[Tuple[str, float, int]] = []
+            if user_id is None:
+                from app.models.user import User
+
+                cashier_rows = session.execute(
+                    select(
+                        func.coalesce(User.full_name, User.username, "—"),
+                        func.coalesce(func.sum(Sale.total), 0),
+                        func.count(Sale.id),
+                    )
+                    .select_from(Sale)
+                    .outerjoin(User, User.id == Sale.user_id)
+                    .where(
+                        Sale.date >= lo,
+                        Sale.date <= hi,
+                        Sale.status == "completed",
+                    )
+                    .group_by(User.id)
+                    .order_by(func.sum(Sale.total).desc())
+                ).all()
+                by_cashier = [
+                    (str(name), float(total or 0), int(count or 0))
+                    for name, total, count in cashier_rows
+                ]
 
         method_totals: dict[str, float] = {}
         for method, amount in by_method_rows:
@@ -206,6 +239,7 @@ class ReportController:
         return {
             "start": start,
             "end": end,
+            "user_id": user_id,
             "revenue": cash_revenue,
             "cash_revenue": cash_revenue,
             "sales_cash": sales_cash,
@@ -225,6 +259,7 @@ class ReportController:
             "expense_breakdown": [
                 (r[0], float(r[1] or 0)) for r in by_expense_cat
             ],
+            "by_cashier": by_cashier,
         }
 
     @staticmethod

@@ -113,16 +113,27 @@ class ExpensesPage(QWidget):
             warn(self, "Vous n'avez pas l'autorisation de supprimer une dépense.")
             return
         if confirm(self, "Supprimer cette dépense ?"):
+            expense_id = self._ids[row]
             try:
                 ExpenseController.delete(
-                    self._ids[row],
+                    expense_id,
                     is_admin=(
                         getattr(self.state.current_user, "role", "") == perms.ROLE_ADMIN
                     ),
+                    user_id=self.state.user_id,
                 )
             except ValueError as exc:
                 warn(self, str(exc))
                 return
+            from app.services import audit_service
+
+            audit_service.log_action(
+                "Suppression dépense",
+                "Expense",
+                f"id={expense_id}",
+                self.state.user_id,
+                getattr(self.state.current_user, "username", ""),
+            )
             self.refresh()
             self.state.notify_data_changed()
 

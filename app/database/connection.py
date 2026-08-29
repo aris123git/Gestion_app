@@ -118,6 +118,7 @@ def _migrate_schema() -> None:
         "debts": {
             "due_date": "DATE",
             "status": "VARCHAR(40) DEFAULT 'en_cours'",
+            "created_by": "INTEGER",
         },
         "supplier_debts": {
             "due_date": "DATE",

@@ -205,11 +205,14 @@ class SaleController:
         )
         covered = round(cash_paid + credit_marked, 2)
 
-        # Plafonds caissier (remise % / crédit max) — contrôles côté serveur.
+        # Plafonds caissier + permissions (remise / crédit / montant libre).
         if user_id:
             from app.database.connection import session_scope as _user_scope
             from app.models.user import User
-            from app.services.cash_controls import assert_cashier_sale_limits
+            from app.services.cash_controls import (
+                assert_cashier_sale_limits,
+                assert_sale_permissions,
+            )
 
             user = None
             with _user_scope() as _sess:
@@ -220,11 +223,20 @@ class SaleController:
             credit_for_limit = credit_marked
             if covered < total and allow_credit:
                 credit_for_limit = max(credit_for_limit, round(total - cash_paid, 2))
+            assert_sale_permissions(
+                user=user,
+                discount=discount,
+                credit_amount=credit_for_limit if allow_credit else credit_marked,
+            )
+            free_amounts = [
+                to_float(line.amount) for line in lines if line.free_amount
+            ]
             assert_cashier_sale_limits(
                 user=user,
                 subtotal=subtotal,
                 discount=discount,
                 credit_amount=credit_for_limit,
+                free_amount_lines=free_amounts,
             )
 
         if covered < total and not allow_credit:
@@ -287,6 +299,7 @@ class SaleController:
                         required.get(line.product_id, 0.0) + float(line.stock_quantity)
                     )
             min_prices: dict[int, tuple[float, str]] = {}
+            free_amount_flags: dict[int, bool] = {}
             for product_id, needed in required.items():
                 product = session.execute(
                     select(Product)
@@ -302,6 +315,18 @@ class SaleController:
                         f"disponible {available:g}, demandé {needed:g}."
                     )
                 min_prices[product_id] = (float(product.min_price), product.name)
+                free_amount_flags[product_id] = bool(
+                    getattr(product, "free_amount_sale", False)
+                )
+
+            # Montant libre : le produit doit être configuré pour l'autoriser.
+            for line in lines:
+                if not line.free_amount:
+                    continue
+                if line.product_id and not free_amount_flags.get(line.product_id, False):
+                    raise ValueError(
+                        f"« {line.name} » n'autorise pas la vente au montant libre."
+                    )
 
             # Empêche de vendre en dessous du prix minimum défini sur le produit.
             # Montant libre : le montant client n'est pas un prix unitaire.
@@ -479,6 +504,29 @@ class SaleController:
         subtotal = round(sum(line.total for line in lines), 2)
         discount = min(subtotal, max(0.0, to_float(discount)))
         total = round(max(0.0, subtotal - discount), 2)
+        if user_id and discount > 0.009:
+            from app.models.user import User
+            from app.services.cash_controls import (
+                assert_cashier_sale_limits,
+                assert_sale_permissions,
+            )
+
+            user = None
+            with session_scope() as _sess:
+                loaded = _sess.get(User, user_id)
+                if loaded is not None:
+                    _sess.expunge(loaded)
+                    user = loaded
+            assert_sale_permissions(user=user, discount=discount, credit_amount=0)
+            assert_cashier_sale_limits(
+                user=user,
+                subtotal=subtotal,
+                discount=discount,
+                credit_amount=0,
+                free_amount_lines=[
+                    to_float(line.amount) for line in lines if line.free_amount
+                ],
+            )
         with session_scope() as session:
             ticket_number = cls._next_ticket_number(session)
             sale = Sale(
@@ -520,15 +568,22 @@ class SaleController:
         return cls.get(sale_id)  # type: ignore[return-value]
 
     @staticmethod
-    def list_pending(limit: int = 100) -> List[Sale]:
+    def list_pending(limit: int = 100, user_id: Optional[int] = None) -> List[Sale]:
+        """Liste les ventes en attente.
+
+        Si ``user_id`` est fourni, ne retourne que celles de cet utilisateur
+        (évite qu'un caissier reprenne le panier d'un autre).
+        """
         with session_scope() as session:
-            rows = session.scalars(
+            query = (
                 select(Sale)
                 .options(joinedload(Sale.items), joinedload(Sale.client))
                 .where(Sale.status == "pending")
-                .order_by(Sale.date.desc())
-                .limit(limit)
-            ).unique().all()
+            )
+            if user_id is not None:
+                query = query.where(Sale.user_id == user_id)
+            query = query.order_by(Sale.date.desc()).limit(limit)
+            rows = session.scalars(query).unique().all()
             session.expunge_all()
             return list(rows)
 
@@ -571,7 +626,7 @@ class SaleController:
 
     @staticmethod
     def claim_pending(
-        sale_id: int, user_id: Optional[int] = None
+        sale_id: int, user_id: Optional[int] = None, *, allow_any: bool = False
     ) -> tuple[List[CartLine], float, Optional[int]]:
         """Charge une vente en attente en mémoire puis supprime la ligne en base."""
         with session_scope() as session:
@@ -582,6 +637,15 @@ class SaleController:
             ).unique().scalar_one_or_none()
             if not sale:
                 raise ValueError("Vente en attente introuvable ou déjà reprise.")
+            if (
+                not allow_any
+                and user_id is not None
+                and sale.user_id is not None
+                and int(sale.user_id) != int(user_id)
+            ):
+                raise ValueError(
+                    "Cette vente en attente appartient à un autre caissier."
+                )
             lines = [SaleController._cart_line_from_item(item) for item in sale.items]
             discount = float(sale.discount)
             client_id = sale.client_id
@@ -595,7 +659,9 @@ class SaleController:
         return lines, discount, client_id
 
     @staticmethod
-    def delete_pending(sale_id: int, user_id: Optional[int] = None) -> None:
+    def delete_pending(
+        sale_id: int, user_id: Optional[int] = None, *, allow_any: bool = False
+    ) -> None:
         with session_scope() as session:
             sale = session.execute(
                 select(Sale)
@@ -604,6 +670,15 @@ class SaleController:
             ).unique().scalar_one_or_none()
             if not sale or sale.status != "pending":
                 return
+            if (
+                not allow_any
+                and user_id is not None
+                and sale.user_id is not None
+                and int(sale.user_id) != int(user_id)
+            ):
+                raise ValueError(
+                    "Cette vente en attente appartient à un autre caissier."
+                )
             session.delete(sale)
         from app.services import audit_service
 
@@ -662,11 +737,17 @@ class SaleController:
         user_id: Optional[int] = None,
         username: str = "",
         reason: str = "",
+        *,
+        allow_old_sales: bool = False,
+        max_age_hours: int = 24,
     ) -> None:
         """Annule une vente, restocke et annule les dettes liées.
 
         ``reason`` est obligatoire : au moins 10 lettres (Unicode).
+        Sans ``allow_old_sales``, refuse les ventes de plus de ``max_age_hours``.
         """
+        from datetime import datetime, timedelta
+
         from app.utils.cancel_reason import validate_cancel_reason
 
         motif = validate_cancel_reason(reason)
@@ -682,6 +763,13 @@ class SaleController:
             )
             if not sale or sale.status == "cancelled":
                 return
+            if not allow_old_sales and sale.date is not None:
+                age = datetime.now() - sale.date
+                if age > timedelta(hours=max_age_hours):
+                    raise ValueError(
+                        f"Annulation refusée : vente trop ancienne "
+                        f"(>{max_age_hours} h). Demandez à un administrateur."
+                    )
             client_id = sale.client_id
             debt_payment_count = session.scalar(
                 select(func.count())

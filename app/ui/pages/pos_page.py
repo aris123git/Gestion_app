@@ -412,6 +412,20 @@ class POSPage(QWidget):
             return
 
         amount = float(dialog.amount)
+        from app.services import cash_controls
+
+        if (
+            getattr(self.state.current_user, "role", "") == perms.ROLE_CASHIER
+            and amount > cash_controls.get_max_free_amount() + 0.009
+        ):
+            warn(
+                self,
+                f"Montant libre trop élevé pour un caissier "
+                f"(max {cash_controls.get_max_free_amount():g} "
+                f"{settings_service.get_currency()}).",
+            )
+            return
+
         estimated_qty = amount / sale_price
         pack = float(getattr(product, "pack_content", 0) or 0)
         cost_per_unit = float(product.cost_per_sale_unit)
@@ -645,7 +659,15 @@ class POSPage(QWidget):
         self._reload_products()
 
     def _resume_pending(self) -> None:
-        pending = SaleController.list_pending()
+        # Caissier : uniquement ses propres ventes en attente.
+        pending_user = self.state.user_id
+        allow_any = getattr(self.state.current_user, "role", "") in (
+            perms.ROLE_ADMIN,
+            perms.ROLE_MANAGER,
+        )
+        pending = SaleController.list_pending(
+            user_id=None if allow_any else pending_user
+        )
         if not pending:
             warn(self, "Aucune vente en attente.")
             return
@@ -661,7 +683,7 @@ class POSPage(QWidget):
         sale = pending[labels.index(choice)]
         try:
             lines, discount, client_id = SaleController.claim_pending(
-                sale.id, user_id=self.state.user_id
+                sale.id, user_id=self.state.user_id, allow_any=allow_any
             )
         except ValueError as exc:
             warn(self, str(exc))

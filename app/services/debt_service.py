@@ -91,6 +91,7 @@ class DebtService:
                 due_date=due_date,
                 status=STATUS_OPEN,
                 note=(note or "").strip(),
+                created_by=user_id,
             )
             sess.add(debt)
             sess.flush()

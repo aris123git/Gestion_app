@@ -80,7 +80,9 @@ class AuthorizeDialog(QDialog):
         self.accept()
 
 
-def require_admin_authorization(parent, reason: str = "") -> bool:
-    """Ouvre le dialogue et retourne True si un admin a validé l'action."""
+def require_admin_authorization(parent, reason: str = "") -> tuple[bool, str]:
+    """Ouvre le dialogue. Retourne ``(ok, username_admin)``."""
     dialog = AuthorizeDialog(reason=reason, parent=parent)
-    return bool(dialog.exec())
+    if dialog.exec():
+        return True, dialog.authorized_username
+    return False, ""

@@ -130,8 +130,15 @@ class AuthService:
     @staticmethod
     def verify_any_admin_password(password: str) -> bool:
         """Valide un mot de passe contre n'importe quel Administrateur actif."""
+        return AuthService.identify_admin_by_password(password) is not None
+
+    @staticmethod
+    def identify_admin_by_password(password: str) -> Optional[tuple[int, str]]:
+        """Retourne ``(id, username)`` du premier admin dont le MDP correspond."""
         from app.services import permissions as perms
 
+        if not password:
+            return None
         with session_scope() as session:
             admins = session.scalars(
                 select(User).where(
@@ -139,7 +146,10 @@ class AuthService:
                     User.is_active.is_(True),
                 )
             ).all()
-            return any(verify_password(password, admin.password_hash) for admin in admins)
+            for admin in admins:
+                if verify_password(password, admin.password_hash):
+                    return int(admin.id), str(admin.username)
+        return None
 
     @staticmethod
     def default_admin_uses_default_password() -> bool:
