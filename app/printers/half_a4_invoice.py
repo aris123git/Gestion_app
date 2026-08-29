@@ -98,7 +98,6 @@ def build_invoice_pdf(
     story = []
 
     # En-tête commerce + logo éventuel.
-    shop_block = []
     logo_path = Path(str(shop.logo_path or ""))
     logo_flowable = None
     if shop.logo_path and logo_path.exists():
