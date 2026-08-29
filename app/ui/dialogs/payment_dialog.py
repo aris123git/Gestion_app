@@ -41,6 +41,7 @@ class PaymentDialog(QDialog):
         client_id: Optional[int] = None,
         client_phone: str = "",
         allow_credit: bool = True,
+        max_credit: Optional[float] = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -58,6 +59,7 @@ class PaymentDialog(QDialog):
         self.result_client_id: Optional[int] = client_id
         self._resolved_client_name = ""
         self.allow_credit = allow_credit
+        self.max_credit = max_credit
 
         if client_id:
             client = ClientController.get(client_id)
@@ -119,12 +121,23 @@ class PaymentDialog(QDialog):
 
         # Dette affichée à l'établissement du ticket, activée selon le rôle.
         self.credit_input = self._make_spin()
+        if self.max_credit is not None:
+            self.credit_input.setMaximum(min(self.total, float(self.max_credit)))
+            self.credit_input.setToolTip(
+                f"Plafond caissier : {format_money(self.max_credit, self.currency)}"
+            )
         self.method_inputs[self.credit_method] = self.credit_input
         self.credit_label = QLabel(self.credit_method)
         form.addRow(self.credit_label, self.credit_input)
-        self.credit_hint = QLabel(
+        hint = (
             "Pour porter le montant en dette, indiquez le téléphone du client ci-dessus."
         )
+        if self.max_credit is not None:
+            hint += (
+                f" Plafond caissier : "
+                f"{format_money(self.max_credit, self.currency)}."
+            )
+        self.credit_hint = QLabel(hint)
         self.credit_hint.setWordWrap(True)
         self.credit_hint.setStyleSheet("color: #b45309; font-size: 12px;")
         form.addRow("", self.credit_hint)
@@ -377,12 +390,21 @@ class PaymentDialog(QDialog):
             return
         if not self.result_client_id and self.client_search.text().strip():
             self._resolve_client_from_typed()
+        credit_value = self.total
+        if self.max_credit is not None:
+            credit_value = min(credit_value, float(self.max_credit))
         for method, spin in self.method_inputs.items():
             spin.blockSignals(True)
-            spin.setValue(self.total if method == self.credit_method else 0)
+            spin.setValue(credit_value if method == self.credit_method else 0)
             spin.blockSignals(False)
         self.received_input.setValue(0)
         self._recalculate()
+        if self.max_credit is not None and self.total > float(self.max_credit):
+            self.summary.setText(
+                f"<span style='color:#b45309;'>Plafond dette caissier : "
+                f"{format_money(self.max_credit, self.currency)} "
+                f"(reste à encaisser autrement).</span>"
+            )
 
     def _cash_method_amount(self) -> float:
         """Montant réglé en espèces (base du calcul de la monnaie rendue)."""
@@ -441,6 +463,16 @@ class PaymentDialog(QDialog):
         cash_paid = self._cash_paid_total()
         credit = self._credit_amount()
         if credit > 0 and not self.allow_credit:
+            return
+        if (
+            self.max_credit is not None
+            and credit > float(self.max_credit) + 0.009
+        ):
+            self.summary.setText(
+                f"<span style='color:#dc2626;'>Dette plafonnée à "
+                f"{format_money(self.max_credit, self.currency)} "
+                f"pour un caissier.</span>"
+            )
             return
         if cash_paid + credit < self.total:
             return

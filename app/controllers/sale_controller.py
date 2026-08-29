@@ -205,6 +205,28 @@ class SaleController:
         )
         covered = round(cash_paid + credit_marked, 2)
 
+        # Plafonds caissier (remise % / crédit max) — contrôles côté serveur.
+        if user_id:
+            from app.database.connection import session_scope as _user_scope
+            from app.models.user import User
+            from app.services.cash_controls import assert_cashier_sale_limits
+
+            user = None
+            with _user_scope() as _sess:
+                loaded = _sess.get(User, user_id)
+                if loaded is not None:
+                    _sess.expunge(loaded)
+                    user = loaded
+            credit_for_limit = credit_marked
+            if covered < total and allow_credit:
+                credit_for_limit = max(credit_for_limit, round(total - cash_paid, 2))
+            assert_cashier_sale_limits(
+                user=user,
+                subtotal=subtotal,
+                discount=discount,
+                credit_amount=credit_for_limit,
+            )
+
         if covered < total and not allow_credit:
             raise InsufficientPaymentError(
                 f"Paiement insuffisant : {cash_paid:,.0f} reçu pour un total de {total:,.0f}."

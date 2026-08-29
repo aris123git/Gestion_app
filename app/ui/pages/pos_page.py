@@ -193,6 +193,13 @@ class POSPage(QWidget):
             self.discount_input.setToolTip(
                 "Vous n'avez pas l'autorisation d'appliquer une remise."
             )
+        elif getattr(self.state.current_user, "role", "") == perms.ROLE_CASHIER:
+            from app.services.cash_controls import get_max_discount_percent
+
+            pct = get_max_discount_percent()
+            self.discount_input.setToolTip(
+                f"Plafond caissier : {pct:g} % du sous-total"
+            )
         discount_row.addWidget(self.discount_input)
         discount_row.addStretch()
         layout.addLayout(discount_row)
@@ -249,6 +256,12 @@ class POSPage(QWidget):
 
     def _current_client_id(self) -> Optional[int]:
         return self.client_search.client_id
+
+    def _cashier_max_credit(self) -> Optional[float]:
+        from app.services.cash_controls import limits_for_user
+
+        _, max_credit = limits_for_user(self.state.current_user)
+        return max_credit
 
     def _current_client_phone(self) -> str:
         client_id = self._current_client_id()
@@ -573,6 +586,20 @@ class POSPage(QWidget):
 
     def _update_total(self) -> None:
         subtotal = self._cart_subtotal()
+        # Plafond remise caissier (% du panier).
+        from app.services.cash_controls import max_discount_amount
+
+        capped = max_discount_amount(subtotal, self.state.current_user)
+        if capped is not None and self.discount_input.value() > capped:
+            self.discount_input.blockSignals(True)
+            self.discount_input.setValue(capped)
+            self.discount_input.blockSignals(False)
+            if subtotal > 0:
+                warn(
+                    self,
+                    f"Remise plafonnée à {capped:g} pour le rôle caissier.",
+                    "Remise plafonnée",
+                )
         if self.discount_input.value() > subtotal:
             self.discount_input.blockSignals(True)
             self.discount_input.setValue(subtotal)
@@ -659,6 +686,7 @@ class POSPage(QWidget):
             client_id=client_id,
             client_phone=phone,
             allow_credit=self.state.can(perms.SELL_ON_CREDIT),
+            max_credit=self._cashier_max_credit(),
             parent=self,
         )
         if not dialog.exec():

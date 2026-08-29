@@ -59,6 +59,7 @@ class SettingsPage(QWidget):
         tabs = QTabWidget()
         tabs.addTab(self._build_shop_tab(), "Commerce")
         tabs.addTab(self._build_appearance_tab(), "Apparence & Ticket")
+        tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
         tabs.currentChanged.connect(self._on_tab)
@@ -290,6 +291,59 @@ class SettingsPage(QWidget):
         settings_service.save_shop_info(ticket_footer=self.footer.text().strip())
         if not silent:
             info(self, "Préférences appliquées.")
+
+    # --- Onglet contrôles caisse (plafonds caissier) -----------------------
+    def _build_controls_tab(self) -> QWidget:
+        from app.services import cash_controls
+
+        wrap = QWidget()
+        outer = QVBoxLayout(wrap)
+        hint = QLabel(
+            "Plafonds appliqués uniquement au rôle <b>Caissier</b> "
+            "(Administrateur et Gestionnaire : sans limite)."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #64748b;")
+        outer.addWidget(hint)
+
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        form.setSpacing(10)
+        self.max_discount_pct = QDoubleSpinBox()
+        self.max_discount_pct.setRange(0, 100)
+        self.max_discount_pct.setDecimals(0)
+        self.max_discount_pct.setSuffix(" %")
+        self.max_discount_pct.setValue(cash_controls.get_max_discount_percent())
+        self.max_credit_amount = QDoubleSpinBox()
+        self.max_credit_amount.setRange(0, 1_000_000_000)
+        self.max_credit_amount.setDecimals(0)
+        self.max_credit_amount.setValue(cash_controls.get_max_credit_amount())
+        form.addRow("Remise max caissier", self.max_discount_pct)
+        form.addRow("Dette max caissier (par vente)", self.max_credit_amount)
+        outer.addWidget(make_card(form_widget))
+
+        save = QPushButton("Enregistrer les plafonds")
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save_controls)
+        outer.addWidget(save)
+        outer.addStretch()
+        return wrap
+
+    def _save_controls(self) -> None:
+        from app.services import cash_controls
+
+        cash_controls.set_limits(
+            self.max_discount_pct.value(), self.max_credit_amount.value()
+        )
+        audit_service.log_action(
+            "Plafonds caisse",
+            "Setting",
+            f"remise={self.max_discount_pct.value()}% "
+            f"crédit={self.max_credit_amount.value()}",
+            self.state.user_id,
+            getattr(self.state.current_user, "username", ""),
+        )
+        info(self, "Plafonds caissier enregistrés.")
 
     # --- Onglet sauvegarde -------------------------------------------------
     def _build_backup_tab(self) -> QWidget:
