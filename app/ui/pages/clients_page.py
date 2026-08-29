@@ -320,9 +320,22 @@ class ClientsPage(QWidget):
         except ValueError as exc:
             warn(self, str(exc))
             return
+        after = DebtService.client_summary(client_id)
+        from app.ui.dialogs.debt_payment_receipt_dialog import (
+            DebtPaymentReceiptDialog,
+        )
+
+        DebtPaymentReceiptDialog(
+            client_name=client.name,
+            amount=dialog.result_data["amount"],
+            payment_method=dialog.result_data["payment_method"],
+            remaining_after=after["total_remaining"],
+            note=dialog.result_data["note"],
+            cashier=getattr(self.state.current_user, "username", "") or "",
+            parent=self,
+        ).exec()
         self.refresh()
         self.state.notify_data_changed()
-        info(self, "Remboursement enregistré.")
 
     def _redeem_points(self) -> None:
         client_id = self._selected_id()

@@ -330,7 +330,7 @@ class DebtsPage(QWidget):
         if not dialog.exec() or not dialog.result_data:
             return
         try:
-            DebtService.pay_debt(
+            payment = DebtService.pay_debt(
                 debt.id,
                 dialog.result_data["amount"],
                 payment_method=dialog.result_data["payment_method"],
@@ -341,7 +341,22 @@ class DebtsPage(QWidget):
         except ValueError as exc:
             warn(self, str(exc))
             return
-        info(self, "Règlement enregistré.")
+        refreshed = DebtService.get(debt.id)
+        remaining = float(refreshed.amount_remaining) if refreshed else 0.0
+        from app.ui.dialogs.debt_payment_receipt_dialog import (
+            DebtPaymentReceiptDialog,
+        )
+
+        DebtPaymentReceiptDialog(
+            client_name=name,
+            amount=dialog.result_data["amount"],
+            payment_method=dialog.result_data["payment_method"],
+            remaining_after=remaining,
+            note=dialog.result_data["note"],
+            cashier=getattr(self.state.current_user, "username", "") or "",
+            payment_id=getattr(payment, "id", None),
+            parent=self,
+        ).exec()
         self.refresh()
         self.state.notify_data_changed()
 

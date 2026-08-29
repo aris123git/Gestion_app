@@ -672,3 +672,106 @@ def print_test_page(printer_name: Optional[str] = None) -> PrintResult:
     return _send_content(
         "\n".join(lines), printer_name, logo_path=shop.logo_path, paper=paper
     )
+
+
+def render_debt_payment_text(
+    *,
+    client_name: str,
+    amount: float,
+    payment_method: str,
+    remaining_after: float,
+    note: str = "",
+    cashier: str = "",
+    payment_id: Optional[int] = None,
+    shop=None,
+    paper: str = "80mm",
+) -> str:
+    """Construit le reçu texte d'un règlement de dette client."""
+    shop = shop or settings_service.get_shop_info()
+    # Force thermique pour les reçus dette (pas de demi-A4 ici).
+    if paper not in ("58mm", "80mm"):
+        paper = "80mm"
+    width = WIDTH_CHARS.get(paper, 48)
+    currency = shop.currency or "FCFA"
+    lines = [
+        _center(shop.name or "Commerce", width),
+        _line("=", width),
+        _center("RECU REGLEMENT DETTE", width),
+        _line("-", width),
+        _row("Date", datetime.now().strftime("%d/%m/%Y %H:%M"), width),
+    ]
+    if payment_id:
+        lines.append(_row("N°", str(payment_id), width))
+    if cashier:
+        lines.append(_row("Caissier", cashier[: width // 2], width))
+    lines.append(_row("Client", (client_name or "—")[: width // 2], width))
+    lines.append(_line("-", width))
+    lines.append(_row("Montant payé", format_money(amount, currency), width))
+    lines.append(_row("Mode", payment_method or "Espèces", width))
+    lines.append(_row("Reste dû", format_money(remaining_after, currency), width))
+    if note:
+        lines.append(_line("-", width))
+        lines.append(f"Note : {note[: width * 2]}")
+    lines.append(_line("=", width))
+    lines.append(_center("Merci", width))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def save_debt_payment_file(
+    content: str, payment_id: Optional[int] = None
+) -> Path:
+    """Archive le reçu de règlement dans le dossier tickets."""
+    config.ensure_directories()
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base = f"dette_paye_{payment_id or 'x'}_{stamp}"
+    path = config.TICKET_DIR / f"{base}.txt"
+    counter = 1
+    while path.exists():
+        path = config.TICKET_DIR / f"{base}_{counter}.txt"
+        counter += 1
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def print_debt_payment(
+    *,
+    client_name: str,
+    amount: float,
+    payment_method: str,
+    remaining_after: float,
+    note: str = "",
+    cashier: str = "",
+    payment_id: Optional[int] = None,
+    printer_name: Optional[str] = None,
+) -> PrintResult:
+    """Imprime (et archive) un reçu de règlement de dette."""
+    shop = settings_service.get_shop_info()
+    paper = settings_service.get_setting("ticket_format", "80mm")
+    if paper not in ("58mm", "80mm"):
+        paper = "80mm"
+    content = render_debt_payment_text(
+        client_name=client_name,
+        amount=amount,
+        payment_method=payment_method,
+        remaining_after=remaining_after,
+        note=note,
+        cashier=cashier,
+        payment_id=payment_id,
+        shop=shop,
+        paper=paper,
+    )
+    path = save_debt_payment_file(content, payment_id=payment_id)
+    printer = printer_name or settings_service.get_setting("printer_name", "")
+    result = _send_content(
+        content, printer or None, logo_path=shop.logo_path, paper=paper
+    )
+    result.file_path = path
+    if not result.printed:
+        result.message = (
+            f"{result.message}\nCopie : {path}".strip()
+            if result.message
+            else f"Reçu enregistré : {path}"
+        )
+    return result
+
