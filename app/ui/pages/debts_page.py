@@ -32,6 +32,7 @@ from app.services import permissions as perms, settings_service
 from app.services.debt_service import DebtService
 from app.ui.dialogs.debt_history_dialog import DebtHistoryDialog
 from app.ui.dialogs.debt_payment_dialog import DebtPaymentDialog
+from app.ui.dialogs.manual_debt_dialog import ManualDebtDialog
 from app.ui.state import AppState
 from app.ui.widgets.helpers import info, page_title, warn
 from app.utils.helpers import format_datetime, format_money
@@ -88,6 +89,15 @@ class DebtsPage(QWidget):
         header = QHBoxLayout()
         header.addWidget(page_title("Dettes clients"))
         header.addStretch()
+        self.add_debt_btn = QPushButton("+ Nouvelle dette")
+        self.add_debt_btn.setObjectName("Primary")
+        self.add_debt_btn.setToolTip(
+            "Saisie libre hors caisse — réservée à l'administrateur"
+        )
+        self.add_debt_btn.clicked.connect(self._add_manual_debt)
+        # Visible uniquement pour l'admin (permission dédiée).
+        self.add_debt_btn.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
+        header.addWidget(self.add_debt_btn)
         root.addLayout(header)
 
         self.summary = QLabel("")
@@ -133,8 +143,10 @@ class DebtsPage(QWidget):
 
         actions = QHBoxLayout()
         actions.addStretch()
-        self.settle_btn = QPushButton("Régler")
+        # « Payé » : accessible à tous les rôles pouvant voir les dettes.
+        self.settle_btn = QPushButton("Payé")
         self.settle_btn.setObjectName("Success")
+        self.settle_btn.setToolTip("Enregistrer un règlement (tous les rôles)")
         self.settle_btn.clicked.connect(self._settle)
         self.history_btn = QPushButton("Historique client")
         self.history_btn.setObjectName("Primary")
@@ -262,12 +274,45 @@ class DebtsPage(QWidget):
         else:
             self._selected_debt_id = None
 
-        can_settle = self.state.can(perms.MANAGE_CLIENT_DEBTS)
-        self.settle_btn.setEnabled(can_settle)
+        # Payé reste cliquable pour tout rôle autorisé à voir la page Dettes.
+        self.settle_btn.setEnabled(True)
+        self.add_debt_btn.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
+
+    def _add_manual_debt(self) -> None:
+        if not self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT):
+            warn(
+                self,
+                "Seul un administrateur peut saisir une dette hors caisse.",
+            )
+            return
+        dialog = ManualDebtDialog(parent=self)
+        if not dialog.exec() or not dialog.result_data:
+            return
+        data = dialog.result_data
+        try:
+            ClientController.add_debt(
+                data["client_id"],
+                data["amount"],
+                note=data["note"],
+                due_date=data.get("due_date"),
+                user_id=self.state.user_id,
+                username=getattr(self.state.current_user, "username", ""),
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        info(self, "Dette enregistrée.")
+        # Affiche les non payées pour voir immédiatement la nouvelle ligne.
+        self.tabs.setCurrentIndex(0)
+        self.refresh()
+        self.state.notify_data_changed()
 
     def _settle(self) -> None:
-        if not self.state.can(perms.MANAGE_CLIENT_DEBTS):
-            warn(self, "Vous n'avez pas l'autorisation de gérer les dettes client.")
+        # Paiement ouvert à tous les rôles ayant accès aux dettes clients.
+        if not self.state.can(perms.MANAGE_CLIENT_DEBTS) and not self.state.can(
+            perms.MANAGE_CLIENTS
+        ):
+            warn(self, "Vous n'avez pas l'autorisation de régler une dette.")
             return
         debt_id = self._selected_debt_id_now()
         if not debt_id:

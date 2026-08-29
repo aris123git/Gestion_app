@@ -24,6 +24,8 @@ MANAGE_SUPPLIERS = "manage_suppliers"
 MANAGE_EXPENSES = "manage_expenses"
 MANAGE_CLIENTS = "manage_clients"
 MANAGE_CLIENT_DEBTS = "manage_client_debts"
+# Saisie libre d'une dette hors caisse (page Dettes) — Administrateur uniquement.
+CREATE_MANUAL_CLIENT_DEBT = "create_manual_client_debt"
 VIEW_REPORTS = "view_reports"
 VIEW_PROFITS = "view_profits"
 VIEW_DASHBOARD = "view_dashboard"
@@ -50,6 +52,7 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         MANAGE_EXPENSES,
         MANAGE_CLIENTS,
         MANAGE_CLIENT_DEBTS,
+        CREATE_MANUAL_CLIENT_DEBT,
         VIEW_REPORTS,
         VIEW_PROFITS,
         VIEW_DASHBOARD,

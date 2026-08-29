@@ -91,7 +91,8 @@ class ClientsPage(QWidget):
         actions.addStretch()
         for label, handler, obj in [
             ("Modifier", self._edit, ""),
-            ("Régler dette", self._settle, "Success"),
+            ("+ Dette", self._add_debt, "Primary"),
+            ("Payé", self._settle, "Success"),
             ("Échanger points", self._redeem_points, "Primary"),
             ("Historique dettes", self._history, "Primary"),
             ("Supprimer", self._delete, "Danger"),
@@ -100,6 +101,12 @@ class ClientsPage(QWidget):
             if obj:
                 button.setObjectName(obj)
             button.clicked.connect(handler)
+            if label == "+ Dette":
+                self.add_debt_btn = button
+                button.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
+                button.setToolTip(
+                    "Saisie libre hors caisse — réservée à l'administrateur"
+                )
             actions.addWidget(button)
         layout.addLayout(actions)
         self.state.layout_changed.connect(self._on_layout_changed)
@@ -110,6 +117,10 @@ class ClientsPage(QWidget):
         self._columns.apply(profile.content_width)
 
     def refresh(self) -> None:
+        if hasattr(self, "add_debt_btn"):
+            self.add_debt_btn.setVisible(
+                self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT)
+            )
         clients = ClientController.list(self.search.text().strip())
         mode = self.debt_filter.currentData()
         currency = settings_service.get_currency()
@@ -210,9 +221,10 @@ class ClientsPage(QWidget):
                 self.table.scrollToItem(item)
 
     def _add(self) -> None:
-        can_manage_debts = self.state.can(perms.MANAGE_CLIENT_DEBTS)
+        # Solde d'ouverture = dette manuelle → admin uniquement.
+        can_open_debt = self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT)
         dialog = ContactDialog(
-            "Nouveau client", with_debt=can_manage_debts, parent=self
+            "Nouveau client", with_debt=can_open_debt, parent=self
         )
         if dialog.exec() and dialog.data:
             ClientController.create(
@@ -229,18 +241,56 @@ class ClientsPage(QWidget):
             warn(self, "Sélectionnez un client.")
             return
         client = ClientController.get(client_id)
-        can_manage_debts = self.state.can(perms.MANAGE_CLIENT_DEBTS)
+        # En modification le solde est en lecture seule ; visible si dettes gérées.
+        can_see_debt = self.state.can(perms.MANAGE_CLIENT_DEBTS)
         dialog = ContactDialog(
-            "Modifier le client", client, with_debt=can_manage_debts, parent=self
+            "Modifier le client", client, with_debt=can_see_debt, parent=self
         )
         if dialog.exec() and dialog.data:
             ClientController.update(client_id, dialog.data)
             self.refresh()
             self.state.notify_data_changed()
 
+    def _add_debt(self) -> None:
+        if not self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT):
+            warn(
+                self,
+                "Seul un administrateur peut saisir une dette hors caisse.",
+            )
+            return
+        client_id = self._selected_id()
+        if not client_id:
+            warn(self, "Sélectionnez un client.")
+            return
+        from app.ui.dialogs.manual_debt_dialog import ManualDebtDialog
+
+        dialog = ManualDebtDialog(parent=self)
+        dialog.client_search.set_client(client_id)
+        if not dialog.exec() or not dialog.result_data:
+            return
+        data = dialog.result_data
+        try:
+            ClientController.add_debt(
+                data["client_id"],
+                data["amount"],
+                note=data["note"],
+                due_date=data.get("due_date"),
+                user_id=self.state.user_id,
+                username=getattr(self.state.current_user, "username", ""),
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        self.refresh()
+        self.state.notify_data_changed()
+        info(self, "Dette enregistrée.")
+
     def _settle(self) -> None:
-        if not self.state.can(perms.MANAGE_CLIENT_DEBTS):
-            warn(self, "Vous n'avez pas l'autorisation de gérer les dettes client.")
+        # Payé : tous les rôles pouvant gérer les dettes clients.
+        if not self.state.can(perms.MANAGE_CLIENT_DEBTS) and not self.state.can(
+            perms.MANAGE_CLIENTS
+        ):
+            warn(self, "Vous n'avez pas l'autorisation de régler une dette.")
             return
         client_id = self._selected_id()
         if not client_id:
