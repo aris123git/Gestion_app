@@ -283,10 +283,12 @@ def print_half_a4_invoice(
         logger.exception("Génération PDF demi-A4 impossible.")
         return PrintResult(False, Path(), f"Impossible de générer la facture PDF : {exc}")
 
+    from app.printers.printer_targets import get_invoice_printer_name
+
     printer_name = (
         printer_name
         if printer_name is not None
-        else settings_service.get_setting("printer_name", "")
+        else get_invoice_printer_name()
     ).strip()
     from app.printers.thermal_printer import resolve_printer_name
 

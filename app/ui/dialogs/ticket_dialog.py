@@ -1,4 +1,8 @@
-"""Aperçu, enregistrement et (ré)impression d'un ticket / facture demi-A4."""
+"""Aperçu, enregistrement et impression après encaissement.
+
+Le caissier choisit ticket thermique 58/80 mm ou facture encre (demi-A4),
+chacun vers l'imprimante configurée (thermique vs encre).
+"""
 
 from __future__ import annotations
 
@@ -8,7 +12,7 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
+    QButtonGroup,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -16,6 +20,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
 )
 
@@ -25,55 +30,67 @@ from app.printers.half_a4_invoice import (
     build_invoice_pdf,
     is_half_a4,
 )
+from app.printers.printer_targets import describe_destinations, printer_for_paper
 from app.services import settings_service
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.ui.widgets.helpers import info, warn
 
 
-# (libellé UI, valeur stockée) — thermique d'abord = défaut caissier.
-PAPER_CHOICES = (
-    ("Ticket 80 mm", "80mm"),
-    ("Ticket 58 mm", "58mm"),
-    ("Facture papier", PAPER_HALF_A4),
-)
-
-
 class TicketDialog(QDialog):
-    """Affiche le ticket et propose d'abord de l'enregistrer, puis d'imprimer."""
+    """Après encaissement : choix ticket thermique ou facture encre."""
 
     def __init__(self, sale, parent=None, *, auto_print: bool | None = None):
         super().__init__(parent)
         self.sale = sale
         self._saved_path: Path | None = None
-        self.setWindowTitle(f"Ticket {sale.ticket_number}")
+        self.setWindowTitle(f"Impression — {sale.ticket_number}")
         self.setModal(True)
         fit_dialog_to_screen(
             self,
             min_width=360,
             min_height=320,
-            preferred_width=480,
-            preferred_height=560,
+            preferred_width=520,
+            preferred_height=640,
         )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("Format :"))
-        self.paper = QComboBox()
-        for label, value in PAPER_CHOICES:
-            self.paper.addItem(label, value)
-        # Toujours partir du thermique (80/58) : la facture papier est un choix explicite.
+        thermal_name, invoice_name = describe_destinations()
+
+        intro = QLabel(
+            "<b>Choisissez comment imprimer</b><br/>"
+            "Sélectionnez le ticket thermique (58/80 mm) ou la facture "
+            "sur imprimante à encre."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.choice_group = QButtonGroup(self)
+        self.radio_80 = QRadioButton(
+            f"Ticket thermique 80 mm\n→ {thermal_name}"
+        )
+        self.radio_58 = QRadioButton(
+            f"Ticket thermique 58 mm\n→ {thermal_name}"
+        )
+        self.radio_ink = QRadioButton(
+            f"Facture papier (encre / laser, demi-A4)\n→ {invoice_name}"
+        )
+        for radio in (self.radio_80, self.radio_58, self.radio_ink):
+            radio.setStyleSheet("QRadioButton { padding: 8px 4px; }")
+            self.choice_group.addButton(radio)
+            layout.addWidget(radio)
+
         default = settings_service.get_setting("ticket_format", "80mm")
         if is_half_a4(default):
-            default = "80mm"
-        index = self.paper.findData(default if default in ("80mm", "58mm") else "80mm")
-        self.paper.setCurrentIndex(index if index >= 0 else 0)
-        self.paper.currentIndexChanged.connect(self._on_format_changed)
-        top.addWidget(self.paper)
-        top.addStretch()
-        layout.addLayout(top)
+            self.radio_ink.setChecked(True)
+        elif default == "58mm":
+            self.radio_58.setChecked(True)
+        else:
+            self.radio_80.setChecked(True)
+
+        self.choice_group.buttonClicked.connect(self._on_format_changed)
 
         self.format_hint = QLabel("")
         self.format_hint.setWordWrap(True)
@@ -101,9 +118,10 @@ class TicketDialog(QDialog):
         layout.addWidget(self.status)
 
         buttons = QHBoxLayout()
-        close = QPushButton("Fermer")
+        close = QPushButton("Fermer sans imprimer")
         close.clicked.connect(self.accept)
         self.print_button = QPushButton("Imprimer")
+        self.print_button.setObjectName("Primary")
         self.print_button.clicked.connect(self._print)
         self.print_kitchen_button = QPushButton("Bon serveur")
         self.print_kitchen_button.setToolTip(
@@ -112,7 +130,6 @@ class TicketDialog(QDialog):
         )
         self.print_kitchen_button.clicked.connect(self._print_kitchen)
         self.save_button = QPushButton("Enregistrer le ticket")
-        self.save_button.setObjectName("Primary")
         self.save_button.clicked.connect(self._save)
         buttons.addWidget(close)
         buttons.addStretch()
@@ -123,8 +140,7 @@ class TicketDialog(QDialog):
 
         self._render()
 
-        # Auto-impression désactivée par défaut : on demande d'enregistrer.
-        # Conservé pour compatibilité si l'admin coche l'option dans Paramètres.
+        # Auto-impression uniquement pour le ticket thermique (pas la facture encre).
         if auto_print is None:
             auto_print = settings_service.get_setting("auto_print_ticket", "0") == "1"
         if auto_print and not is_half_a4(self._paper_value()):
@@ -133,7 +149,11 @@ class TicketDialog(QDialog):
             QTimer.singleShot(50, self._print)
 
     def _paper_value(self) -> str:
-        return self.paper.currentData() or "80mm"
+        if self.radio_ink.isChecked():
+            return PAPER_HALF_A4
+        if self.radio_58.isChecked():
+            return "58mm"
+        return "80mm"
 
     def _on_format_changed(self) -> None:
         self._render()
@@ -142,12 +162,13 @@ class TicketDialog(QDialog):
         paper = self._paper_value()
         text = thermal_printer.render_ticket_text(self.sale, paper=paper)
         self.preview.setPlainText(text)
+        target = printer_for_paper(paper) or "imprimante par défaut du système"
         if is_half_a4(paper):
             self.format_hint.setText(
-                "Facture sur papier A4 coupé en deux (210 × 148,5 mm). "
+                f"Facture demi-A4 (210 × 148,5 mm) vers « {target} ». "
                 "Enregistrez le PDF, puis imprimez si besoin."
             )
-            self.print_button.setText("Imprimer la facture")
+            self.print_button.setText("Imprimer la facture (encre)")
             self.save_button.setText("Enregistrer la facture")
             self.print_kitchen_button.setVisible(False)
             self.setWindowTitle(f"Facture {self.sale.ticket_number}")
@@ -159,11 +180,13 @@ class TicketDialog(QDialog):
             )
 
             design = get_design(resolve_client_design_id())
+            width = "58" if paper == "58mm" else "80"
             self.format_hint.setText(
-                f"Ticket thermique — design : {design.label}. "
+                f"Ticket thermique {width} mm vers « {target} » — "
+                f"design : {design.label}. "
                 "Changez le modèle dans Paramètres → Designs des tickets."
             )
-            self.print_button.setText("Imprimer le ticket")
+            self.print_button.setText(f"Imprimer le ticket {width} mm")
             self.save_button.setText("Enregistrer le ticket")
             self.print_kitchen_button.setVisible(is_kitchen_ticket_enabled())
             self.setWindowTitle(f"Ticket {self.sale.ticket_number}")
@@ -239,21 +262,22 @@ class TicketDialog(QDialog):
     def _print(self) -> None:
         self.print_button.setEnabled(False)
         paper = self._paper_value()
+        printer_name = printer_for_paper(paper)
         self.status.setText(
-            "Génération / envoi de la facture…"
+            "Envoi vers l'imprimante à encre…"
             if is_half_a4(paper)
-            else "Envoi à l'imprimante…"
+            else "Envoi vers l'imprimante thermique…"
         )
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         QApplication.processEvents()
         try:
-            result = thermal_printer.print_ticket(self.sale, paper=paper)
+            result = thermal_printer.print_ticket(
+                self.sale, paper=paper, printer_name=printer_name
+            )
         finally:
             QApplication.restoreOverrideCursor()
             self.print_button.setEnabled(True)
-            self.print_button.setText(
-                "Réimprimer la facture" if is_half_a4(paper) else "Réimprimer le ticket"
-            )
+            self._render()
 
         if result.printed:
             self.status.setText(result.message)
@@ -268,9 +292,11 @@ class TicketDialog(QDialog):
                 self,
                 f"Impression impossible.\n\n{result.message}\n\n"
                 f"Fichier enregistré :\n{result.file_path}\n\n"
-                "Astuce : utilisez « Enregistrer le ticket » pour conserver "
-                "une copie, puis imprimez quand l'imprimante est prête.\n"
-                "Paramètres → Designs des tickets pour changer le modèle.",
+                "Vérifiez Paramètres → Apparence du ticket :\n"
+                "• Imprimante ticket (thermique)\n"
+                "• Imprimante facture (encre)\n"
+                "Astuce : « Enregistrer » conserve une copie ; "
+                "imprimez quand l'imprimante est prête.",
                 "Impression impossible",
             )
 
@@ -294,7 +320,10 @@ class TicketDialog(QDialog):
         QApplication.processEvents()
         try:
             result = thermal_printer.print_ticket(
-                self.sale, paper=paper, role="kitchen"
+                self.sale,
+                paper=paper,
+                printer_name=printer_for_paper(paper),
+                role="kitchen",
             )
         finally:
             QApplication.restoreOverrideCursor()

@@ -221,8 +221,8 @@ class SettingsPage(QWidget):
         )
         self.printer_profile.currentIndexChanged.connect(self._on_printer_profile_changed)
         self.ticket_format.setToolTip(
-            "Par défaut : ticket thermique. « Facture papier » = PDF 210×148,5 mm "
-            "(A4 coupé en deux) pour imprimante bureau."
+            "Préférence affichée après encaissement. Le caissier peut toujours "
+            "choisir ticket 58/80 mm ou facture encre à chaque vente."
         )
 
         # Affichage caisse : texte agrandi pour serveur / précipitation.
@@ -239,16 +239,20 @@ class SettingsPage(QWidget):
         self.pos_text_size.setEnabled(False)
         self.pos_large_text.toggled.connect(self.pos_text_size.setEnabled)
 
-        # Liste déroulante des imprimantes détectées (éditable pour saisir un
-        # chemin de périphérique si besoin) + bouton d'actualisation.
+        # Deux destinations : thermique (tickets) et encre (factures).
         self.printer = QComboBox()
         self.printer.setEditable(True)
         self.printer.setMinimumWidth(260)
+        self.invoice_printer = QComboBox()
+        self.invoice_printer.setEditable(True)
+        self.invoice_printer.setMinimumWidth(260)
         refresh_printers = QPushButton("Actualiser")
         refresh_printers.clicked.connect(lambda: self._reload_printers())
         printer_row = QHBoxLayout()
         printer_row.addWidget(self.printer, 1)
         printer_row.addWidget(refresh_printers)
+        invoice_row = QHBoxLayout()
+        invoice_row.addWidget(self.invoice_printer, 1)
 
         self.footer = QLineEdit()
 
@@ -262,22 +266,24 @@ class SettingsPage(QWidget):
         self.cut_mode.addItem("Coupe partielle", "partial")
         self.cut_mode.addItem("Pas de coupe (déchirer)", "none")
         self.auto_print = QCheckBox(
-            "Imprimer automatiquement (sinon : demander d'enregistrer d'abord)"
+            "Imprimer automatiquement le ticket thermique après chaque vente"
         )
         self.auto_print.setChecked(False)
         self.auto_print.setToolTip(
-            "Par défaut, après une vente on propose d'enregistrer le ticket. "
-            "Cochez seulement si vous voulez envoyer directement à l'imprimante. "
+            "N'applique pas la facture encre (choix manuel du caissier). "
+            "Par défaut, après une vente on propose d'enregistrer / choisir. "
+            "Cochez seulement pour envoyer directement le ticket thermique. "
             "Si l'imprimante est éteinte, l'envoi est refusé (pas de file qui se "
             "vide au redémarrage)."
         )
 
         form.addRow("Thème", self.theme)
-        form.addRow("Format du ticket", self.ticket_format)
+        form.addRow("Format préféré", self.ticket_format)
         form.addRow("Profil imprimante", self.printer_profile)
         form.addRow("Lecture rapide caisse", self.pos_large_text)
         form.addRow("Taille du texte", self.pos_text_size)
-        form.addRow("Imprimante", printer_row)
+        form.addRow("Imprimante ticket (thermique 58/80)", printer_row)
+        form.addRow("Imprimante facture (encre / laser)", invoice_row)
         form.addRow("Avance papier", self.feed_lines)
         form.addRow("Coupe", self.cut_mode)
         form.addRow("Après vente", self.auto_print)
@@ -722,68 +728,99 @@ class SettingsPage(QWidget):
                 "Test accents FR",
             )
 
-    def _reload_printers(self, select=None) -> None:
-        """Détecte les imprimantes installées et remplit la liste déroulante."""
+    def _reload_printers(self, select=None, select_invoice=None) -> None:
+        """Détecte les imprimantes installées et remplit les listes (ticket + facture)."""
         from app.printers import thermal_printer
 
         if select is None:
             select = self._printer_value()
-        select = (select or "").strip()
-        available = thermal_printer.list_printers()
-        invalid_cleared = False
-        # Liste non vide : prouve l'absence. Liste vide : sonde OpenPrinter/lpstat.
-        if select and thermal_printer.is_device_path(select) and not Path(select).exists():
-            settings_service.set_setting("printer_name", "")
-            select = ""
-            invalid_cleared = True
-        elif select and not thermal_printer.is_device_path(select):
-            matched = thermal_printer.match_printer_in_list(select, available)
-            if available and not matched:
-                settings_service.set_setting("printer_name", "")
-                select = ""
-                invalid_cleared = True
-            elif not available:
-                probed = thermal_printer.probe_printer_exists(select)
-                if probed is False:
-                    settings_service.set_setting("printer_name", "")
-                    select = ""
-                    invalid_cleared = True
-                elif matched:
-                    select = matched
-            elif matched:
-                select = matched
+        if select_invoice is None:
+            select_invoice = self._invoice_printer_value()
 
-        self.printer.blockSignals(True)
-        self.printer.clear()
-        self.printer.addItem(DEFAULT_PRINTER_LABEL, "")
-        for name in available:
-            self.printer.addItem(name, name)
-        if select:
-            index = self.printer.findData(select)
-            if index >= 0:
-                self.printer.setCurrentIndex(index)
-            elif thermal_printer.is_device_path(select):
-                # Chemin périphérique saisi manuellement encore valide.
-                self.printer.setEditText(select)
-            else:
-                # Nom encore plausible (sonde indéterminée) : garder le texte.
-                self.printer.setEditText(select)
-        else:
-            self.printer.setCurrentIndex(0)
-        self.printer.blockSignals(False)
-        if invalid_cleared and not getattr(self, "_printer_invalid_warned", False):
+        available = thermal_printer.list_printers()
+        select, cleared_thermal = self._sanitize_printer_selection(
+            (select or "").strip(),
+            available,
+            setting_key="printer_name",
+        )
+        select_invoice, cleared_invoice = self._sanitize_printer_selection(
+            (select_invoice or "").strip(),
+            available,
+            setting_key="invoice_printer_name",
+        )
+
+        self._fill_printer_combo(self.printer, select, available)
+        self._fill_printer_combo(self.invoice_printer, select_invoice, available)
+
+        if (cleared_thermal or cleared_invoice) and not getattr(
+            self, "_printer_invalid_warned", False
+        ):
             self._printer_invalid_warned = True
             warn(
                 self,
-                "L'imprimante enregistrée n'existe plus sur ce poste.\n"
+                "Une imprimante enregistrée n'existe plus sur ce poste.\n"
                 "Sélection : « (Imprimante par défaut) ».\n"
                 "Choisissez une imprimante valide dans la liste, puis Appliquer.",
                 "Imprimante introuvable",
             )
 
+    def _sanitize_printer_selection(
+        self,
+        select: str,
+        available: list,
+        *,
+        setting_key: str,
+    ) -> tuple[str, bool]:
+        """Valide un nom d'imprimante ; efface le réglage s'il est fantôme."""
+        from app.printers import thermal_printer
+
+        if not select:
+            return "", False
+        if thermal_printer.is_device_path(select) and not Path(select).exists():
+            settings_service.set_setting(setting_key, "")
+            return "", True
+        if thermal_printer.is_device_path(select):
+            return select, False
+        matched = thermal_printer.match_printer_in_list(select, available)
+        if available and not matched:
+            settings_service.set_setting(setting_key, "")
+            return "", True
+        if not available:
+            probed = thermal_printer.probe_printer_exists(select)
+            if probed is False:
+                settings_service.set_setting(setting_key, "")
+                return "", True
+            return select, False
+        return matched or select, False
+
+    def _fill_printer_combo(self, combo: QComboBox, select: str, available: list) -> None:
+        from app.printers import thermal_printer
+
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem(DEFAULT_PRINTER_LABEL, "")
+        for name in available:
+            combo.addItem(name, name)
+        if select:
+            index = combo.findData(select)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            elif thermal_printer.is_device_path(select):
+                combo.setEditText(select)
+            else:
+                combo.setEditText(select)
+        else:
+            combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+
     def _printer_value(self) -> str:
-        """Valeur d'imprimante à enregistrer ('' = imprimante par défaut)."""
+        """Imprimante ticket thermique ('' = imprimante par défaut)."""
         text = self.printer.currentText().strip()
+        return "" if text == DEFAULT_PRINTER_LABEL else text
+
+    def _invoice_printer_value(self) -> str:
+        """Imprimante facture encre ('' = même que ticket / défaut système)."""
+        text = self.invoice_printer.currentText().strip()
         return "" if text == DEFAULT_PRINTER_LABEL else text
 
     def _save_appearance(self, silent: bool = False) -> None:
@@ -803,6 +840,9 @@ class SettingsPage(QWidget):
             "pos_catalog_text_size", self.pos_text_size.currentData() or "large"
         )
         settings_service.set_setting("printer_name", self._printer_value())
+        settings_service.set_setting(
+            "invoice_printer_name", self._invoice_printer_value()
+        )
         settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
         settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
         settings_service.set_setting(
@@ -1184,7 +1224,10 @@ class SettingsPage(QWidget):
         )
         if size_index >= 0:
             self.pos_text_size.setCurrentIndex(size_index)
-        self._reload_printers(select=settings_service.get_setting("printer_name", ""))
+        self._reload_printers(
+            select=settings_service.get_setting("printer_name", ""),
+            select_invoice=settings_service.get_setting("invoice_printer_name", ""),
+        )
         try:
             self.feed_lines.setValue(int(settings_service.get_setting("ticket_feed_lines", "5")))
         except (TypeError, ValueError):

@@ -501,13 +501,18 @@ def _fallback_after_invalid(preferred: str, *, device: bool) -> tuple[str, str]:
 
 
 def _clear_printer_setting_if_matches(preferred: str) -> None:
-    stored = settings_service.get_setting("printer_name", "").strip()
-    if stored != preferred:
-        return
-    try:
-        settings_service.set_setting("printer_name", "")
-    except Exception:
-        logger.debug("Impossible d'effacer printer_name invalide.", exc_info=True)
+    """Efface le réglage ticket et/ou facture s'il pointe vers le nom fantôme."""
+    for key in ("printer_name", "invoice_printer_name"):
+        try:
+            stored = settings_service.get_setting(key, "").strip()
+        except Exception:
+            continue
+        if stored != preferred:
+            continue
+        try:
+            settings_service.set_setting(key, "")
+        except Exception:
+            logger.debug("Impossible d'effacer %s invalide.", key, exc_info=True)
 
 
 # Largeur d'impression (points) selon le papier, pour redimensionner le logo.
@@ -932,11 +937,21 @@ def print_ticket(
     from app.printers.half_a4_invoice import is_half_a4, print_half_a4_invoice
     from app.printers.ticket.registry import get_design, resolve_design_id
 
+    from app.printers.printer_targets import (
+        get_invoice_printer_name,
+        get_thermal_printer_name,
+    )
+
     shop = shop or settings_service.get_shop_info()
     if is_half_a4(paper) and role == "client":
-        # Archive texte + impression PDF facture.
+        # Archive texte + impression PDF facture (imprimante encre si configurée).
         text_path = save_ticket_file(sale, shop, paper)
-        result = print_half_a4_invoice(sale, shop=shop, printer_name=printer_name)
+        target = (
+            printer_name
+            if printer_name is not None
+            else get_invoice_printer_name()
+        )
+        result = print_half_a4_invoice(sale, shop=shop, printer_name=target)
         if result.file_path and result.file_path.suffix.lower() == ".pdf":
             if text_path and text_path.exists():
                 result.message = (
@@ -960,10 +975,13 @@ def print_ticket(
             logo_path=str(getattr(shop, "logo_path", "") or ""),
             shop_type=str(getattr(shop, "shop_type", "") or ""),
         )
+    target = (
+        printer_name if printer_name is not None else get_thermal_printer_name()
+    )
     if design.category == "kitchen":
         result = _send_content(
             "",
-            printer_name,
+            target,
             logo_path=None,
             paper=paper,
             sale=sale,
@@ -977,7 +995,7 @@ def print_ticket(
         )
         result = _send_content(
             content,
-            printer_name,
+            target,
             logo_path=logo_for_print or None,
             paper=paper,
             sale=sale,
