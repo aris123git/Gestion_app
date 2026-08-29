@@ -349,6 +349,18 @@ class ClientsPage(QWidget):
         if balance <= 0:
             warn(self, "Ce client n'a aucun point de fidélité.")
             return
+        # Caissier : autorisation admin obligatoire (évite cadeaux non contrôlés).
+        if getattr(self.state.current_user, "role", "") == perms.ROLE_CASHIER:
+            from app.ui.dialogs.authorize_dialog import require_admin_authorization
+
+            ok, admin_name = require_admin_authorization(
+                self,
+                "L'échange de points nécessite l'autorisation d'un administrateur.",
+            )
+            if not ok:
+                return
+        else:
+            admin_name = ""
         from PySide6.QtWidgets import QInputDialog
 
         points, ok = QInputDialog.getDouble(
@@ -372,6 +384,16 @@ class ClientsPage(QWidget):
         except ValueError as exc:
             warn(self, str(exc))
             return
+        from app.services import audit_service
+
+        audit_service.log_action(
+            "Échange points",
+            "Loyalty",
+            f"client={client_id} points={points}"
+            + (f" autorisé_par={admin_name}" if admin_name else ""),
+            self.state.user_id,
+            getattr(self.state.current_user, "username", ""),
+        )
         self.refresh()
         info(self, f"Échange enregistré. Solde restant : {remaining:g} pts.")
 

@@ -17,9 +17,24 @@ from app.models.stock import (
     StockMovement,
 )
 from app.utils.helpers import to_float
+from app.services import permissions as perms
 
 
 class StockController:
+    @staticmethod
+    def _assert_user_can_manage(user_id: Optional[int]) -> None:
+        """Contrôle côté serveur : le caissier ne peut pas bouger le stock."""
+        if not user_id:
+            return
+        from app.models.user import User
+
+        with session_scope() as session:
+            user = session.get(User, user_id)
+            if user is not None and not perms.can(user, perms.MANAGE_STOCK):
+                raise ValueError(
+                    "Vous n'avez pas l'autorisation de modifier le stock."
+                )
+
     @staticmethod
     def _record(
         session,
@@ -67,6 +82,7 @@ class StockController:
     ) -> None:
         quantity = to_float(quantity)
         unit_cost = to_float(unit_cost)
+        cls._assert_user_can_manage(user_id)
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:
@@ -84,7 +100,7 @@ class StockController:
                 comment=comment,
             )
             # Le coût unitaire saisi lors de l'entrée met à jour le prix d'achat
-            # du produit (dernier prix d'achat connu).
+            # du produit (dernier prix d'achat connu) — réservé aux rôles stock.
             if unit_cost > 0:
                 product.purchase_price = unit_cost
 
@@ -101,6 +117,7 @@ class StockController:
         quantity = to_float(quantity)
         if quantity <= 0:
             raise ValueError("Quantité invalide.")
+        cls._assert_user_can_manage(user_id)
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:
@@ -132,6 +149,7 @@ class StockController:
         comment: str = "",
     ) -> None:
         """Fixe la quantité réelle constatée lors d'un inventaire."""
+        cls._assert_user_can_manage(user_id)
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:
@@ -158,6 +176,7 @@ class StockController:
         comment: str = "",
     ) -> None:
         """Ajustement de stock (correction d'erreur) — toujours tracé."""
+        cls._assert_user_can_manage(user_id)
         with session_scope() as session:
             product = session.get(Product, product_id)
             if not product:

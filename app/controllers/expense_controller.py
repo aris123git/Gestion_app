@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 
 from app.database.connection import session_scope
 from app.models.expense import Expense
+from app.services import permissions as perms
 from app.utils.helpers import to_float
 
 
@@ -17,6 +18,19 @@ class ExpenseController:
     def _is_current_month(moment: datetime) -> bool:
         today = date.today()
         return moment.year == today.year and moment.month == today.month
+
+    @staticmethod
+    def _assert_user_can_manage(user_id: Optional[int]) -> None:
+        if not user_id:
+            raise ValueError("Utilisateur requis pour gérer les dépenses.")
+        from app.models.user import User
+
+        with session_scope() as session:
+            user = session.get(User, user_id)
+            if user is None or not perms.can(user, perms.MANAGE_EXPENSES):
+                raise ValueError(
+                    "Vous n'avez pas l'autorisation de gérer les dépenses."
+                )
 
     @staticmethod
     def _assert_mutable(expense: Expense, is_admin: bool, new_date=None) -> None:
@@ -54,6 +68,7 @@ class ExpenseController:
 
     @staticmethod
     def create(data: dict, user_id: Optional[int] = None) -> Expense:
+        ExpenseController._assert_user_can_manage(user_id)
         with session_scope() as session:
             expense = Expense(
                 category=str(data.get("category", "Autres")),
@@ -69,7 +84,14 @@ class ExpenseController:
             return expense
 
     @staticmethod
-    def update(expense_id: int, data: dict, *, is_admin: bool = False) -> None:
+    def update(
+        expense_id: int,
+        data: dict,
+        *,
+        is_admin: bool = False,
+        user_id: Optional[int] = None,
+    ) -> None:
+        ExpenseController._assert_user_can_manage(user_id)
         with session_scope() as session:
             expense = session.get(Expense, expense_id)
             if not expense:
@@ -85,7 +107,10 @@ class ExpenseController:
             expense.notes = str(data.get("notes", expense.notes)).strip()
 
     @staticmethod
-    def delete(expense_id: int, *, is_admin: bool = False) -> None:
+    def delete(
+        expense_id: int, *, is_admin: bool = False, user_id: Optional[int] = None
+    ) -> None:
+        ExpenseController._assert_user_can_manage(user_id)
         with session_scope() as session:
             expense = session.get(Expense, expense_id)
             if expense:

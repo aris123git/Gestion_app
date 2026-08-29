@@ -86,7 +86,9 @@ class CloseCashSessionDialog(QDialog):
         self.counted.setValue(expected)
         self.counted.setSuffix(f" {currency}")
         self.note = QLineEdit()
-        self.note.setPlaceholderText("Commentaire (facultatif)")
+        self.note.setPlaceholderText(
+            "Commentaire (obligatoire si écart important)"
+        )
         form.addRow("Montant compté", self.counted)
         form.addRow("Note", self.note)
         layout.addLayout(form)
@@ -117,9 +119,23 @@ class CloseCashSessionDialog(QDialog):
         )
 
     def _save(self) -> None:
+        counted = float(self.counted.value())
+        note = self.note.text().strip()
+        variance = abs(counted - self.expected)
+        from app.services.cash_controls import get_variance_note_threshold
+
+        threshold = get_variance_note_threshold()
+        if variance >= threshold + 0.009 and len(note) < 5:
+            warn(
+                self,
+                f"Écart ≥ {threshold:g} : une note explicative est obligatoire "
+                "(au moins 5 caractères).",
+            )
+            self.note.setFocus()
+            return
         self.result_data = {
-            "counted": float(self.counted.value()),
-            "note": self.note.text().strip(),
+            "counted": counted,
+            "note": note,
         }
         self.accept()
 

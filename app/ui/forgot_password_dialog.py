@@ -135,17 +135,20 @@ class ForgotPasswordDialog(QDialog):
             AuthService.count_admins() == 0
             and os.environ.get("NEXAPOS_SKIP_ACTIVATION") == "1"
         )
-        if not allow_test_fallback and not AuthService.verify_any_admin_password(
-            admin_password
-        ):
-            QMessageBox.critical(
-                self,
-                "Autorisation refusée",
-                "Le mot de passe administrateur est incorrect.",
-            )
-            self.admin_password_input.clear()
-            self.admin_password_input.setFocus()
-            return
+        admin_identity = None
+        if allow_test_fallback:
+            admin_identity = (None, "test-fallback")
+        else:
+            admin_identity = AuthService.identify_admin_by_password(admin_password)
+            if not admin_identity:
+                QMessageBox.critical(
+                    self,
+                    "Autorisation refusée",
+                    "Le mot de passe administrateur est incorrect.",
+                )
+                self.admin_password_input.clear()
+                self.admin_password_input.setFocus()
+                return
 
         new_password = self.password.text()
         if not new_password:
@@ -167,9 +170,18 @@ class ForgotPasswordDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, "Mot de passe", str(exc))
             return
-        username = self.user_combo.currentText()
+        target = None
+        for i in range(self.user_combo.count()):
+            if self.user_combo.itemData(i) == user_id:
+                target = self.user_combo.itemText(i)
+                break
+        admin_id, admin_name = admin_identity
         audit_service.log_action(
-            "Réinitialisation mot de passe (admin)", "User", username
+            "Réinitialisation mot de passe (admin)",
+            "User",
+            f"cible_id={user_id} cible={target or '?'} autorisé_par={admin_name}",
+            admin_id,
+            admin_name or "",
         )
         QMessageBox.information(
             self,

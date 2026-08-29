@@ -27,6 +27,8 @@ from app.controllers.sale_controller import SaleController
 from app.reports.excel_report import export_report_excel
 from app.reports.pdf_report import export_report_pdf
 from app.services import audit_service, permissions as perms, settings_service
+from app.services.auth_service import AuthService
+from app.services.cash_session_service import CashSessionService
 from app.ui.dialogs.authorize_dialog import require_admin_authorization
 from app.ui.dialogs.cancel_sale_dialog import CancelSaleDialog
 from app.ui.state import AppState
@@ -67,6 +69,8 @@ class ReportsPage(QWidget):
         generate.clicked.connect(self._generate)
         z_report = QPushButton("Z de caisse (jour)")
         z_report.clicked.connect(self._show_z_report)
+        sessions_btn = QPushButton("Sessions caisse")
+        sessions_btn.clicked.connect(self._show_cash_sessions)
         controls.addWidget(QLabel("Période :"))
         controls.addWidget(self.period)
         controls.addWidget(QLabel("Du"))
@@ -75,6 +79,7 @@ class ReportsPage(QWidget):
         controls.addWidget(self.end)
         controls.addWidget(generate)
         controls.addWidget(z_report)
+        controls.addWidget(sessions_btn)
         controls.addStretch()
         layout.addLayout(controls)
         self._period_changed(self.period.currentText())
@@ -231,9 +236,11 @@ class ReportsPage(QWidget):
     def _format_z_report(self, report: dict) -> str:
         currency = settings_service.get_currency()
         day = report.get("day") or report["start"]
+        cashier = report.get("cashier_label") or "Tous les caissiers"
         lines = [
             "Z DE CAISSE",
             f"Date : {day:%d/%m/%Y}",
+            f"Périmètre : {cashier}",
             f"Généré le : {datetime.now():%d/%m/%Y %H:%M}",
             "",
             f"CA encaissé (ventes + règlements) : {format_money(report['cash_revenue'], currency)}",
@@ -253,12 +260,37 @@ class ReportsPage(QWidget):
             )
         else:
             lines.append("- Aucun encaissement")
+        by_cashier = report.get("by_cashier") or []
+        if by_cashier:
+            lines.extend(["", "Par caissier :"])
+            lines.extend(
+                f"- {name} : {format_money(total, currency)} ({count} ventes)"
+                for name, total, count in by_cashier
+            )
         return "\n".join(lines)
 
     def _show_z_report(self) -> None:
         qdate = self.start.date()
         day = date(qdate.year(), qdate.month(), qdate.day())
-        report = ReportController.z_report(day)
+        users = AuthService.list_users()
+        labels = ["Tous les caissiers"]
+        ids: list = [None]
+        for user in users:
+            if not getattr(user, "is_active", True):
+                continue
+            label = user.full_name or user.username
+            labels.append(f"{label} ({user.role})")
+            ids.append(user.id)
+        from PySide6.QtWidgets import QInputDialog
+
+        choice, ok = QInputDialog.getItem(
+            self, "Z de caisse", "Périmètre :", labels, 0, False
+        )
+        if not ok:
+            return
+        user_id = ids[labels.index(choice)]
+        report = ReportController.z_report(day, user_id=user_id)
+        report["cashier_label"] = choice
         content = self._format_z_report(report)
 
         dialog = QDialog(self)
@@ -278,7 +310,10 @@ class ReportsPage(QWidget):
 
         def _save() -> None:
             config.ensure_directories()
-            path = config.EXPORT_DIR / f"z_caisse_{day:%Y%m%d}_{datetime.now():%H%M%S}.txt"
+            path = (
+                config.EXPORT_DIR
+                / f"z_caisse_{day:%Y%m%d}_{datetime.now():%H%M%S}.txt"
+            )
             path.write_text(content, encoding="utf-8")
             info(dialog, f"Z de caisse enregistré :\n{path}")
 
@@ -287,6 +322,44 @@ class ReportsPage(QWidget):
         buttons.addStretch()
         buttons.addWidget(save)
         layout.addLayout(buttons)
+        dialog.exec()
+
+    def _show_cash_sessions(self) -> None:
+        """Liste des dernières sessions (écarts visibles pour le patron)."""
+        currency = settings_service.get_currency()
+        rows = CashSessionService.recent(limit=40)
+        lines = ["SESSIONS DE CAISSE (récentes)", ""]
+        if not rows:
+            lines.append("Aucune session enregistrée.")
+        for sess in rows:
+            user = getattr(sess, "user", None)
+            name = ""
+            if user is not None:
+                name = getattr(user, "full_name", None) or getattr(
+                    user, "username", ""
+                )
+            variance = float(sess.variance) if sess.variance is not None else None
+            var_txt = (
+                format_money(variance, currency) if variance is not None else "—"
+            )
+            flag = " ⚠" if variance is not None and abs(variance) >= 0.01 else ""
+            lines.append(
+                f"#{sess.id} {name} | ouvert {format_datetime(sess.opened_at)} | "
+                f"statut={sess.status} | écart={var_txt}{flag}"
+            )
+            if sess.note:
+                lines.append(f"    note : {sess.note}")
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Sessions de caisse")
+        dialog.setMinimumSize(640, 480)
+        layout = QVBoxLayout(dialog)
+        preview = QPlainTextEdit()
+        preview.setReadOnly(True)
+        preview.setPlainText("\n".join(lines))
+        layout.addWidget(preview)
+        close = QPushButton("Fermer")
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
         dialog.exec()
 
     def _reprint_selected_sale(self) -> None:
@@ -302,6 +375,13 @@ class ReportsPage(QWidget):
         from app.ui.dialogs.ticket_dialog import TicketDialog
 
         TicketDialog(sale, self).exec()
+        audit_service.log_action(
+            "Réimpression ticket",
+            "Sale",
+            sale.ticket_number,
+            self.state.user_id,
+            getattr(self.state.current_user, "username", ""),
+        )
 
     def _cancel_selected_sale(self) -> None:
         """Annule la vente sélectionnée et remet en stock.
@@ -316,12 +396,14 @@ class ReportsPage(QWidget):
         if not perms.can_cancel_sale(self.state.current_user):
             warn(self, "Vous n'avez pas l'autorisation d'annuler une vente.")
             return
+        authorized_by = ""
         if perms.requires_auth_to_cancel(self.state.current_user):
-            if not require_admin_authorization(
+            ok, authorized_by = require_admin_authorization(
                 self,
                 "L'annulation d'une vente nécessite l'autorisation "
                 "d'un administrateur.",
-            ):
+            )
+            if not ok:
                 return
         sale_id = self._sale_ids[row]
         ticket = self.history_table.item(row, 0)
@@ -329,6 +411,10 @@ class ReportsPage(QWidget):
         dialog = CancelSaleDialog(ticket_number, parent=self)
         if not dialog.exec() or not dialog.reason:
             return
+        is_admin = bool(
+            self.state.current_user
+            and getattr(self.state.current_user, "role", "") == perms.ROLE_ADMIN
+        )
         try:
             SaleController.cancel_sale(
                 sale_id,
@@ -336,14 +422,16 @@ class ReportsPage(QWidget):
                 user_id=self.state.user_id,
                 username=getattr(self.state.current_user, "username", ""),
                 reason=dialog.reason,
+                allow_old_sales=is_admin,
             )
         except ValueError as exc:
             warn(self, str(exc))
             return
+        auth_part = f" — autorisé par {authorized_by}" if authorized_by else ""
         audit_service.log_action(
             "Annulation vente",
             "Sale",
-            f"{ticket_number} — motif: {dialog.reason}",
+            f"{ticket_number} — motif: {dialog.reason}{auth_part}",
             self.state.user_id,
             getattr(self.state.current_user, "username", ""),
         )

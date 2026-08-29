@@ -22,6 +22,7 @@ from app import __version__
 from app.services import permissions as perms
 from app.services import settings_service
 from app.ui.pages.assistant_page import AssistantPage
+from app.ui.pages.audit_page import AuditPage
 from app.ui.pages.categories_page import CategoriesPage
 from app.ui.pages.clients_page import ClientsPage
 from app.ui.pages.dashboard_page import DashboardPage
@@ -61,6 +62,7 @@ NAV_ITEMS = [
     ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
     ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
     ("Rapports", "📈", ReportsPage, perms.VIEW_REPORTS),
+    ("Journal d'audit", "📝", AuditPage, perms.VIEW_AUDIT),
     ("Assistant", "💡", AssistantPage, perms.VIEW_ASSISTANT),
     ("Utilisateurs", "🔐", UsersPage, perms.MANAGE_USERS),
     ("Paramètres", "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
