@@ -347,8 +347,20 @@ class DebtService:
         status: Optional[str] = None,
         search: str = "",
         only_active: bool = False,
+        filter_mode: Optional[str] = None,
+        sort_by: str = "recent",
         limit: int = 500,
     ) -> List[Debt]:
+        """Liste les dettes, plus récentes d'abord par défaut.
+
+        ``filter_mode`` :
+          - ``unpaid`` : non soldées (en cours / partielles)
+          - ``paid`` : soldées
+          - ``overdue`` : échéance dépassée et reste dû > 0
+          - ``all`` / ``None`` : toutes (hors filtre status/only_active)
+
+        ``sort_by`` : ``recent`` | ``due_date`` | ``remaining`` | ``client``
+        """
         with session_scope() as session:
             query = select(Debt).options(
                 joinedload(Debt.client),
@@ -360,9 +372,35 @@ class DebtService:
                 query = query.where(Debt.status == status)
             if only_active:
                 query = query.where(Debt.status.in_(ACTIVE_DEBT_STATUSES))
+
+            mode = (filter_mode or "").strip().lower()
+            today = date.today()
+            if mode == "unpaid":
+                query = query.where(
+                    Debt.status.in_(ACTIVE_DEBT_STATUSES),
+                    Debt.amount_remaining > 0,
+                )
+            elif mode == "paid":
+                query = query.where(Debt.status == STATUS_PAID)
+            elif mode == "overdue":
+                query = query.where(
+                    Debt.status.in_(ACTIVE_DEBT_STATUSES),
+                    Debt.amount_remaining > 0,
+                    Debt.due_date.is_not(None),
+                    Debt.due_date < today,
+                )
+            elif mode in ("all", ""):
+                pass
+            elif mode == "cancelled":
+                query = query.where(Debt.status == STATUS_CANCELLED)
+
+            needs_client_join = bool(search) or sort_by == "client"
+            if needs_client_join:
+                query = query.join(Client)
+
             if search:
                 pattern = f"%{search}%"
-                query = query.join(Client).where(
+                query = query.where(
                     or_(
                         Client.name.ilike(pattern),
                         Client.phone.ilike(pattern),
@@ -370,7 +408,29 @@ class DebtService:
                         Debt.status.ilike(pattern),
                     )
                 )
-            query = query.order_by(Debt.created_at.desc()).limit(limit)
+
+            if sort_by == "due_date":
+                # Échéances les plus proches / dépassées d'abord ; sans échéance en bas.
+                query = query.order_by(
+                    case((Debt.due_date.is_(None), 1), else_=0),
+                    Debt.due_date.asc(),
+                    Debt.created_at.desc(),
+                )
+            elif sort_by == "remaining":
+                query = query.order_by(
+                    Debt.amount_remaining.desc(),
+                    Debt.created_at.desc(),
+                )
+            elif sort_by == "client":
+                query = query.order_by(
+                    Client.name.asc(),
+                    Debt.created_at.desc(),
+                )
+            else:
+                # Plus récentes d'abord (défaut).
+                query = query.order_by(Debt.created_at.desc(), Debt.id.desc())
+
+            query = query.limit(limit)
             rows = session.scalars(query).unique().all()
             session.expunge_all()
             return list(rows)

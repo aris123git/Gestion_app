@@ -25,6 +25,7 @@ from app.ui.pages.assistant_page import AssistantPage
 from app.ui.pages.categories_page import CategoriesPage
 from app.ui.pages.clients_page import ClientsPage
 from app.ui.pages.dashboard_page import DashboardPage
+from app.ui.pages.debts_page import DebtsPage
 from app.ui.pages.expenses_page import ExpensesPage
 from app.ui.pages.pos_page import POSPage
 from app.ui.pages.products_page import ProductsPage
@@ -56,6 +57,7 @@ NAV_ITEMS = [
     ("Stock", "📥", StockPage, perms.MANAGE_STOCK),
     ("Achats", "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
     ("Clients", "👥", ClientsPage, perms.MANAGE_CLIENTS),
+    ("Dettes", "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
     ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
     ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
     ("Rapports", "📈", ReportsPage, perms.VIEW_REPORTS),

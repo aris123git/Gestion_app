@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import List, Optional
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -28,16 +33,32 @@ STATUS_LABELS = {
     STATUS_CANCELLED: "Annulée",
 }
 
+DEBT_TABS = (
+    ("Non payées", "unpaid"),
+    ("Payées", "paid"),
+    ("Échues", "overdue"),
+    ("Tout", "all"),
+)
+
+SORT_CHOICES = (
+    ("Plus récentes", "recent"),
+    ("Échéance", "due_date"),
+    ("Montant restant", "remaining"),
+)
+
 
 class DebtHistoryDialog(QDialog):
-    """Affiche les dettes et paiements d'un client."""
+    """Affiche les dettes (par onglet) et paiements d'un client."""
 
     def __init__(self, client_id: int, client_name: str, parent=None):
         super().__init__(parent)
         self.client_id = client_id
         self.setWindowTitle(f"Dettes — {client_name}")
         self.setModal(True)
-        self.resize(820, 480)
+        self.resize(900, 520)
+        self._debt_ids: List[int] = []
+        self._selected_debt_id: Optional[int] = None
+        self._current_sort = "recent"
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -52,23 +73,27 @@ class DebtHistoryDialog(QDialog):
         )
         layout.addWidget(self.summary_label)
 
-        tabs = QTabWidget()
-        tabs.addTab(self._build_debts_tab(), "Dettes")
-        tabs.addTab(self._build_payments_tab(), "Remboursements")
-        layout.addWidget(tabs)
+        main_tabs = QTabWidget()
+        debts_wrap = QWidget()
+        debts_layout = QVBoxLayout(debts_wrap)
+        debts_layout.setContentsMargins(0, 8, 0, 0)
 
-        close = QPushButton("Fermer")
-        close.clicked.connect(self.accept)
-        row = QHBoxLayout()
-        row.addStretch()
-        row.addWidget(close)
-        layout.addLayout(row)
+        tools = QHBoxLayout()
+        self.filter_tabs = QTabWidget()
+        for label, _mode in DEBT_TABS:
+            self.filter_tabs.addTab(QWidget(), label)
+        self.filter_tabs.currentChanged.connect(self._reload_debts)
+        debts_layout.addWidget(self.filter_tabs)
 
-        self._load()
+        tools.addWidget(QLabel("Trier :"))
+        self.sort_combo = QComboBox()
+        for label, value in SORT_CHOICES:
+            self.sort_combo.addItem(label, value)
+        self.sort_combo.currentIndexChanged.connect(self._on_sort_changed)
+        tools.addWidget(self.sort_combo)
+        tools.addStretch()
+        debts_layout.addLayout(tools)
 
-    def _build_debts_tab(self) -> QWidget:
-        wrap = QWidget()
-        layout = QVBoxLayout(wrap)
         self.debts_table = QTableWidget(0, 7)
         self.debts_table.setHorizontalHeaderLabels(
             [
@@ -88,8 +113,23 @@ class DebtHistoryDialog(QDialog):
         self.debts_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
         )
-        layout.addWidget(self.debts_table)
-        return wrap
+        self.debts_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.debts_table.itemSelectionChanged.connect(self._remember_selection)
+        debts_layout.addWidget(self.debts_table)
+
+        main_tabs.addTab(debts_wrap, "Dettes")
+        main_tabs.addTab(self._build_payments_tab(), "Remboursements")
+        layout.addWidget(main_tabs)
+
+        close = QPushButton("Fermer")
+        close.clicked.connect(self.accept)
+        row = QHBoxLayout()
+        row.addStretch()
+        row.addWidget(close)
+        layout.addLayout(row)
+
+        self._load_payments()
+        self._reload_debts()
 
     def _build_payments_tab(self) -> QWidget:
         wrap = QWidget()
@@ -107,9 +147,36 @@ class DebtHistoryDialog(QDialog):
         layout.addWidget(self.payments_table)
         return wrap
 
-    def _load(self) -> None:
+    def _filter_mode(self) -> str:
+        index = self.filter_tabs.currentIndex()
+        if 0 <= index < len(DEBT_TABS):
+            return DEBT_TABS[index][1]
+        return "unpaid"
+
+    def _on_sort_changed(self, _index: int = 0) -> None:
+        new_sort = self.sort_combo.currentData() or "recent"
+        if new_sort != self._current_sort:
+            self._selected_debt_id = None
+            self._current_sort = new_sort
+            self.debts_table.clearSelection()
+        self._reload_debts()
+
+    def _remember_selection(self) -> None:
+        row = self.debts_table.currentRow()
+        if 0 <= row < len(self._debt_ids):
+            self._selected_debt_id = self._debt_ids[row]
+
+    def _reload_debts(self) -> None:
         currency = settings_service.get_currency()
-        debts = DebtService.list_debts(client_id=self.client_id, limit=1000)
+        sort_by = self.sort_combo.currentData() or "recent"
+        self._current_sort = sort_by
+        debts = DebtService.list_debts(
+            client_id=self.client_id,
+            filter_mode=self._filter_mode(),
+            sort_by=sort_by,
+            limit=1000,
+        )
+        self._debt_ids = [int(d.id) for d in debts]
         self.debts_table.setRowCount(len(debts))
         for row, debt in enumerate(debts):
             ticket = ""
@@ -117,7 +184,8 @@ class DebtHistoryDialog(QDialog):
                 ticket = getattr(debt.sale, "ticket_number", "") or str(debt.sale_id)
             due = debt.due_date.strftime("%d/%m/%Y") if debt.due_date else "—"
             status = STATUS_LABELS.get(debt.status, debt.status)
-            if debt.is_overdue:
+            overdue = bool(debt.is_overdue)
+            if overdue:
                 status += " (échue)"
             values = [
                 format_datetime(debt.created_at) if debt.created_at else "—",
@@ -129,8 +197,24 @@ class DebtHistoryDialog(QDialog):
                 debt.note or "—",
             ]
             for col, value in enumerate(values):
-                self.debts_table.setItem(row, col, QTableWidgetItem(value))
+                item = QTableWidgetItem(value)
+                if overdue and col in (3, 4):
+                    item.setForeground(QColor("#dc2626"))
+                if col in (1, 2):
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
+                self.debts_table.setItem(row, col, item)
 
+        if self._selected_debt_id in self._debt_ids:
+            row = self._debt_ids.index(self._selected_debt_id)
+            self.debts_table.selectRow(row)
+            self.debts_table.setCurrentCell(row, 0)
+        else:
+            self._selected_debt_id = None
+
+    def _load_payments(self) -> None:
+        currency = settings_service.get_currency()
         payments = DebtService.list_payments(client_id=self.client_id, limit=1000)
         self.payments_table.setRowCount(len(payments))
         for row, payment in enumerate(payments):
