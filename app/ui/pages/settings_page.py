@@ -158,7 +158,13 @@ class SettingsPage(QWidget):
         self.theme = QComboBox()
         self.theme.addItems(["Clair", "Sombre"])
         self.ticket_format = QComboBox()
-        self.ticket_format.addItems(["80mm", "58mm"])
+        self.ticket_format.addItem("Ticket 80 mm", "80mm")
+        self.ticket_format.addItem("Ticket 58 mm", "58mm")
+        self.ticket_format.addItem("Facture papier (demi-A4)", "demi-A4")
+        self.ticket_format.setToolTip(
+            "Par défaut : ticket thermique. « Facture papier » = PDF 210×148,5 mm "
+            "(A4 coupé en deux) pour imprimante bureau."
+        )
         # Liste déroulante des imprimantes détectées (éditable pour saisir un
         # chemin de périphérique si besoin) + bouton d'actualisation.
         self.printer = QComboBox()
@@ -274,7 +280,7 @@ class SettingsPage(QWidget):
     def _save_appearance(self, silent: bool = False) -> None:
         dark = self.theme.currentText() == "Sombre"
         self.state.set_dark(dark)
-        settings_service.set_setting("ticket_format", self.ticket_format.currentText())
+        settings_service.set_setting("ticket_format", self.ticket_format.currentData())
         settings_service.set_setting("printer_name", self._printer_value())
         settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
         settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
@@ -551,9 +557,13 @@ class SettingsPage(QWidget):
         self.logo_label.setText(shop.logo_path)
         self.footer.setText(shop.ticket_footer)
         self.theme.setCurrentText("Sombre" if self.state.dark else "Clair")
-        self.ticket_format.setCurrentText(
-            settings_service.get_setting("ticket_format", "80mm")
-        )
+        fmt = settings_service.get_setting("ticket_format", "80mm")
+        fmt_index = self.ticket_format.findData(fmt)
+        if fmt_index < 0:
+            # Anciennes valeurs stockées comme texte simple.
+            fmt_index = self.ticket_format.findText(fmt)
+        if fmt_index >= 0:
+            self.ticket_format.setCurrentIndex(fmt_index)
         self._reload_printers(select=settings_service.get_setting("printer_name", ""))
         try:
             self.feed_lines.setValue(int(settings_service.get_setting("ticket_feed_lines", "5")))

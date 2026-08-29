@@ -1,15 +1,12 @@
-"""Génération et impression des tickets thermiques (58 mm / 80 mm).
+"""Génération et impression des tickets thermiques (58 mm / 80 mm)
+et factures demi-A4 (papier A4 coupé en deux).
 
 Deux sorties sont proposées :
 
 - ``render_ticket_text`` construit le ticket en texte monospace (aperçu et
-  réimpression, largeur adaptée à 58 ou 80 mm) ;
-- ``print_ticket`` envoie le ticket à une imprimante ESC/POS via
-  ``python-escpos`` lorsqu'une imprimante est configurée.
-
-Sur un poste sans imprimante (ou en test), on retombe sur un fichier texte
-enregistré dans le dossier des tickets, ce qui permet toujours de conserver et
-réimprimer une vente.
+  réimpression, largeur adaptée au format) ;
+- ``print_ticket`` envoie le ticket à une imprimante ESC/POS (thermique)
+  ou génère/imprime un PDF demi-A4 pour imprimante bureau.
 """
 
 from __future__ import annotations
@@ -34,7 +31,7 @@ class PrintResult:
     """Résultat d'une tentative d'impression.
 
     - ``printed`` : True si les données ont bien été envoyées à une imprimante ;
-    - ``file_path`` : chemin de la copie texte du ticket (toujours créée) ;
+    - ``file_path`` : chemin de la copie texte/PDF du ticket (toujours créée) ;
     - ``message`` : explication (utile en cas d'échec ou d'absence d'imprimante).
     """
 
@@ -43,7 +40,8 @@ class PrintResult:
     message: str = ""
 
 # Nombre de caractères par ligne selon la largeur du papier.
-WIDTH_CHARS = {"58mm": 32, "80mm": 48}
+WIDTH_CHARS = {"58mm": 32, "80mm": 48, "demi-A4": 72}
+PAPER_FORMATS = ("80mm", "58mm", "demi-A4")
 
 
 def _line(char: str = "-", width: int = 32) -> str:
@@ -65,13 +63,20 @@ def _center(text: str, width: int) -> str:
 
 def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
     """Construit le contenu texte d'un ticket à partir d'une vente ORM."""
+    from app.printers.half_a4_invoice import HALF_A4_WIDTH_CHARS, is_half_a4
+
     shop = shop or settings_service.get_shop_info()
-    width = WIDTH_CHARS.get(paper, 48)
+    if is_half_a4(paper):
+        width = HALF_A4_WIDTH_CHARS
+    else:
+        width = WIDTH_CHARS.get(paper, 48)
     currency = shop.currency or "FCFA"
 
     lines = []
     logo_path = Path(str(shop.logo_path or ""))
     shop_name = shop.name or "Commerce"
+    if is_half_a4(paper):
+        lines.append(_center("FACTURE", width))
     if shop.logo_path and logo_path.exists():
         lines.append(_center(shop_name.upper(), width))
     else:
@@ -81,7 +86,8 @@ def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
     if shop.phone:
         lines.append(_center(f"Tel: {shop.phone}", width))
     lines.append(_line("=", width))
-    lines.append(_row(f"Ticket: {sale.ticket_number}", "", width))
+    label = "Facture" if is_half_a4(paper) else "Ticket"
+    lines.append(_row(f"{label}: {sale.ticket_number}", "", width))
     moment = sale.date or datetime.now()
     lines.append(_row(f"Date: {moment:%d/%m/%Y}", f"{moment:%H:%M}", width))
     lines.append(_row(f"Caissier: {sale.cashier_name}", "", width))
@@ -130,6 +136,8 @@ def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
 
     footer = shop.ticket_footer or "Merci pour votre visite."
     lines.append(_center(footer, width))
+    if is_half_a4(paper):
+        lines.append(_center("Format demi-A4 (210 × 148,5 mm)", width))
     lines.append("")
     lines.append("")
     return "\n".join(lines)
@@ -570,18 +578,30 @@ def print_ticket(
     paper: str = "80mm",
     printer_name: Optional[str] = None,
 ) -> PrintResult:
-    """Imprime réellement le ticket et retourne le résultat de l'opération.
+    """Imprime réellement le ticket / la facture et retourne le résultat.
 
-    - Une copie texte du ticket est **toujours** enregistrée (archivage).
-    - L'envoi à l'imprimante est effectué selon la plateforme :
-      Windows (``win32print`` par nom / imprimante par défaut) ou
-      Linux/macOS (périphérique brut ou CUPS ``lp``).
-    - Le résultat (``PrintResult``) indique clairement si l'impression a réussi,
-      afin que l'interface affiche un message honnête.
+    - Format thermique (58/80 mm) : copie texte + envoi ESC/POS RAW.
+    - Format ``demi-A4`` : PDF 210×148,5 mm + impression bureau (non RAW).
     """
+    from app.printers.half_a4_invoice import is_half_a4, print_half_a4_invoice
+
+    shop = shop or settings_service.get_shop_info()
+    if is_half_a4(paper):
+        # Archive texte + impression PDF facture.
+        text_path = save_ticket_file(sale, shop, paper)
+        result = print_half_a4_invoice(sale, shop=shop, printer_name=printer_name)
+        if result.file_path and result.file_path.suffix.lower() == ".pdf":
+            # Conserve aussi le chemin texte dans le message si utile.
+            if text_path and text_path.exists():
+                result.message = (
+                    f"{result.message}\nCopie texte : {text_path}"
+                ).strip()
+        elif not result.file_path:
+            result.file_path = text_path
+        return result
+
     path = save_ticket_file(sale, shop, paper)
     content = render_ticket_text(sale, shop, paper)
-    shop = shop or settings_service.get_shop_info()
     result = _send_content(
         content, printer_name, logo_path=shop.logo_path, paper=paper
     )
