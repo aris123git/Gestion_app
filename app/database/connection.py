@@ -113,6 +113,7 @@ def _migrate_schema() -> None:
         },
         "sales": {
             "status": "VARCHAR(20) DEFAULT 'completed'",
+            "cancel_reason": "VARCHAR(500) DEFAULT ''",
         },
         "debts": {
             "due_date": "DATE",

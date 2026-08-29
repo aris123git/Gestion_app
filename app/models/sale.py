@@ -36,6 +36,7 @@ class Sale(Base, TimestampMixin):
     profit: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
 
     status: Mapped[str] = mapped_column(String(20), default="completed")
+    cancel_reason: Mapped[str] = mapped_column(String(500), default="")
 
     user: Mapped[Optional["User"]] = relationship()  # noqa: F821
     client: Mapped[Optional["Client"]] = relationship()  # noqa: F821

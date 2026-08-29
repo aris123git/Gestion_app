@@ -639,8 +639,19 @@ class SaleController:
         restock: bool = True,
         user_id: Optional[int] = None,
         username: str = "",
+        reason: str = "",
     ) -> None:
-        """Annule une vente, restocke et annule les dettes liées."""
+        """Annule une vente, restocke et annule les dettes liées.
+
+        ``reason`` est obligatoire : au moins 10 lettres (Unicode).
+        """
+        from app.utils.cancel_reason import validate_cancel_reason
+
+        motif = validate_cancel_reason(reason)
+        if not motif:
+            raise ValueError(
+                "Motif d'annulation obligatoire (au moins 10 lettres)."
+            )
         cancelled_debts = 0
         client_id: Optional[int] = None
         with session_scope() as session:
@@ -687,7 +698,7 @@ class SaleController:
                                     quantity=restock_qty,
                                     quantity_before=before,
                                     quantity_after=after,
-                                    reason="Annulation vente",
+                                    reason=f"Annulation vente : {motif[:120]}",
                                     user_id=user_id,
                                 )
                             )
@@ -701,6 +712,7 @@ class SaleController:
                 session=session,
             )
             sale.status = "cancelled"
+            sale.cancel_reason = motif
         if client_id:
             from app.services.customer_service import CustomerService
 

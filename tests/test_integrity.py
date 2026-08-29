@@ -195,7 +195,9 @@ class IntegrityTestCase(unittest.TestCase):
         DebtService.pay_debt(debt_id, 100, payment_method="Espèces")
 
         with self.assertRaises(ValueError):
-            SaleController.cancel_sale(result.sale_id)
+            SaleController.cancel_sale(
+                result.sale_id, reason="Tentative apres remboursement"
+            )
 
 
 if __name__ == "__main__":

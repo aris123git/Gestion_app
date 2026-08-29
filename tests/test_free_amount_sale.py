@@ -134,7 +134,12 @@ class FreeAmountSaleTestCase(unittest.TestCase):
         mid = ProductController.get(product.id)
         self.assertAlmostEqual(float(mid.quantity), 9.9, places=5)
 
-        SaleController.cancel_sale(result.sale_id, restock=True, user_id=1)
+        SaleController.cancel_sale(
+            result.sale_id,
+            restock=True,
+            user_id=1,
+            reason="Erreur de saisie test",
+        )
         after = ProductController.get(product.id)
         self.assertAlmostEqual(float(after.quantity), 10.0, places=5)
 

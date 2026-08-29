@@ -28,9 +28,9 @@ from app.reports.excel_report import export_report_excel
 from app.reports.pdf_report import export_report_pdf
 from app.services import audit_service, permissions as perms, settings_service
 from app.ui.dialogs.authorize_dialog import require_admin_authorization
+from app.ui.dialogs.cancel_sale_dialog import CancelSaleDialog
 from app.ui.state import AppState
 from app.ui.widgets.helpers import (
-    confirm,
     info,
     make_card,
     page_title,
@@ -222,7 +222,10 @@ class ReportsPage(QWidget):
             self.history_table.setItem(row, 3, QTableWidgetItem(sale.payment_summary))
             total_item = QTableWidgetItem(format_money(sale.total, currency))
             if sale.status == "cancelled":
-                total_item.setText(format_money(sale.total, currency) + " (annulée)")
+                motif = (getattr(sale, "cancel_reason", None) or "").strip()
+                suffix = f" (annulée — {motif[:40]})" if motif else " (annulée)"
+                total_item.setText(format_money(sale.total, currency) + suffix)
+                total_item.setToolTip(motif or "Vente annulée")
             self.history_table.setItem(row, 4, total_item)
 
     def _format_z_report(self, report: dict) -> str:
@@ -304,6 +307,7 @@ class ReportsPage(QWidget):
         """Annule la vente sélectionnée et remet en stock.
 
         Administrateur : immédiat. Gestionnaire : mot de passe admin requis.
+        Motif obligatoire (≥ 10 lettres).
         """
         row = self.history_table.currentRow()
         if row < 0 or row >= len(self._sale_ids):
@@ -322,22 +326,26 @@ class ReportsPage(QWidget):
         sale_id = self._sale_ids[row]
         ticket = self.history_table.item(row, 0)
         ticket_number = ticket.text() if ticket else str(sale_id)
-        if not confirm(
-            self,
-            f"Annuler la vente {ticket_number} ?\n\n"
-            "Les articles seront remis en stock et la vente ne comptera plus "
-            "dans le chiffre d'affaires. Cette action est tracée dans le journal.",
-        ):
+        dialog = CancelSaleDialog(ticket_number, parent=self)
+        if not dialog.exec() or not dialog.reason:
             return
-        SaleController.cancel_sale(
-            sale_id,
-            restock=True,
-            user_id=self.state.user_id,
-            username=getattr(self.state.current_user, "username", ""),
-        )
+        try:
+            SaleController.cancel_sale(
+                sale_id,
+                restock=True,
+                user_id=self.state.user_id,
+                username=getattr(self.state.current_user, "username", ""),
+                reason=dialog.reason,
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
         audit_service.log_action(
-            "Annulation vente", "Sale", ticket_number,
-            self.state.user_id, getattr(self.state.current_user, "username", ""),
+            "Annulation vente",
+            "Sale",
+            f"{ticket_number} — motif: {dialog.reason}",
+            self.state.user_id,
+            getattr(self.state.current_user, "username", ""),
         )
         info(self, f"Vente {ticket_number} annulée et articles remis en stock.")
         self._generate()
