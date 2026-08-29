@@ -231,6 +231,16 @@ class MainWindow(QWidget):
         layout.addWidget(logout)
         self._logout_btn = logout
 
+        self._close_cash_btn: Optional[QPushButton] = None
+        if self.state.can(perms.SELL):
+            close_cash = QPushButton("Fermer la caisse")
+            close_cash.setObjectName("NavButton")
+            close_cash.setToolTip("Fermer la caisse")
+            close_cash.setAccessibleName("Fermer la caisse")
+            close_cash.clicked.connect(self._close_cash_session)
+            layout.addWidget(close_cash)
+            self._close_cash_btn = close_cash
+
         version = QLabel(f"v{__version__}")
         version.setObjectName("SidebarVersion")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -464,12 +474,47 @@ class MainWindow(QWidget):
             self._logout()
 
     def _logout(self) -> None:
+        if self.state.can(perms.SELL) and self.state.current_user:
+            from app.services.cash_session_service import CashSessionService
+            from app.ui.dialogs.cash_session_dialog import close_cash_session_flow
+
+            if CashSessionService.get_open(self.state.current_user.id):
+                if not close_cash_session_flow(self, self.state):
+                    # Refus de fermer → rester connecté.
+                    self._idle_logging_out = False
+                    return
         self.state.auth.logout()
         self.close()
         # Redémarrage du flux de connexion géré par l\'application principale.
         from app.ui.app import restart_login
 
         restart_login()
+
+    def _close_cash_session(self) -> None:
+        from app.ui.dialogs.cash_session_dialog import close_cash_session_flow
+
+        close_cash_session_flow(self, self.state)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if not getattr(self, "_cash_session_prompted", False):
+            self._cash_session_prompted = True
+            from PySide6.QtCore import QTimer
+
+            QTimer.singleShot(0, self._ensure_cash_session)
+
+    def _ensure_cash_session(self) -> None:
+        if not self.state.can(perms.SELL) or not self.state.current_user:
+            return
+        from app.ui.dialogs.cash_session_dialog import ensure_cash_session_open
+
+        if not ensure_cash_session_open(self, self.state):
+            self._idle_logging_out = True
+            self.state.auth.logout()
+            self.close()
+            from app.ui.app import restart_login
+
+            restart_login()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
         # F11 : bascule plein écran / fenêtre. Échap : quitte le plein écran.

@@ -1,6 +1,7 @@
 """Modèles ORM SQLAlchemy de l'application."""
 
 from app.models.audit import AuditLog
+from app.models.cash_session import CashSession
 from app.models.category import Category
 from app.models.client import Client
 from app.models.debt import Debt, DebtPayment
@@ -19,6 +20,7 @@ from app.models.user import User
 
 __all__ = [
     "AuditLog",
+    "CashSession",
     "Category",
     "Client",
     "CustomerPoints",
