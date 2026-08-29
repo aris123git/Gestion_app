@@ -50,11 +50,11 @@ class ManualDebtPermissionsTestCase(unittest.TestCase):
                 msg=f"{role} doit pouvoir régler (Payé)",
             )
 
-    def test_cashier_cannot_put_on_credit(self) -> None:
+    def test_cashier_credit_from_pos_not_manual(self) -> None:
+        """Caisse : crédit OK. Page Dettes : pas de saisie libre."""
         cashier = perms.permissions_for(perms.ROLE_CASHIER)
-        self.assertNotIn(perms.SELL_ON_CREDIT, cashier)
+        self.assertIn(perms.SELL_ON_CREDIT, cashier)
         self.assertNotIn(perms.CREATE_MANUAL_CLIENT_DEBT, cashier)
-        # Admin et gestionnaire peuvent encore vendre à crédit en caisse.
         self.assertIn(
             perms.SELL_ON_CREDIT, perms.permissions_for(perms.ROLE_ADMIN)
         )

@@ -98,11 +98,11 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             VIEW_PRODUCTS,
             MANAGE_STOCK,
             MANAGE_CLIENTS,
-            MANAGE_CLIENT_DEBTS,  # peut régler (Payé), pas créer de dette
+            MANAGE_CLIENT_DEBTS,  # régler (Payé)
             VIEW_DASHBOARD,
             APPLY_DISCOUNT,
-            # Pas de SELL_ON_CREDIT ni CREATE_MANUAL_CLIENT_DEBT :
-            # le caissier ne peut pas « mettre en dette ».
+            # Crédit depuis la caisse OK ; saisie libre page Dettes = admin only.
+            SELL_ON_CREDIT,
         }
     ),
 }
