@@ -51,12 +51,29 @@ class DashboardController:
     @staticmethod
     def _profit(session, start: date, end: date) -> float:
         lo, hi = _range(start, end)
-        total = session.scalar(
-            select(func.coalesce(func.sum(Sale.profit), 0)).where(
-                Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
+        sales_profit = float(
+            session.scalar(
+                select(func.coalesce(func.sum(Sale.profit), 0)).where(
+                    Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
+                )
             )
+            or 0
         )
-        return float(total or 0)
+        from app.models.debt import Debt
+
+        manual = float(
+            session.scalar(
+                select(func.coalesce(func.sum(DebtPayment.amount), 0))
+                .join(Debt, Debt.id == DebtPayment.debt_id)
+                .where(
+                    DebtPayment.payment_date >= lo,
+                    DebtPayment.payment_date <= hi,
+                    Debt.sale_id.is_(None),
+                )
+            )
+            or 0
+        )
+        return round(sales_profit + manual, 2)
 
     @staticmethod
     def _sales_count(session, start: date, end: date) -> int:

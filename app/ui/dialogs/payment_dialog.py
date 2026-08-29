@@ -136,7 +136,8 @@ class PaymentDialog(QDialog):
         due_row = QHBoxLayout()
         due_row.addWidget(self.credit_due_enabled)
         due_row.addWidget(self.credit_due_date_edit)
-        form.addRow("Échéance dette", due_row)
+        self.credit_due_label = QLabel("Échéance dette")
+        form.addRow(self.credit_due_label, due_row)
         layout.addWidget(methods_card)
 
         quick_row = QHBoxLayout()
@@ -151,6 +152,7 @@ class PaymentDialog(QDialog):
             self.credit_label.setVisible(False)
             self.credit_input.setVisible(False)
             self.credit_hint.setVisible(False)
+            self.credit_due_label.setVisible(False)
             self.credit_due_enabled.setVisible(False)
             self.credit_due_date_edit.setVisible(False)
             self.quick_debt.setVisible(False)

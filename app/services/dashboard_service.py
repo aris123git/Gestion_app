@@ -57,7 +57,7 @@ class DashboardService:
     @staticmethod
     def _profit(session, start: date, end: date) -> float:
         lo, hi = _range(start, end)
-        return float(
+        sales_profit = float(
             session.scalar(
                 select(func.coalesce(func.sum(Sale.profit), 0)).where(
                     Sale.date >= lo, Sale.date <= hi, Sale.status == "completed"
@@ -65,6 +65,20 @@ class DashboardService:
             )
             or 0
         )
+        # Dettes saisie libre (hors vente) : le règlement est du bénéfice.
+        manual = float(
+            session.scalar(
+                select(func.coalesce(func.sum(DebtPayment.amount), 0))
+                .join(Debt, Debt.id == DebtPayment.debt_id)
+                .where(
+                    DebtPayment.payment_date >= lo,
+                    DebtPayment.payment_date <= hi,
+                    Debt.sale_id.is_(None),
+                )
+            )
+            or 0
+        )
+        return round(sales_profit + manual, 2)
 
     @staticmethod
     def _client_debt_payments(session, start: date, end: date) -> float:

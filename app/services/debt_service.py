@@ -436,6 +436,30 @@ class DebtService:
             return list(rows)
 
     @staticmethod
+    def sum_manual_repayments(start, end) -> float:
+        """Total des règlements de dettes hors vente (entrée libre admin).
+
+        Ces encaissements n'ont pas de ``Sale.profit`` associé : ils doivent
+        entrer dans le bénéfice (contrairement aux dettes issues d'une vente
+        à crédit, déjà comptées au moment de la vente).
+        """
+        from datetime import date, datetime, time
+
+        lo = datetime.combine(start, time.min)
+        hi = datetime.combine(end, time.max)
+        with session_scope() as session:
+            total = session.scalar(
+                select(func.coalesce(func.sum(DebtPayment.amount), 0))
+                .join(Debt, Debt.id == DebtPayment.debt_id)
+                .where(
+                    DebtPayment.payment_date >= lo,
+                    DebtPayment.payment_date <= hi,
+                    Debt.sale_id.is_(None),
+                )
+            )
+            return float(total or 0)
+
+    @staticmethod
     def list_payments(
         debt_id: Optional[int] = None,
         client_id: Optional[int] = None,

@@ -89,6 +89,22 @@ class ReportController:
                 )
                 or 0
             )
+            # Règlements de dettes hors vente (entrée libre) → bénéfice.
+            from app.models.debt import Debt
+
+            manual_debt_profit = float(
+                session.scalar(
+                    select(func.coalesce(func.sum(DebtPayment.amount), 0))
+                    .join(Debt, Debt.id == DebtPayment.debt_id)
+                    .where(
+                        DebtPayment.payment_date >= lo,
+                        DebtPayment.payment_date <= hi,
+                        Debt.sale_id.is_(None),
+                    )
+                )
+                or 0
+            )
+            profit = round(profit + manual_debt_profit, 2)
             sales_count = int(
                 session.scalar(
                     select(func.count()).select_from(Sale).where(

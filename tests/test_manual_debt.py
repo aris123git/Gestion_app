@@ -92,6 +92,38 @@ class ManualDebtPermissionsTestCase(unittest.TestCase):
         self.assertIsNotNone(refreshed)
         self.assertAlmostEqual(float(refreshed.amount_remaining), 0.0, places=2)
 
+    def test_manual_repayment_counts_in_profit(self) -> None:
+        from datetime import date
+
+        from app.controllers.report_controller import ReportController
+        from app.services.dashboard_service import DashboardService
+
+        today = date.today()
+        before = ReportController.build(today, today)
+        DebtService.create_debt(self.client.id, 4000, note="hors caisse profit")
+        # pay the newest unpaid manual debt of 4000
+        debts = DebtService.list_debts(
+            client_id=self.client.id, filter_mode="unpaid", sort_by="recent"
+        )
+        target = next(d for d in debts if float(d.amount_remaining) == 4000)
+        DebtService.pay_debt(target.id, 4000, payment_method="Espèces")
+        after = ReportController.build(today, today)
+        self.assertAlmostEqual(
+            after["debt_repayments"],
+            before["debt_repayments"] + 4000,
+            places=2,
+        )
+        self.assertAlmostEqual(
+            after["profit"], before["profit"] + 4000, places=2
+        )
+        self.assertAlmostEqual(
+            after["net_profit"], before["net_profit"] + 4000, places=2
+        )
+        manual = DebtService.sum_manual_repayments(today, today)
+        self.assertGreaterEqual(manual, 4000)
+        fin = DashboardService.financial_summary()
+        self.assertGreaterEqual(fin["profit_gross_today"], 4000)
+
 
 if __name__ == "__main__":
     unittest.main()
