@@ -50,6 +50,18 @@ class ManualDebtPermissionsTestCase(unittest.TestCase):
                 msg=f"{role} doit pouvoir régler (Payé)",
             )
 
+    def test_cashier_cannot_put_on_credit(self) -> None:
+        cashier = perms.permissions_for(perms.ROLE_CASHIER)
+        self.assertNotIn(perms.SELL_ON_CREDIT, cashier)
+        self.assertNotIn(perms.CREATE_MANUAL_CLIENT_DEBT, cashier)
+        # Admin et gestionnaire peuvent encore vendre à crédit en caisse.
+        self.assertIn(
+            perms.SELL_ON_CREDIT, perms.permissions_for(perms.ROLE_ADMIN)
+        )
+        self.assertIn(
+            perms.SELL_ON_CREDIT, perms.permissions_for(perms.ROLE_MANAGER)
+        )
+
     def test_add_debt_without_sale(self) -> None:
         before = DebtService.client_summary(self.client.id)["total_remaining"]
         ClientController.add_debt(
