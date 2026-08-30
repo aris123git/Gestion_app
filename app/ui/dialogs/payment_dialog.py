@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -126,16 +127,22 @@ class PaymentDialog(QDialog):
 
         methods_card = QFrame()
         methods_card.setObjectName("Card")
-        form = QFormLayout(methods_card)
-        form.setContentsMargins(16, 16, 16, 16)
-        form.setSpacing(10)
+        form = QGridLayout(methods_card)
+        form.setContentsMargins(12, 12, 12, 12)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
 
         self.credit_method = config.PAYMENT_METHOD_CREDIT
         self.method_inputs = {}
-        for method in config.PAYMENT_METHODS:
+        # 2 colonnes = dialogue moins haut (tient mieux sur 768 px).
+        for index, method in enumerate(config.PAYMENT_METHODS):
             spin = self._make_spin()
             self.method_inputs[method] = spin
-            form.addRow(method, spin)
+            row, col = divmod(index, 2)
+            form.addWidget(QLabel(method), row, col * 2)
+            form.addWidget(spin, row, col * 2 + 1)
+
+        next_row = (len(config.PAYMENT_METHODS) + 1) // 2
 
         # Dette affichée à l'établissement du ticket, activée selon le rôle.
         self.credit_input = self._make_spin()
@@ -146,7 +153,8 @@ class PaymentDialog(QDialog):
             )
         self.method_inputs[self.credit_method] = self.credit_input
         self.credit_label = QLabel(self.credit_method)
-        form.addRow(self.credit_label, self.credit_input)
+        form.addWidget(self.credit_label, next_row, 0)
+        form.addWidget(self.credit_input, next_row, 1)
         hint = (
             "Pour porter le montant en dette, indiquez le téléphone du client ci-dessus."
         )
@@ -158,7 +166,7 @@ class PaymentDialog(QDialog):
         self.credit_hint = QLabel(hint)
         self.credit_hint.setWordWrap(True)
         self.credit_hint.setStyleSheet("color: #b45309; font-size: 12px;")
-        form.addRow("", self.credit_hint)
+        form.addWidget(self.credit_hint, next_row + 1, 0, 1, 4)
         self.credit_due_enabled = QCheckBox("Définir une échéance")
         self.credit_due_date_edit = QDateEdit(QDate.currentDate())
         self.credit_due_date_edit.setCalendarPopup(True)
@@ -168,7 +176,8 @@ class PaymentDialog(QDialog):
         due_row.addWidget(self.credit_due_enabled)
         due_row.addWidget(self.credit_due_date_edit)
         self.credit_due_label = QLabel("Échéance dette")
-        form.addRow(self.credit_due_label, due_row)
+        form.addWidget(self.credit_due_label, next_row + 2, 0)
+        form.addLayout(due_row, next_row + 2, 1, 1, 3)
         layout.addWidget(methods_card)
 
         quick_row = QHBoxLayout()

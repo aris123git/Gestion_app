@@ -54,7 +54,7 @@ class ResponsiveViewportTestCase(unittest.TestCase):
         self.assertTrue(compute_profile(900, 700).stack_panels)
         # Grand écran : côte-à-côte.
         self.assertFalse(compute_profile(1920, 1080).stack_panels)
-        # 1366 avec sidebar icônes : encore assez large pour côte-à-côte.
+        # 1366 avec sidebar icônes (content ~1302) : côte-à-côte.
         self.assertFalse(compute_profile(1366, 768).stack_panels)
 
     def test_card_columns_scale(self) -> None:

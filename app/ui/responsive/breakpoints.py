@@ -35,4 +35,5 @@ DENSITY_COZY = "cozy"
 DENSITY_COMPACT = "compact"
 
 # Empiler catalogue / panier de caisse sous ce content_width.
-STACK_PANELS_CONTENT_WIDTH = 980
+# 1100 : empile aussi sur ~1180 utiles (laptop 1280 avec icônes).
+STACK_PANELS_CONTENT_WIDTH = 1100

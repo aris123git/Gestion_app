@@ -104,13 +104,21 @@ class POSPage(QWidget):
         if stack:
             self._scroll_layout.setStretch(0, 3)
             self._scroll_layout.setStretch(1, 2)
-            self._catalog.setMinimumHeight(220)
-            self._cart_panel.setMinimumHeight(280)
+            # Hauteurs min plus basses sur écrans courts pour éviter le clipping.
+            cat_min = 160 if profile.is_short else 220
+            cart_min = 220 if profile.is_short else 280
+            self._catalog.setMinimumHeight(cat_min)
+            self._cart_panel.setMinimumHeight(cart_min)
+            self._catalog.setMinimumWidth(0)
+            self._cart_panel.setMinimumWidth(0)
         else:
             self._scroll_layout.setStretch(0, 5)
             self._scroll_layout.setStretch(1, 4)
             self._catalog.setMinimumHeight(0)
             self._cart_panel.setMinimumHeight(0)
+            # Répartir l'espace : catalogue un peu plus large que panier.
+            self._catalog.setMinimumWidth(280)
+            self._cart_panel.setMinimumWidth(260)
 
         # Colonnes panier : plus étroites sur petit écran.
         if profile.content_width < 700 or stack:

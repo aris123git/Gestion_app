@@ -77,9 +77,12 @@ class MainWindow(QWidget):
         self.state = state
         self.setWindowTitle("Gestion Commerciale")
         self.setObjectName("MainWindow")
-        # Compatible petits écrans ; le moteur responsive adapte ensuite.
+        # Compatible petits écrans ; taille initiale = écran disponible (pas 1920 forcé).
         self.setMinimumSize(640, 480)
-        self.resize(1920, 1080)
+        from app.ui.widgets.dialog_fit import available_screen_size
+
+        sw, sh = available_screen_size(self)
+        self.resize(max(640, min(sw, 1600)), max(480, min(sh, 900)))
         self._idle_timeout_seconds = 120 * 60
         self._last_activity = time.monotonic()
         self._idle_logging_out = False
@@ -522,11 +525,18 @@ class MainWindow(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        # Recalcule le layout dès que la taille réelle est connue (plein écran inclus).
+        QTimer.singleShot(0, self._publish_viewport)
         if not getattr(self, "_cash_session_prompted", False):
             self._cash_session_prompted = True
-            from PySide6.QtCore import QTimer
+            QTimer.singleShot(50, self._ensure_cash_session)
 
-            QTimer.singleShot(0, self._ensure_cash_session)
+    def _windowed_size(self) -> None:
+        """Repasse en fenêtre à ~90 % de l'écran disponible."""
+        from app.ui.widgets.dialog_fit import available_screen_size
+
+        sw, sh = available_screen_size(self)
+        self.resize(max(800, int(sw * 0.9)), max(560, int(sh * 0.9)))
 
     def _ensure_cash_session(self) -> None:
         if not self.state.can(perms.SELL) or not self.state.current_user:
@@ -546,14 +556,16 @@ class MainWindow(QWidget):
         if event.key() == Qt.Key.Key_F11:
             if self.isFullScreen():
                 self.showNormal()
-                self.resize(1280, 720)
+                self._windowed_size()
             else:
                 self.showFullScreen()
+            QTimer.singleShot(0, self._publish_viewport)
             event.accept()
             return
         if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
             self.showNormal()
-            self.resize(1280, 720)
+            self._windowed_size()
+            QTimer.singleShot(0, self._publish_viewport)
             event.accept()
             return
         super().keyPressEvent(event)
