@@ -123,7 +123,6 @@ class DebtsPage(QWidget):
         root.addLayout(tools)
 
         self.tabs = QTabWidget()
-        self.tabs.currentChanged.connect(self._on_tab_changed)
         for label, _mode in DEBT_TABS:
             self.tabs.addTab(QWidget(), label)
         root.addWidget(self.tabs)
@@ -140,6 +139,8 @@ class DebtsPage(QWidget):
         self.table.itemSelectionChanged.connect(self._remember_selection)
         self.table.doubleClicked.connect(self._open_history)
         root.addWidget(self.table)
+        # Brancher après création de la table (currentChanged peut tirer au addTab).
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         actions = QHBoxLayout()
         actions.addStretch()
