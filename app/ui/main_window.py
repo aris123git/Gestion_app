@@ -291,14 +291,12 @@ class MainWindow(QWidget):
         self._publish_viewport()
 
     def _apply_layout(self, profile: LayoutProfile) -> None:
+        mode = profile.sidebar_mode
+        self._sidebar_mode = mode
         self.setProperty("widthMode", profile.width_mode)
         self.setProperty("heightMode", profile.height_mode)
         self.setProperty("density", profile.density)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-        mode = profile.sidebar_mode
-        self._sidebar_mode = mode
+        self.setProperty("sidebarMode", mode)
 
         if mode == SIDEBAR_DRAWER:
             self._topbar.show()
@@ -319,8 +317,19 @@ class MainWindow(QWidget):
             self._sidebar.show()
             self._sidebar.setFixedWidth(SIDEBAR_WIDTH_ICONS)
             self._set_nav_labels(full=False)
-            margins = 8 if profile.density == "compact" else 10
-            self._sidebar_layout.setContentsMargins(margins, 12, margins, 12)
+            margins = 6 if profile.density == "compact" else 8
+            self._sidebar_layout.setContentsMargins(margins, 10, margins, 10)
+            # Icônes centrées, largeur forcée (évite sidebar « demi-texte »).
+            for button in self._nav_buttons:
+                if button is not None:
+                    button.setFixedHeight(40)
+                    button.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
+                    button.setStyleSheet("text-align: center;")
+            for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                if extra is not None:
+                    extra.setFixedHeight(40)
+                    extra.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
+                    extra.setStyleSheet("text-align: center;")
         else:
             self._topbar.hide()
             self._drawer_open = False
@@ -328,6 +337,20 @@ class MainWindow(QWidget):
             self._sidebar.setFixedWidth(SIDEBAR_WIDTH_FULL)
             self._set_nav_labels(full=True)
             self._sidebar_layout.setContentsMargins(14, 18, 14, 18)
+            for button in self._nav_buttons:
+                if button is not None:
+                    button.setMinimumWidth(0)
+                    button.setMaximumWidth(16777215)
+                    button.setFixedHeight(40)
+                    button.setStyleSheet("")
+            for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                if extra is not None:
+                    extra.setMinimumWidth(0)
+                    extra.setMaximumWidth(16777215)
+                    extra.setStyleSheet("")
+
+        self.style().unpolish(self)
+        self.style().polish(self)
 
         # Densité : réduire un peu les marges sidebar en écran court.
         if profile.is_short and mode != SIDEBAR_DRAWER:

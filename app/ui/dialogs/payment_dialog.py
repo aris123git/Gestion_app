@@ -55,10 +55,10 @@ class PaymentDialog(QDialog):
         self.setModal(True)
         fit_dialog_to_screen(
             self,
-            min_width=360,
+            min_width=400,
             min_height=320,
-            preferred_width=520,
-            preferred_height=640,
+            preferred_width=700,
+            preferred_height=620,
         )
 
         self.result_payments: List[PaymentLine] = []
@@ -129,18 +129,23 @@ class PaymentDialog(QDialog):
         methods_card.setObjectName("Card")
         form = QGridLayout(methods_card)
         form.setContentsMargins(12, 12, 12, 12)
-        form.setHorizontalSpacing(10)
+        form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(3, 1)
 
         self.credit_method = config.PAYMENT_METHOD_CREDIT
         self.method_inputs = {}
-        # 2 colonnes = dialogue moins haut (tient mieux sur 768 px).
+        # 2 colonnes explicites : (libellé | montant) × 2.
         for index, method in enumerate(config.PAYMENT_METHODS):
             spin = self._make_spin()
             self.method_inputs[method] = spin
             row, col = divmod(index, 2)
-            form.addWidget(QLabel(method), row, col * 2)
-            form.addWidget(spin, row, col * 2 + 1)
+            base = col * 2
+            label = QLabel(method)
+            label.setMinimumWidth(90)
+            form.addWidget(label, row, base)
+            form.addWidget(spin, row, base + 1)
 
         next_row = (len(config.PAYMENT_METHODS) + 1) // 2
 
@@ -154,7 +159,7 @@ class PaymentDialog(QDialog):
         self.method_inputs[self.credit_method] = self.credit_input
         self.credit_label = QLabel(self.credit_method)
         form.addWidget(self.credit_label, next_row, 0)
-        form.addWidget(self.credit_input, next_row, 1)
+        form.addWidget(self.credit_input, next_row, 1, 1, 3)
         hint = (
             "Pour porter le montant en dette, indiquez le téléphone du client ci-dessus."
         )
