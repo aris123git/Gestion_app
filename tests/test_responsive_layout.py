@@ -23,8 +23,12 @@ class ResponsiveViewportTestCase(unittest.TestCase):
     def test_width_modes(self) -> None:
         self.assertEqual(compute_profile(640, 800).width_mode, "mobile")
         self.assertEqual(compute_profile(900, 800).width_mode, "compact")
-        self.assertEqual(compute_profile(1200, 800).width_mode, "desktop")
-        self.assertEqual(compute_profile(1600, 900).width_mode, "large")
+        # 1200 / 1366 = compact (icônes) — PC caisse laptop.
+        self.assertEqual(compute_profile(1200, 768).width_mode, "compact")
+        self.assertEqual(compute_profile(1366, 768).width_mode, "compact")
+        self.assertEqual(compute_profile(1400, 900).width_mode, "compact")
+        self.assertEqual(compute_profile(1500, 900).width_mode, "desktop")
+        self.assertEqual(compute_profile(1800, 900).width_mode, "large")
 
     def test_height_modes_independent_of_width(self) -> None:
         wide_short = compute_profile(1920, 600)
@@ -33,11 +37,25 @@ class ResponsiveViewportTestCase(unittest.TestCase):
         self.assertEqual(wide_short.height_mode, "short")
         self.assertEqual(wide_tall.height_mode, "tall")
         self.assertNotEqual(wide_short.density, wide_tall.density)
+        # 768 px de haut → short (densité cozy), pas comfortable.
+        laptop = compute_profile(1366, 768)
+        self.assertEqual(laptop.height_mode, "short")
+        self.assertEqual(laptop.density, "cozy")
 
     def test_sidebar_modes(self) -> None:
         self.assertEqual(compute_profile(640, 800).sidebar_mode, SIDEBAR_DRAWER)
         self.assertEqual(compute_profile(900, 800).sidebar_mode, SIDEBAR_ICONS)
-        self.assertEqual(compute_profile(1400, 900).sidebar_mode, SIDEBAR_FULL)
+        self.assertEqual(compute_profile(1366, 768).sidebar_mode, SIDEBAR_ICONS)
+        self.assertEqual(compute_profile(1600, 900).sidebar_mode, SIDEBAR_FULL)
+
+    def test_stack_panels_on_laptop(self) -> None:
+        # Zone utile étroite → empile catalogue / panier.
+        self.assertTrue(compute_profile(1024, 768).stack_panels)
+        self.assertTrue(compute_profile(900, 700).stack_panels)
+        # Grand écran : côte-à-côte.
+        self.assertFalse(compute_profile(1920, 1080).stack_panels)
+        # 1366 avec sidebar icônes : encore assez large pour côte-à-côte.
+        self.assertFalse(compute_profile(1366, 768).stack_panels)
 
     def test_card_columns_scale(self) -> None:
         self.assertEqual(compute_profile(640, 800).card_columns, 1)

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from app.printers import thermal_printer
 from app.printers.half_a4_invoice import PAPER_HALF_A4, is_half_a4
 from app.services import settings_service
+from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.ui.widgets.helpers import info, warn
 
 
@@ -37,11 +38,17 @@ class TicketDialog(QDialog):
         self.sale = sale
         self.setWindowTitle(f"Ticket {sale.ticket_number}")
         self.setModal(True)
-        self.setMinimumSize(480, 580)
+        fit_dialog_to_screen(
+            self,
+            min_width=360,
+            min_height=320,
+            preferred_width=480,
+            preferred_height=560,
+        )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
 
         top = QHBoxLayout()
         top.addWidget(QLabel("Format :"))

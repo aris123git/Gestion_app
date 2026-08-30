@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from app import config
@@ -25,6 +27,7 @@ from app.controllers.client_controller import ClientController
 from app.controllers.sale_controller import PaymentLine
 from app.services import settings_service
 from app.ui.widgets.client_search import ClientSearchField
+from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.utils.helpers import format_money
 
 
@@ -49,7 +52,13 @@ class PaymentDialog(QDialog):
         self.currency = settings_service.get_currency()
         self.setWindowTitle("Paiement / Facture")
         self.setModal(True)
-        self.setMinimumWidth(500)
+        fit_dialog_to_screen(
+            self,
+            min_width=360,
+            min_height=320,
+            preferred_width=520,
+            preferred_height=640,
+        )
 
         self.result_payments: List[PaymentLine] = []
         self.amount_received = 0.0
@@ -68,21 +77,30 @@ class PaymentDialog(QDialog):
                 if not client_phone:
                     client_phone = client.phone or client.phone2 or ""
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setSpacing(8)
 
         header = QLabel(f"Total à payer : {format_money(self.total, self.currency)}")
         header.setObjectName("PageTitle")
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(header)
+        outer.addWidget(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(4, 4, 8, 4)
+        layout.setSpacing(10)
 
         # --- Client (nom / téléphone) : suggestions progressives ----------------
         client_card = QFrame()
         client_card.setObjectName("Card")
         client_form = QFormLayout(client_card)
-        client_form.setContentsMargins(16, 16, 16, 16)
-        client_form.setSpacing(10)
+        client_form.setContentsMargins(12, 12, 12, 12)
+        client_form.setSpacing(8)
 
         self.client_search = ClientSearchField(
             placeholder="Tapez un nom ou un téléphone…",
@@ -184,6 +202,10 @@ class PaymentDialog(QDialog):
         self.summary = QLabel()
         self.summary.setStyleSheet("font-size: 15px;")
         layout.addWidget(self.summary)
+        layout.addStretch(1)
+
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
 
         buttons = QHBoxLayout()
         cancel = QPushButton("Annuler")
@@ -194,7 +216,7 @@ class PaymentDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addStretch()
         buttons.addWidget(self.validate)
-        layout.addLayout(buttons)
+        outer.addLayout(buttons)
 
         self._refresh_client_status()
         self._recalculate()

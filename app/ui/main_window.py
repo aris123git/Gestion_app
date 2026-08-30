@@ -10,9 +10,11 @@ from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -183,9 +185,22 @@ class MainWindow(QWidget):
         subtitle.setObjectName("SidebarSubtitle")
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        layout.addSpacing(12)
+        layout.addSpacing(8)
         self._title_label = title
         self._subtitle_label = subtitle
+
+        # Navigation scrollable (évite le clipping sur écrans 768 px de haut).
+        nav_scroll = QScrollArea()
+        nav_scroll.setWidgetResizable(True)
+        nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        nav_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        nav_host = QWidget()
+        nav_host.setObjectName("Sidebar")
+        nav_layout = QVBoxLayout(nav_host)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(4)
+        self._nav_layout = nav_layout
 
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
@@ -202,11 +217,13 @@ class MainWindow(QWidget):
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _=False, i=index: self._on_nav_clicked(i))
-            layout.addWidget(button)
+            nav_layout.addWidget(button)
             self._nav_group.addButton(button)
             self._nav_buttons.append(button)
 
-        layout.addStretch()
+        nav_layout.addStretch()
+        nav_scroll.setWidget(nav_host)
+        layout.addWidget(nav_scroll, 1)
 
         self._search_btn: Optional[QPushButton] = None
         if self._can_search():
@@ -339,6 +356,12 @@ class MainWindow(QWidget):
         else:
             self._logout_btn.setText("🚪")
             self._logout_btn.setToolTip("Se déconnecter")
+        if self._close_cash_btn is not None:
+            if full:
+                self._close_cash_btn.setText("Fermer la caisse")
+            else:
+                self._close_cash_btn.setText("🧾")
+                self._close_cash_btn.setToolTip("Fermer la caisse")
 
     def _build_pages(self) -> None:
         for label, _icon, page_class, permission in NAV_ITEMS:
