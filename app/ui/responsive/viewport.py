@@ -31,10 +31,10 @@ class LayoutProfile:
     @property
     def stack_panels(self) -> bool:
         """True si les panneaux côte-à-côte doivent s'empiler (ex. caisse)."""
-        return self.width_mode == "mobile" or (
-            self.width_mode == "compact" and self.height_mode != "very_short"
-            and self.width < 900
-        )
+        if self.width_mode == "mobile":
+            return True
+        # Laptop / compact : empiler dès que la zone utile est trop étroite.
+        return self.content_width < bp.STACK_PANELS_CONTENT_WIDTH
 
 
 def width_mode_for(width: int) -> str:

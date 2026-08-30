@@ -10,9 +10,11 @@ from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -75,9 +77,12 @@ class MainWindow(QWidget):
         self.state = state
         self.setWindowTitle("Gestion Commerciale")
         self.setObjectName("MainWindow")
-        # Compatible petits écrans ; le moteur responsive adapte ensuite.
+        # Compatible petits écrans ; taille initiale = écran disponible (pas 1920 forcé).
         self.setMinimumSize(640, 480)
-        self.resize(1920, 1080)
+        from app.ui.widgets.dialog_fit import available_screen_size
+
+        sw, sh = available_screen_size(self)
+        self.resize(max(640, min(sw, 1600)), max(480, min(sh, 900)))
         self._idle_timeout_seconds = 120 * 60
         self._last_activity = time.monotonic()
         self._idle_logging_out = False
@@ -183,9 +188,22 @@ class MainWindow(QWidget):
         subtitle.setObjectName("SidebarSubtitle")
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        layout.addSpacing(12)
+        layout.addSpacing(8)
         self._title_label = title
         self._subtitle_label = subtitle
+
+        # Navigation scrollable (évite le clipping sur écrans 768 px de haut).
+        nav_scroll = QScrollArea()
+        nav_scroll.setWidgetResizable(True)
+        nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        nav_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        nav_host = QWidget()
+        nav_host.setObjectName("Sidebar")
+        nav_layout = QVBoxLayout(nav_host)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(4)
+        self._nav_layout = nav_layout
 
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
@@ -202,11 +220,13 @@ class MainWindow(QWidget):
             button.setCheckable(True)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _=False, i=index: self._on_nav_clicked(i))
-            layout.addWidget(button)
+            nav_layout.addWidget(button)
             self._nav_group.addButton(button)
             self._nav_buttons.append(button)
 
-        layout.addStretch()
+        nav_layout.addStretch()
+        nav_scroll.setWidget(nav_host)
+        layout.addWidget(nav_scroll, 1)
 
         self._search_btn: Optional[QPushButton] = None
         if self._can_search():
@@ -271,14 +291,12 @@ class MainWindow(QWidget):
         self._publish_viewport()
 
     def _apply_layout(self, profile: LayoutProfile) -> None:
+        mode = profile.sidebar_mode
+        self._sidebar_mode = mode
         self.setProperty("widthMode", profile.width_mode)
         self.setProperty("heightMode", profile.height_mode)
         self.setProperty("density", profile.density)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-        mode = profile.sidebar_mode
-        self._sidebar_mode = mode
+        self.setProperty("sidebarMode", mode)
 
         if mode == SIDEBAR_DRAWER:
             self._topbar.show()
@@ -299,8 +317,19 @@ class MainWindow(QWidget):
             self._sidebar.show()
             self._sidebar.setFixedWidth(SIDEBAR_WIDTH_ICONS)
             self._set_nav_labels(full=False)
-            margins = 8 if profile.density == "compact" else 10
-            self._sidebar_layout.setContentsMargins(margins, 12, margins, 12)
+            margins = 6 if profile.density == "compact" else 8
+            self._sidebar_layout.setContentsMargins(margins, 10, margins, 10)
+            # Icônes centrées, largeur forcée (évite sidebar « demi-texte »).
+            for button in self._nav_buttons:
+                if button is not None:
+                    button.setFixedHeight(40)
+                    button.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
+                    button.setStyleSheet("text-align: center;")
+            for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                if extra is not None:
+                    extra.setFixedHeight(40)
+                    extra.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
+                    extra.setStyleSheet("text-align: center;")
         else:
             self._topbar.hide()
             self._drawer_open = False
@@ -308,6 +337,20 @@ class MainWindow(QWidget):
             self._sidebar.setFixedWidth(SIDEBAR_WIDTH_FULL)
             self._set_nav_labels(full=True)
             self._sidebar_layout.setContentsMargins(14, 18, 14, 18)
+            for button in self._nav_buttons:
+                if button is not None:
+                    button.setMinimumWidth(0)
+                    button.setMaximumWidth(16777215)
+                    button.setFixedHeight(40)
+                    button.setStyleSheet("")
+            for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                if extra is not None:
+                    extra.setMinimumWidth(0)
+                    extra.setMaximumWidth(16777215)
+                    extra.setStyleSheet("")
+
+        self.style().unpolish(self)
+        self.style().polish(self)
 
         # Densité : réduire un peu les marges sidebar en écran court.
         if profile.is_short and mode != SIDEBAR_DRAWER:
@@ -339,6 +382,12 @@ class MainWindow(QWidget):
         else:
             self._logout_btn.setText("🚪")
             self._logout_btn.setToolTip("Se déconnecter")
+        if self._close_cash_btn is not None:
+            if full:
+                self._close_cash_btn.setText("Fermer la caisse")
+            else:
+                self._close_cash_btn.setText("🧾")
+                self._close_cash_btn.setToolTip("Fermer la caisse")
 
     def _build_pages(self) -> None:
         for label, _icon, page_class, permission in NAV_ITEMS:
@@ -499,11 +548,18 @@ class MainWindow(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        # Recalcule le layout dès que la taille réelle est connue (plein écran inclus).
+        QTimer.singleShot(0, self._publish_viewport)
         if not getattr(self, "_cash_session_prompted", False):
             self._cash_session_prompted = True
-            from PySide6.QtCore import QTimer
+            QTimer.singleShot(50, self._ensure_cash_session)
 
-            QTimer.singleShot(0, self._ensure_cash_session)
+    def _windowed_size(self) -> None:
+        """Repasse en fenêtre à ~90 % de l'écran disponible."""
+        from app.ui.widgets.dialog_fit import available_screen_size
+
+        sw, sh = available_screen_size(self)
+        self.resize(max(800, int(sw * 0.9)), max(560, int(sh * 0.9)))
 
     def _ensure_cash_session(self) -> None:
         if not self.state.can(perms.SELL) or not self.state.current_user:
@@ -523,14 +579,16 @@ class MainWindow(QWidget):
         if event.key() == Qt.Key.Key_F11:
             if self.isFullScreen():
                 self.showNormal()
-                self.resize(1280, 720)
+                self._windowed_size()
             else:
                 self.showFullScreen()
+            QTimer.singleShot(0, self._publish_viewport)
             event.accept()
             return
         if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
             self.showNormal()
-            self.resize(1280, 720)
+            self._windowed_size()
+            QTimer.singleShot(0, self._publish_viewport)
             event.accept()
             return
         super().keyPressEvent(event)

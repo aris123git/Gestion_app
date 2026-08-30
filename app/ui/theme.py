@@ -99,6 +99,11 @@ def build_stylesheet(dark: bool = False) -> str:
     /* Densité pilotée par le moteur responsive (propriétés dynamiques) */
     #MainWindow[density="cozy"] QPushButton#NavButton {{ padding: 9px 12px; font-size: 14px; }}
     #MainWindow[density="compact"] QPushButton#NavButton {{ padding: 7px 8px; font-size: 13px; }}
+    #MainWindow[sidebarMode="icons"] QPushButton#NavButton {{
+        text-align: center;
+        padding: 8px 4px;
+        font-size: 18px;
+    }}
     #MainWindow[density="cozy"] #PageTitle {{ font-size: 20px; }}
     #MainWindow[density="compact"] #PageTitle {{ font-size: 18px; }}
     #MainWindow[density="cozy"] #StatValue {{ font-size: 22px; }}

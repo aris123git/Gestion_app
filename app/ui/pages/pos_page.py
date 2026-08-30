@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -59,33 +61,91 @@ class POSPage(QWidget):
         self._pending_sale_id: Optional[int] = None
 
         self._root = QHBoxLayout(self)
-        self._root.setContentsMargins(20, 20, 20, 20)
-        self._root.setSpacing(16)
+        self._root.setContentsMargins(12, 12, 12, 12)
+        self._root.setSpacing(12)
 
         self._catalog = self._build_catalog()
         self._cart_panel = self._build_cart()
-        self._root.addWidget(self._catalog, 5)
-        self._root.addWidget(self._cart_panel, 4)
+        # Scroll si l'écran est trop bas (empilement catalogue + panier).
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll_host = QWidget()
+        self._scroll_layout = QHBoxLayout(self._scroll_host)
+        self._scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self._scroll_layout.setSpacing(12)
+        self._scroll_layout.addWidget(self._catalog, 5)
+        self._scroll_layout.addWidget(self._cart_panel, 4)
+        self._scroll.setWidget(self._scroll_host)
+        self._root.addWidget(self._scroll, 1)
+
+        self._pay_button: Optional[QPushButton] = None
         self.state.layout_changed.connect(self._on_layout_changed)
         if self.state.layout is not None:
             self._on_layout_changed(self.state.layout)
 
     def _on_layout_changed(self, profile: LayoutProfile) -> None:
-        margins = 10 if profile.density == "compact" else 20
+        margins = 6 if profile.density == "compact" else (10 if profile.is_narrow else 12)
         self._root.setContentsMargins(margins, margins, margins, margins)
-        self._root.setSpacing(10 if profile.is_short else 16)
-        # Empile catalogue / panier sur narrow ; côte-à-côte sinon.
-        self._root.setDirection(
+        spacing = 8 if profile.is_short or profile.is_narrow else 12
+        self._root.setSpacing(spacing)
+        self._scroll_layout.setSpacing(spacing)
+
+        stack = profile.stack_panels
+        direction = (
             QHBoxLayout.Direction.TopToBottom
-            if profile.stack_panels
+            if stack
             else QHBoxLayout.Direction.LeftToRight
         )
-        if profile.stack_panels:
-            self._root.setStretch(0, 3)
-            self._root.setStretch(1, 2)
+        self._scroll_layout.setDirection(direction)
+        if stack:
+            self._scroll_layout.setStretch(0, 3)
+            self._scroll_layout.setStretch(1, 2)
+            # Hauteurs min plus basses sur écrans courts pour éviter le clipping.
+            cat_min = 160 if profile.is_short else 220
+            cart_min = 220 if profile.is_short else 280
+            self._catalog.setMinimumHeight(cat_min)
+            self._cart_panel.setMinimumHeight(cart_min)
+            self._catalog.setMinimumWidth(0)
+            self._cart_panel.setMinimumWidth(0)
         else:
-            self._root.setStretch(0, 5)
-            self._root.setStretch(1, 4)
+            self._scroll_layout.setStretch(0, 5)
+            self._scroll_layout.setStretch(1, 4)
+            self._catalog.setMinimumHeight(0)
+            self._cart_panel.setMinimumHeight(0)
+            # Répartir l'espace : catalogue un peu plus large que panier.
+            self._catalog.setMinimumWidth(280)
+            self._cart_panel.setMinimumWidth(260)
+
+        # Colonnes panier : plus étroites sur petit écran.
+        if profile.content_width < 700 or stack:
+            self.cart_table.setColumnWidth(self.COL_QTY, 52)
+            self.cart_table.setColumnWidth(self.COL_PRICE, 72)
+            self.cart_table.setColumnWidth(self.COL_TOTAL, 80)
+            self.cart_table.setColumnWidth(self.COL_DEL, 36)
+        elif profile.content_width < 1100:
+            self.cart_table.setColumnWidth(self.COL_QTY, 60)
+            self.cart_table.setColumnWidth(self.COL_PRICE, 84)
+            self.cart_table.setColumnWidth(self.COL_TOTAL, 92)
+            self.cart_table.setColumnWidth(self.COL_DEL, 40)
+        else:
+            self.cart_table.setColumnWidth(self.COL_QTY, 70)
+            self.cart_table.setColumnWidth(self.COL_PRICE, 100)
+            self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
+            self.cart_table.setColumnWidth(self.COL_DEL, 44)
+
+        total_px = 20 if profile.density == "compact" else (22 if profile.is_narrow else 26)
+        self.total_label.setStyleSheet(
+            f"font-size: {total_px}px; font-weight: 800;"
+        )
+        if self._pay_button is not None:
+            self._pay_button.setMinimumHeight(44 if profile.density != "comfortable" else 52)
+            self._pay_button.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
 
     # --- Catalogue (gauche) -----------------------------------------------
     def _build_catalog(self) -> QWidget:
@@ -221,8 +281,12 @@ class POSPage(QWidget):
         pay_button = QPushButton("Encaisser (Payer)")
         pay_button.setObjectName("Success")
         pay_button.setMinimumHeight(52)
+        pay_button.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
         pay_button.clicked.connect(self._checkout)
         layout.addWidget(pay_button)
+        self._pay_button = pay_button
 
         return panel
 

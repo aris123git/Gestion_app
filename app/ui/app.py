@@ -72,9 +72,18 @@ class AppController:
 
     def show_main(self) -> None:
         self.window = MainWindow(self.state)
-        # Vrai plein écran (pas seulement maximisé / adaptatif).
-        # Échap ou Alt+F4 pour quitter ; F11 peut basculer selon le WM.
-        self.window.showFullScreen()
+        # Plein écran sur grand moniteur ; maximisé sur laptop (1366×768, etc.).
+        from app.ui.widgets.dialog_fit import available_screen_size
+
+        sw, sh = available_screen_size(self.window)
+        if sw >= 1680 and sh >= 900:
+            self.window.showFullScreen()
+        else:
+            self.window.showMaximized()
+        # Force un premier calcul de layout après affichage.
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self.window._publish_viewport)
 
     def restart_login(self) -> None:
         """Après déconnexion : réaffiche la connexion puis la fenêtre."""
