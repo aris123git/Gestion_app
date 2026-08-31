@@ -37,13 +37,21 @@ BACKUP_DIR = DATA_DIR / "backups"
 LOGO_DIR = DATA_DIR / "logos"
 TICKET_DIR = DATA_DIR / "tickets"
 EXPORT_DIR = DATA_DIR / "exports"
+NETWORK_DIR = DATA_DIR / "reseau"
 
 DATABASE_FILE = DATA_DIR / "gestion.db"
 
 
 def ensure_directories() -> None:
     """Crée l'arborescence de stockage si nécessaire (idempotent)."""
-    for directory in (DATA_DIR, BACKUP_DIR, LOGO_DIR, TICKET_DIR, EXPORT_DIR):
+    for directory in (
+        DATA_DIR,
+        BACKUP_DIR,
+        LOGO_DIR,
+        TICKET_DIR,
+        EXPORT_DIR,
+        NETWORK_DIR,
+    ):
         directory.mkdir(parents=True, exist_ok=True)
 
 

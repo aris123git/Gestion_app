@@ -5,6 +5,7 @@ from app.models.cash_session import CashSession
 from app.models.category import Category
 from app.models.client import Client
 from app.models.debt import Debt, DebtPayment
+from app.models.enterprise import EnterpriseSnapshot
 from app.models.expense import Expense
 from app.models.loyalty import CustomerPoints, CustomerPointsHistory
 from app.models.price_history import PriceHistory
@@ -27,6 +28,7 @@ __all__ = [
     "CustomerPointsHistory",
     "Debt",
     "DebtPayment",
+    "EnterpriseSnapshot",
     "Expense",
     "Payment",
     "PriceHistory",

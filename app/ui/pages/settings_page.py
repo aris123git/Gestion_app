@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -60,6 +61,7 @@ class SettingsPage(QWidget):
         tabs.addTab(self._build_shop_tab(), "Commerce")
         tabs.addTab(self._build_appearance_tab(), "Apparence & Ticket")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
+        tabs.addTab(self._build_network_tab(), "Réseau multi-magasins")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
         tabs.currentChanged.connect(self._on_tab)
@@ -362,6 +364,125 @@ class SettingsPage(QWidget):
         )
         info(self, "Plafonds caissier enregistrés.")
 
+    # --- Onglet réseau multi-magasins (Lot 1) ------------------------------
+    def _build_network_tab(self) -> QWidget:
+        wrap = QWidget()
+        outer = QVBoxLayout(wrap)
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        form.setSpacing(10)
+
+        self.net_code = QLineEdit()
+        self.net_code.setPlaceholderText("Ex. MAG-01")
+        self.net_mode = QComboBox()
+        self.net_mode.addItem("Magasin (exporte)", "magasin")
+        self.net_mode.addItem("Bureau (importe / consolide)", "bureau")
+        self.net_mode.addItem("Les deux", "both")
+        self.net_path = QLineEdit()
+        self.net_path.setPlaceholderText("Dossier partagé (USB / réseau)…")
+        browse = QPushButton("Parcourir…")
+        browse.clicked.connect(self._browse_network_path)
+        path_row = QHBoxLayout()
+        path_row.addWidget(self.net_path, 1)
+        path_row.addWidget(browse)
+        path_wrap = QWidget()
+        path_wrap.setLayout(path_row)
+
+        self.net_shop_id = QLabel("—")
+        self.net_shop_id.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+
+        form.addRow("Code magasin", self.net_code)
+        form.addRow("Identifiant", self.net_shop_id)
+        form.addRow("Rôle de ce PC", self.net_mode)
+        form.addRow("Dossier partagé", path_wrap)
+        hint = QLabel(
+            "Lot 1 : chaque magasin exporte un fichier JSON du jour dans le dossier "
+            "partagé. Le PC bureau importe ces fichiers pour voir recettes, "
+            "bénéfices, dettes et le classement."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #64748b;")
+        form.addRow(hint)
+        outer.addWidget(make_card(form_widget))
+
+        actions = QHBoxLayout()
+        save = QPushButton("Enregistrer")
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save_network)
+        export_btn = QPushButton("Exporter aujourd'hui")
+        export_btn.clicked.connect(self._network_export)
+        import_btn = QPushButton("Importer maintenant")
+        import_btn.clicked.connect(self._network_import)
+        actions.addWidget(save)
+        actions.addWidget(export_btn)
+        actions.addWidget(import_btn)
+        actions.addStretch()
+        outer.addLayout(actions)
+        outer.addStretch()
+        return wrap
+
+    def _browse_network_path(self) -> None:
+        path = QFileDialog.getExistingDirectory(
+            self, "Choisir le dossier partagé multi-magasins"
+        )
+        if path:
+            self.net_path.setText(path)
+
+    def _save_network(self) -> None:
+        from app.services import enterprise_sync_service as sync
+
+        sync.ensure_shop_identity()
+        code = self.net_code.text().strip() or settings_service.get_setting(
+            sync.SETTING_SHOP_CODE, ""
+        )
+        settings_service.set_setting(sync.SETTING_SHOP_CODE, code)
+        settings_service.set_setting(
+            sync.SETTING_MODE, self.net_mode.currentData() or "magasin"
+        )
+        settings_service.set_setting(
+            sync.SETTING_SHARE_PATH, self.net_path.text().strip()
+        )
+        shop_id, code = sync.ensure_shop_identity()
+        self.net_shop_id.setText(shop_id)
+        self.net_code.setText(code)
+        info(self, "Paramètres réseau enregistrés.")
+
+    def _network_export(self) -> None:
+        from app.services import enterprise_sync_service as sync
+
+        self._save_network()
+        result = sync.export_day_to_share()
+        if result.ok:
+            info(self, f"{result.message}\n\n{result.path}", "Export")
+        else:
+            warn(self, result.message, "Export")
+
+    def _network_import(self) -> None:
+        from app.services import enterprise_sync_service as sync
+
+        self._save_network()
+        result = sync.scan_and_import()
+        if result.ok:
+            info(self, result.message, "Import")
+            self.state.notify_data_changed()
+        else:
+            warn(self, result.message, "Import")
+
+    def _load_network(self) -> None:
+        from app.services import enterprise_sync_service as sync
+
+        shop_id, code = sync.ensure_shop_identity()
+        self.net_shop_id.setText(shop_id)
+        self.net_code.setText(
+            settings_service.get_setting(sync.SETTING_SHOP_CODE, code) or code
+        )
+        mode = settings_service.get_setting(sync.SETTING_MODE, "magasin")
+        idx = self.net_mode.findData(mode)
+        self.net_mode.setCurrentIndex(idx if idx >= 0 else 0)
+        self.net_path.setText(settings_service.get_setting(sync.SETTING_SHARE_PATH, ""))
+
     # --- Onglet sauvegarde -------------------------------------------------
     def _build_backup_tab(self) -> QWidget:
         wrap = QWidget()
@@ -607,11 +728,13 @@ class SettingsPage(QWidget):
             self.audit_table.setItem(row, 3, QTableWidgetItem(log.details))
 
     def _on_tab(self, index: int) -> None:
-        # Onglets : 0 Commerce, 1 Apparence, 2 Contrôles, 3 Sauvegarde, 4 Audit
+        # 0 Commerce, 1 Apparence, 2 Contrôles, 3 Réseau, 4 Sauvegarde, 5 Audit
         if index == 3:
+            self._load_network()
+        elif index == 4:
             self._load_auto_options()
             self._reload_backups()
-        elif index == 4:
+        elif index == 5:
             self._reload_audit()
 
     # --- Rafraîchissement --------------------------------------------------

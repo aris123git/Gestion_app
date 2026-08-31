@@ -30,6 +30,7 @@ from app.ui.pages.clients_page import ClientsPage
 from app.ui.pages.dashboard_page import DashboardPage
 from app.ui.pages.debts_page import DebtsPage
 from app.ui.pages.expenses_page import ExpensesPage
+from app.ui.pages.enterprise_page import EnterprisePage
 from app.ui.pages.pos_page import POSPage
 from app.ui.pages.products_page import ProductsPage
 from app.ui.pages.purchases_page import PurchasesPage
@@ -63,6 +64,7 @@ NAV_ITEMS = [
     ("Dettes", "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
     ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
     ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
+    ("Réseau", "🏪", EnterprisePage, perms.VIEW_ENTERPRISE),
     ("Rapports", "📈", ReportsPage, perms.VIEW_REPORTS),
     ("Journal d'audit", "📝", AuditPage, perms.VIEW_AUDIT),
     ("Assistant", "💡", AssistantPage, perms.VIEW_ASSISTANT),
