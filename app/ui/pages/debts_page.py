@@ -176,6 +176,13 @@ class DebtsPage(QWidget):
         # est encore visible, sinon elle sera effacée au rechargement.
         self.refresh()
 
+    def show_unpaid(self) -> None:
+        """Ouvre l'onglet Non payées (ex. depuis le tableau de bord)."""
+        if self.tabs.currentIndex() != 0:
+            self.tabs.setCurrentIndex(0)
+        else:
+            self.refresh()
+
     def _on_sort_changed(self, _index: int = 0) -> None:
         new_sort = self._sort_by()
         if new_sort != self._current_sort:

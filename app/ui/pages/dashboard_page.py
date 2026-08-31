@@ -63,8 +63,15 @@ class DashboardPage(QWidget):
         self.card_products = StatCard("Produits", "0", "#475569", "📦")
         self.card_treasury = StatCard("Trésorerie (jour)", "0", "#0f766e", "🏦")
         self.card_net = StatCard("Bénéfice net après dépenses", "0", "#4c1d95", "💹")
+        self.card_debt = StatCard(
+            "Dette total",
+            "0",
+            "#b45309",
+            "💳",
+            hint="Cliquer pour le détail",
+            on_click=self._open_debts,
+        )
 
-        # Les dettes se gèrent uniquement dans Clients / Fournisseurs (menu gauche).
         self._cards = [
             self.card_revenue_today,
             self.card_revenue_month,
@@ -73,6 +80,7 @@ class DashboardPage(QWidget):
             self.card_net,
             self.card_expenses,
             self.card_treasury,
+            self.card_debt,
             self.card_low,
             self.card_out,
             self.card_products,
@@ -153,6 +161,15 @@ class DashboardPage(QWidget):
         for card in self._cards:
             card.setMinimumHeight(72 if profile.density == "compact" else 120)
 
+    def _open_debts(self) -> None:
+        """Ouvre la page Dettes (onglet non payées) depuis la carte Dette total."""
+        window = self.window()
+        if window is None or not hasattr(window, "_select_page_by_label"):
+            return
+        page = window._select_page_by_label("Dettes")
+        if page is not None and hasattr(page, "show_unpaid"):
+            page.show_unpaid()
+
     def _apply_permissions(self) -> None:
         show_profits = self.state.can(perms.VIEW_PROFITS)
         self.card_profit.setVisible(show_profits)
@@ -161,6 +178,8 @@ class DashboardPage(QWidget):
         self.card_net.setVisible(show_profits)
         self.insights.setVisible(show_profits)
         self.insights_label.setVisible(show_profits)
+        show_debts = self.state.can(perms.MANAGE_CLIENT_DEBTS)
+        self.card_debt.setVisible(show_debts)
         if self.state.layout is not None:
             self._reflow_cards(self.state.layout.card_columns)
 
@@ -205,6 +224,18 @@ class DashboardPage(QWidget):
                 names = ", ".join(n for n, _ in dormant)
                 lines.append(f"Produits dormants : {names}")
             self.insights_label.setText("\n".join(lines) or "Pas encore assez de données.")
+        if self.state.can(perms.MANAGE_CLIENT_DEBTS):
+            debt_total = float(fin.get("client_debts") or 0)
+            debt_count = int(fin.get("client_debts_count") or 0)
+            self.card_debt.set_value(format_money(debt_total, currency))
+            if debt_count <= 0:
+                self.card_debt.set_hint("Aucune dette en cours — cliquer pour ouvrir")
+            elif debt_count == 1:
+                self.card_debt.set_hint("1 dette en cours — cliquer pour le détail")
+            else:
+                self.card_debt.set_hint(
+                    f"{debt_count} dettes en cours — cliquer pour le détail"
+                )
         self.card_low.set_value(str(data["low_stock"]))
         self.card_out.set_value(str(data["out_of_stock"]))
         self.card_products.set_value(str(data["total_products"]))

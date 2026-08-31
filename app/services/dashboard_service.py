@@ -139,6 +139,17 @@ class DashboardService:
                 )
                 or 0
             )
+            client_debts_count = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(Debt)
+                    .where(
+                        Debt.status.in_(ACTIVE_DEBT_STATUSES),
+                        Debt.amount_remaining > 0,
+                    )
+                )
+                or 0
+            )
         supplier_debts = SupplierDebtService.total_remaining()
         # CA encaissé = ventes cash + règlements dettes clients.
         cash_revenue = round(sales_cash + debt_repayments, 2)
@@ -173,6 +184,7 @@ class DashboardService:
             "supplier_debt_payments_today": supplier_debt_payments,
             "treasury": treasury,
             "client_debts": client_debts,
+            "client_debts_count": client_debts_count,
             "supplier_debts": supplier_debts,
         }
 
