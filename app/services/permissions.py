@@ -36,6 +36,7 @@ VIEW_ASSISTANT = "view_assistant"
 APPLY_DISCOUNT = "apply_discount"
 SELL_ON_CREDIT = "sell_on_credit"
 VIEW_AUDIT = "view_audit"
+VIEW_ENTERPRISE = "view_enterprise"
 
 _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
     {
@@ -64,6 +65,7 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         APPLY_DISCOUNT,
         SELL_ON_CREDIT,
         VIEW_AUDIT,
+        VIEW_ENTERPRISE,
     }
 )
 
