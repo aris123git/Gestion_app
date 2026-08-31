@@ -88,6 +88,12 @@ class MainWindow(QWidget):
         self._idle_logging_out = False
         self._drawer_open = False
         self._sidebar_mode = SIDEBAR_FULL
+        self._applying_layout = False
+        # Coalescer les resize (animation maximize Windows = dizaines d'events).
+        self._viewport_timer = QTimer(self)
+        self._viewport_timer.setSingleShot(True)
+        self._viewport_timer.setInterval(0)
+        self._viewport_timer.timeout.connect(self._publish_viewport)
 
         self.pages: list[Optional[QWidget]] = []
         self._nav_buttons: list[Optional[QPushButton]] = []
@@ -130,7 +136,7 @@ class MainWindow(QWidget):
             app.installEventFilter(self)
         self.select_page(0)
         # Premier calcul après affichage (resizeEvent le fera aussi).
-        QTimer.singleShot(0, self._publish_viewport)
+        self._viewport_timer.start()
 
     def _build_topbar(self) -> QWidget:
         bar = QWidget()
@@ -284,77 +290,86 @@ class MainWindow(QWidget):
             self._set_nav_labels(full=True)
 
     def _publish_viewport(self) -> None:
+        if self._applying_layout:
+            return
         self.state.update_viewport(self.width(), self.height())
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self._publish_viewport()
+        # Coalesce : une seule publication après la rafale d'events resize.
+        self._viewport_timer.start()
 
     def _apply_layout(self, profile: LayoutProfile) -> None:
-        mode = profile.sidebar_mode
-        self._sidebar_mode = mode
-        self.setProperty("widthMode", profile.width_mode)
-        self.setProperty("heightMode", profile.height_mode)
-        self.setProperty("density", profile.density)
-        self.setProperty("sidebarMode", mode)
+        if self._applying_layout:
+            return
+        self._applying_layout = True
+        try:
+            mode = profile.sidebar_mode
+            self._sidebar_mode = mode
+            self.setProperty("widthMode", profile.width_mode)
+            self.setProperty("heightMode", profile.height_mode)
+            self.setProperty("density", profile.density)
+            self.setProperty("sidebarMode", mode)
 
-        if mode == SIDEBAR_DRAWER:
-            self._topbar.show()
-            shop = settings_service.get_shop_info()
-            self._topbar_title.setText(shop.name or "Gestion Commerciale")
-            user = self.state.current_user
-            if user:
-                self._topbar_user.setText(user.full_name or user.username)
-            if not self._drawer_open:
-                self._sidebar.hide()
+            if mode == SIDEBAR_DRAWER:
+                self._topbar.show()
+                shop = settings_service.get_shop_info()
+                self._topbar_title.setText(shop.name or "Gestion Commerciale")
+                user = self.state.current_user
+                if user:
+                    self._topbar_user.setText(user.full_name or user.username)
+                if not self._drawer_open:
+                    self._sidebar.hide()
+                else:
+                    self._sidebar.show()
+                    self._sidebar.setFixedWidth(SIDEBAR_WIDTH_FULL)
+                    self._set_nav_labels(full=True)
+            elif mode == SIDEBAR_ICONS:
+                self._topbar.hide()
+                self._drawer_open = False
+                self._sidebar.show()
+                self._sidebar.setFixedWidth(SIDEBAR_WIDTH_ICONS)
+                self._set_nav_labels(full=False)
+                margins = 6 if profile.density == "compact" else 8
+                self._sidebar_layout.setContentsMargins(margins, 10, margins, 10)
+                # Largeur forcée ; alignement via QSS `#MainWindow[sidebarMode=icons]`.
+                for button in self._nav_buttons:
+                    if button is not None:
+                        button.setFixedHeight(40)
+                        button.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
+                        button.setStyleSheet("")
+                for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                    if extra is not None:
+                        extra.setFixedHeight(40)
+                        extra.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
+                        extra.setStyleSheet("")
             else:
+                self._topbar.hide()
+                self._drawer_open = False
                 self._sidebar.show()
                 self._sidebar.setFixedWidth(SIDEBAR_WIDTH_FULL)
                 self._set_nav_labels(full=True)
-        elif mode == SIDEBAR_ICONS:
-            self._topbar.hide()
-            self._drawer_open = False
-            self._sidebar.show()
-            self._sidebar.setFixedWidth(SIDEBAR_WIDTH_ICONS)
-            self._set_nav_labels(full=False)
-            margins = 6 if profile.density == "compact" else 8
-            self._sidebar_layout.setContentsMargins(margins, 10, margins, 10)
-            # Icônes centrées, largeur forcée (évite sidebar « demi-texte »).
-            for button in self._nav_buttons:
-                if button is not None:
-                    button.setFixedHeight(40)
-                    button.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
-                    button.setStyleSheet("text-align: center;")
-            for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
-                if extra is not None:
-                    extra.setFixedHeight(40)
-                    extra.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
-                    extra.setStyleSheet("text-align: center;")
-        else:
-            self._topbar.hide()
-            self._drawer_open = False
-            self._sidebar.show()
-            self._sidebar.setFixedWidth(SIDEBAR_WIDTH_FULL)
-            self._set_nav_labels(full=True)
-            self._sidebar_layout.setContentsMargins(14, 18, 14, 18)
-            for button in self._nav_buttons:
-                if button is not None:
-                    button.setMinimumWidth(0)
-                    button.setMaximumWidth(16777215)
-                    button.setFixedHeight(40)
-                    button.setStyleSheet("")
-            for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
-                if extra is not None:
-                    extra.setMinimumWidth(0)
-                    extra.setMaximumWidth(16777215)
-                    extra.setStyleSheet("")
+                self._sidebar_layout.setContentsMargins(14, 18, 14, 18)
+                for button in self._nav_buttons:
+                    if button is not None:
+                        button.setMinimumWidth(0)
+                        button.setMaximumWidth(16777215)
+                        button.setFixedHeight(40)
+                        button.setStyleSheet("")
+                for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                    if extra is not None:
+                        extra.setMinimumWidth(0)
+                        extra.setMaximumWidth(16777215)
+                        extra.setStyleSheet("")
 
-        self.style().unpolish(self)
-        self.style().polish(self)
+            self.style().unpolish(self)
+            self.style().polish(self)
 
-        # Densité : réduire un peu les marges sidebar en écran court.
-        if profile.is_short and mode != SIDEBAR_DRAWER:
-            self._sidebar_layout.setSpacing(4)
+            # Densité : réduire un peu les marges sidebar en écran court.
+            if profile.is_short and mode != SIDEBAR_DRAWER:
+                self._sidebar_layout.setSpacing(4)
+        finally:
+            self._applying_layout = False
 
     def _set_nav_labels(self, *, full: bool) -> None:
         self._title_label.setVisible(full)
@@ -548,8 +563,8 @@ class MainWindow(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
-        # Recalcule le layout dès que la taille réelle est connue (plein écran inclus).
-        QTimer.singleShot(0, self._publish_viewport)
+        # Recalcule le layout dès que la taille réelle est connue.
+        self._viewport_timer.start()
         if not getattr(self, "_cash_session_prompted", False):
             self._cash_session_prompted = True
             QTimer.singleShot(50, self._ensure_cash_session)
@@ -582,13 +597,13 @@ class MainWindow(QWidget):
                 self._windowed_size()
             else:
                 self.showFullScreen()
-            QTimer.singleShot(0, self._publish_viewport)
+            self._viewport_timer.start()
             event.accept()
             return
         if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
             self.showNormal()
             self._windowed_size()
-            QTimer.singleShot(0, self._publish_viewport)
+            self._viewport_timer.start()
             event.accept()
             return
         super().keyPressEvent(event)

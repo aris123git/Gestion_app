@@ -16,6 +16,7 @@ from app.ui.responsive import (  # noqa: E402
     compute_profile,
     visible_column_indexes,
 )
+from app.ui.responsive.layout import LayoutEngine, decision_key  # noqa: E402
 from app.ui.responsive.table_manager import ColumnSpec  # noqa: E402
 
 
@@ -61,6 +62,33 @@ class ResponsiveViewportTestCase(unittest.TestCase):
         self.assertEqual(compute_profile(640, 800).card_columns, 1)
         self.assertLessEqual(compute_profile(900, 800).card_columns, 2)
         self.assertGreaterEqual(compute_profile(1600, 1000).card_columns, 3)
+
+    def test_decision_key_ignores_small_pixel_churn(self) -> None:
+        a = compute_profile(1366, 768)
+        b = compute_profile(1370, 770)
+        self.assertEqual(decision_key(a), decision_key(b))
+        c = compute_profile(1024, 768)
+        self.assertNotEqual(decision_key(a), decision_key(c))
+
+
+class LayoutEngineEmitTestCase(unittest.TestCase):
+    def test_pixel_animation_does_not_spam_emits(self) -> None:
+        engine = LayoutEngine()
+        emits = []
+        engine.changed.connect(lambda p: emits.append(p))
+        # Animation showMaximized dans la zone compact/icons (stack=False).
+        engine.update(1280, 768)
+        steps = 0
+        for w in range(1281, 1400):
+            engine.update(w, 768)
+            steps += 1
+        # Sans filtrage décision : 1 + steps emits. Avec : quelques buckets max.
+        self.assertLessEqual(len(emits), 4)
+        self.assertLess(len(emits), steps // 10)
+        # Changement de mode (compact → large) → nouvel emit.
+        before = len(emits)
+        engine.update(1920, 1080)
+        self.assertEqual(len(emits), before + 1)
 
 
 class TablePriorityTestCase(unittest.TestCase):

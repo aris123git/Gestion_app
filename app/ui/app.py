@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 from app.database.connection import init_database
 from app.database.seed import seed_all
 from app.services import activation_service, backup_service
+from app.startup_log import install_startup_excepthook, write_startup_error
 from app.ui.activation_dialog import ActivationDialog
 from app.ui.login_dialog import LoginDialog
 from app.ui.main_window import MainWindow
@@ -72,14 +73,9 @@ class AppController:
 
     def show_main(self) -> None:
         self.window = MainWindow(self.state)
-        # Plein écran sur grand moniteur ; maximisé sur laptop (1366×768, etc.).
-        from app.ui.widgets.dialog_fit import available_screen_size
-
-        sw, sh = available_screen_size(self.window)
-        if sw >= 1680 and sh >= 900:
-            self.window.showFullScreen()
-        else:
-            self.window.showMaximized()
+        # Maximisé = démarrage fiable sous Windows (évite showFullScreen trop tôt).
+        # Plein écran disponible via F11 une fois la fenêtre affichée.
+        self.window.showMaximized()
         # Force un premier calcul de layout après affichage.
         from PySide6.QtCore import QTimer
 
@@ -103,27 +99,34 @@ def run() -> int:
     """Démarre l'application complète et retourne le code de sortie."""
     global _controller
 
-    init_database()
-    seed_all()
+    install_startup_excepthook()
+
     try:
-        backup_service.run_startup_auto_backup()
-    except Exception:
-        logger.exception("Échec de la sauvegarde automatique au démarrage.")
+        init_database()
+        seed_all()
+        try:
+            backup_service.run_startup_auto_backup()
+        except Exception:
+            logger.exception("Échec de la sauvegarde automatique au démarrage.")
 
-    app = QApplication.instance() or QApplication([])
-    app.setApplicationName("Gestion Commerciale")
+        app = QApplication.instance() or QApplication([])
+        app.setApplicationName("Gestion Commerciale")
 
-    _controller = AppController(app)
+        _controller = AppController(app)
 
-    # Activation obligatoire au premier démarrage (hors ligne).
-    if not _controller.ensure_activated():
-        return 0
+        # Activation obligatoire au premier démarrage (hors ligne).
+        if not _controller.ensure_activated():
+            return 0
 
-    if not _controller.run_first_start_if_needed():
-        return 0
+        if not _controller.run_first_start_if_needed():
+            return 0
 
-    if not _controller.show_login():
-        return 0
+        if not _controller.show_login():
+            return 0
 
-    _controller.show_main()
-    return app.exec()
+        _controller.show_main()
+        return app.exec()
+    except Exception as exc:
+        write_startup_error(exc, note="Échec fatal au démarrage de Gestion Commerciale.")
+        logger.exception("Échec fatal au démarrage.")
+        raise
