@@ -189,12 +189,14 @@ class SettingsPage(QWidget):
         self.cut_mode.addItem("Coupe partielle", "partial")
         self.cut_mode.addItem("Pas de coupe (déchirer)", "none")
         self.auto_print = QCheckBox(
-            "Imprimer automatiquement le ticket après chaque vente"
+            "Imprimer automatiquement (sinon : demander d'enregistrer d'abord)"
         )
-        self.auto_print.setChecked(True)
+        self.auto_print.setChecked(False)
         self.auto_print.setToolTip(
-            "Si l'imprimante est éteinte, l'envoi est refusé (pas de file d'attente "
-            "qui se vide au redémarrage)."
+            "Par défaut, après une vente on propose d'enregistrer le ticket. "
+            "Cochez seulement si vous voulez envoyer directement à l'imprimante. "
+            "Si l'imprimante est éteinte, l'envoi est refusé (pas de file qui se "
+            "vide au redémarrage)."
         )
 
         form.addRow("Thème", self.theme)
@@ -645,7 +647,7 @@ class SettingsPage(QWidget):
         if cut_index >= 0:
             self.cut_mode.setCurrentIndex(cut_index)
         self.auto_print.setChecked(
-            settings_service.get_setting("auto_print_ticket", "1") == "1"
+            settings_service.get_setting("auto_print_ticket", "0") == "1"
         )
         self._load_auto_options()
         self._reload_backups()
