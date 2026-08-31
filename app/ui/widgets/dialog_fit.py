@@ -7,20 +7,35 @@ from PySide6.QtWidgets import QDialog, QWidget
 
 
 def available_screen_size(widget: QWidget | None = None) -> tuple[int, int]:
-    """Retourne (largeur, hauteur) utiles de l'écran concerné."""
+    """Retourne (largeur, hauteur) utiles de l'écran concerné.
+
+    Robuste avant ``show()`` (``windowHandle`` peut être ``None`` sous Windows)
+    et si aucun écran n'est encore disponible.
+    """
     screen = None
-    if widget is not None:
-        window = widget.window()
-        if window is not None and window.windowHandle() is not None:
-            screen = window.windowHandle().screen()
-        if screen is None:
-            screen = widget.screen()
+    try:
+        if widget is not None:
+            window = widget.window()
+            handle = window.windowHandle() if window is not None else None
+            if handle is not None:
+                screen = handle.screen()
+            if screen is None:
+                # QWidget.screen() est sûr même sans handle natif.
+                screen = widget.screen()
+    except Exception:
+        screen = None
     if screen is None:
-        screen = QGuiApplication.primaryScreen()
+        try:
+            screen = QGuiApplication.primaryScreen()
+        except Exception:
+            screen = None
     if screen is None:
         return 1280, 720
-    geo = screen.availableGeometry()
-    return int(geo.width()), int(geo.height())
+    try:
+        geo = screen.availableGeometry()
+        return max(640, int(geo.width())), max(480, int(geo.height()))
+    except Exception:
+        return 1280, 720
 
 
 def fit_dialog_to_screen(
