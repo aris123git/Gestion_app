@@ -841,7 +841,8 @@ class POSPage(QWidget):
 
         sale = SaleController.get(result.sale_id)
         if sale:
-            TicketDialog(sale, self).exec()
+            # Après vente : proposer d'enregistrer (pas d'impression auto).
+            TicketDialog(sale, self, auto_print=False).exec()
 
         self._clear_cart()
         self._reload_products()
