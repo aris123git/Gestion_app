@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -295,6 +296,38 @@ class POSPage(QWidget):
         self._reload_categories()
         self._reload_products()
         self._reload_clients()
+        self._apply_large_text()
+
+    def _apply_large_text(self) -> None:
+        """Agrandit noms/prix catalogue + panier si activé dans Paramètres."""
+        large = settings_service.get_setting("pos_catalog_large_text", "0") == "1"
+        size_key = settings_service.get_setting("pos_catalog_text_size", "large")
+        if large:
+            pt = 22 if size_key == "xlarge" else 18
+            row_h = 46 if size_key == "xlarge" else 38
+        else:
+            pt = 14
+            row_h = 30
+        font = QFont()
+        font.setPointSize(pt)
+        font.setBold(large)
+        price_font = QFont(font)
+        if large:
+            price_font.setPointSize(pt + 2)
+        for table in (self.product_table, self.cart_table):
+            table.setFont(font)
+            table.verticalHeader().setDefaultSectionSize(row_h)
+            table.verticalHeader().setVisible(False)
+        # Prix catalogue un peu plus gros encore.
+        for row in range(self.product_table.rowCount()):
+            item = self.product_table.item(row, 1)
+            if item is not None:
+                item.setFont(price_font)
+        for row in range(self.cart_table.rowCount()):
+            for col in (self.COL_NAME, self.COL_PRICE, self.COL_TOTAL, self.COL_QTY):
+                item = self.cart_table.item(row, col)
+                if item is not None:
+                    item.setFont(price_font if col != self.COL_NAME else font)
 
     def _reload_categories(self) -> None:
         from app.controllers.category_controller import CategoryController
@@ -369,6 +402,7 @@ class POSPage(QWidget):
             if product.is_out_of_stock:
                 stock_item.setForeground(Qt.GlobalColor.red)
             self.product_table.setItem(row, 2, stock_item)
+        self._apply_large_text()
 
     # --- Ajout au panier ---------------------------------------------------
     def _add_by_barcode(self) -> None:
@@ -573,6 +607,7 @@ class POSPage(QWidget):
 
         self._updating = False
         self._update_total()
+        self._apply_large_text()
 
     def _remove_line(self, row: int) -> None:
         if 0 <= row < len(self.cart):

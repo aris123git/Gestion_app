@@ -43,6 +43,24 @@ class PrintResult:
 WIDTH_CHARS = {"58mm": 32, "80mm": 48, "demi-A4": 72}
 PAPER_FORMATS = ("80mm", "58mm", "demi-A4")
 
+# Présentations thermique (paramètre ``ticket_layout``).
+TICKET_LAYOUT_CLASSIC = "classic"
+TICKET_LAYOUT_COMPACT = "compact"
+TICKET_LAYOUT_TABLE = "table"
+TICKET_LAYOUT_KITCHEN = "kitchen"
+TICKET_LAYOUTS = (
+    TICKET_LAYOUT_CLASSIC,
+    TICKET_LAYOUT_COMPACT,
+    TICKET_LAYOUT_TABLE,
+    TICKET_LAYOUT_KITCHEN,
+)
+TICKET_LAYOUT_LABELS = {
+    TICKET_LAYOUT_CLASSIC: "Classique (nom + détail)",
+    TICKET_LAYOUT_COMPACT: "Compact (une ligne)",
+    TICKET_LAYOUT_TABLE: "Tableau (Qté / Prix / Total)",
+    TICKET_LAYOUT_KITCHEN: "Service / cuisine (produit + qté)",
+}
+
 
 def _line(char: str = "-", width: int = 32) -> str:
     return char * width
@@ -61,7 +79,109 @@ def _center(text: str, width: int) -> str:
     return text.center(width)
 
 
-def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
+def _resolve_layout(layout: Optional[str]) -> str:
+    if layout in TICKET_LAYOUTS:
+        return layout
+    stored = settings_service.get_setting("ticket_layout", TICKET_LAYOUT_CLASSIC)
+    return stored if stored in TICKET_LAYOUTS else TICKET_LAYOUT_CLASSIC
+
+
+def _item_amounts(item) -> tuple[str, float, float]:
+    qty = format_quantity(item.quantity)
+    unit_price = float(item.unit_price or 0)
+    line_total = float(item.line_total or 0)
+    return qty, unit_price, line_total
+
+
+def _render_items_classic(items, width: int, currency: str) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        name = item.product_name or ""
+        lines.append(name[:width])
+        qty, unit_price, line_total = _item_amounts(item)
+        expected = round(unit_price * float(item.quantity or 0), 2)
+        if abs(expected - line_total) > 0.01:
+            detail = f"montant {format_money(line_total, currency)}"
+        else:
+            detail = f"{qty} x {format_money(unit_price, currency)}"
+        lines.append(_row(f"  {detail}", format_money(line_total, currency), width))
+    return lines
+
+
+def _render_items_compact(items, width: int, currency: str) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        name = (item.product_name or "").strip()
+        qty, unit_price, line_total = _item_amounts(item)
+        total_txt = format_money(line_total, currency)
+        # Ex. "2x Jus ........ 1 000"
+        left = f"{qty}x {name}"
+        max_left = max(8, width - len(total_txt) - 1)
+        if len(left) > max_left:
+            lines.append(name[:width])
+            lines.append(_row(f"  {qty}x", total_txt, width))
+        else:
+            lines.append(_row(left, total_txt, width))
+    return lines
+
+
+def _render_items_table(items, width: int, currency: str) -> list[str]:
+    """Tableau Qté / Prix / Total (adapté 58 et 80 mm)."""
+    lines: list[str] = []
+    if width <= 32:
+        # 58 mm : colonnes serrées.
+        header = f"{'Qté':>4} {'Prix':>10} {'Total':>12}"
+        lines.append(header[:width].ljust(width) if len(header) <= width else header[:width])
+        lines.append(_line("-", width))
+        for item in items:
+            name = (item.product_name or "")[:width]
+            lines.append(name)
+            qty, unit_price, line_total = _item_amounts(item)
+            row = (
+                f"{qty:>4} "
+                f"{format_money(unit_price, currency):>10} "
+                f"{format_money(line_total, currency):>12}"
+            )
+            lines.append(row[:width])
+    else:
+        # 80 mm : en-tête plus lisible.
+        lines.append(_row("Article", "Qté  Prix     Total", width))
+        lines.append(_line("-", width))
+        for item in items:
+            name = (item.product_name or "")[: max(12, width - 22)]
+            qty, unit_price, line_total = _item_amounts(item)
+            right = (
+                f"{qty:>4} "
+                f"{format_money(unit_price, currency):>8} "
+                f"{format_money(line_total, currency):>9}"
+            )
+            lines.append(_row(name, right, width))
+    return lines
+
+
+def _render_items_kitchen(items, width: int, currency: str) -> list[str]:
+    """Focus service : produit + quantité (facile à lire en précipitation)."""
+    lines: list[str] = []
+    lines.append(_center("A PREPARER / SERVIR", width))
+    lines.append(_line("=", width))
+    item_list = list(items)
+    for item in item_list:
+        qty, _unit, _total = _item_amounts(item)
+        name = (item.product_name or "").strip()
+        badge = f"[{qty}]"
+        lines.append(_row(badge, name[: max(1, width - len(badge) - 1)], width))
+        lines.append(_line(".", width))
+    lines.append(_row("Articles", str(len(item_list)), width))
+    _ = currency
+    return lines
+
+
+def render_ticket_text(
+    sale,
+    shop=None,
+    paper: str = "80mm",
+    layout: Optional[str] = None,
+) -> str:
     """Construit le contenu texte d'un ticket à partir d'une vente ORM."""
     from app.printers.half_a4_invoice import HALF_A4_WIDTH_CHARS, is_half_a4
 
@@ -71,10 +191,27 @@ def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
     else:
         width = WIDTH_CHARS.get(paper, 48)
     currency = shop.currency or "FCFA"
+    layout_id = _resolve_layout(layout)
+    # Demi-A4 garde le rendu classique (PDF a son propre moteur).
+    if is_half_a4(paper):
+        layout_id = TICKET_LAYOUT_CLASSIC
 
     lines = []
     logo_path = Path(str(shop.logo_path or ""))
     shop_name = shop.name or "Commerce"
+    if layout_id == TICKET_LAYOUT_KITCHEN:
+        lines.append(_center(shop_name.upper(), width))
+        lines.append(_row(f"Ticket: {sale.ticket_number}", "", width))
+        moment = sale.date or datetime.now()
+        lines.append(_row(f"Date: {moment:%d/%m/%Y}", f"{moment:%H:%M}", width))
+        if sale.client_id:
+            lines.append(_row(f"Client: {sale.client_name}", "", width))
+        lines.append(_line("-", width))
+        lines.extend(_render_items_kitchen(sale.items, width, currency))
+        lines.append("")
+        lines.append("")
+        return "\n".join(lines)
+
     if is_half_a4(paper):
         lines.append(_center("FACTURE", width))
     if shop.logo_path and logo_path.exists():
@@ -95,18 +232,13 @@ def render_ticket_text(sale, shop=None, paper: str = "80mm") -> str:
         lines.append(_row(f"Client: {sale.client_name}", "", width))
     lines.append(_line("-", width))
 
-    for item in sale.items:
-        name = item.product_name
-        lines.append(name[:width])
-        qty = format_quantity(item.quantity)
-        unit_price = float(item.unit_price or 0)
-        line_total = float(item.line_total or 0)
-        expected = round(unit_price * float(item.quantity or 0), 2)
-        if abs(expected - line_total) > 0.01:
-            detail = f"montant {format_money(line_total, currency)}"
-        else:
-            detail = f"{qty} x {format_money(unit_price, currency)}"
-        lines.append(_row(f"  {detail}", format_money(line_total, currency), width))
+    items = list(sale.items or [])
+    if layout_id == TICKET_LAYOUT_COMPACT:
+        lines.extend(_render_items_compact(items, width, currency))
+    elif layout_id == TICKET_LAYOUT_TABLE:
+        lines.extend(_render_items_table(items, width, currency))
+    else:
+        lines.extend(_render_items_classic(items, width, currency))
 
     lines.append(_line("-", width))
     lines.append(_row("Sous-total", format_money(sale.subtotal, currency), width))

@@ -136,9 +136,13 @@ class TicketDialog(QDialog):
             self.save_button.setText("Enregistrer la facture")
             self.setWindowTitle(f"Facture {self.sale.ticket_number}")
         else:
+            layout_id = thermal_printer._resolve_layout(None)
+            layout_label = thermal_printer.TICKET_LAYOUT_LABELS.get(
+                layout_id, layout_id
+            )
             self.format_hint.setText(
-                "Ticket thermique. Enregistrez d'abord le fichier, "
-                "puis imprimez seulement si l'imprimante est prête."
+                f"Ticket thermique — présentation : {layout_label}. "
+                "Changez le modèle dans Paramètres → Apparence & Ticket."
             )
             self.print_button.setText("Imprimer le ticket")
             self.save_button.setText("Enregistrer le ticket")

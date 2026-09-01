@@ -166,6 +166,29 @@ class SettingsPage(QWidget):
             "Par défaut : ticket thermique. « Facture papier » = PDF 210×148,5 mm "
             "(A4 coupé en deux) pour imprimante bureau."
         )
+        from app.printers.thermal_printer import TICKET_LAYOUT_LABELS, TICKET_LAYOUTS
+
+        self.ticket_layout = QComboBox()
+        for layout_id in TICKET_LAYOUTS:
+            self.ticket_layout.addItem(TICKET_LAYOUT_LABELS[layout_id], layout_id)
+        self.ticket_layout.setToolTip(
+            "Présentation du ticket thermique 58/80 mm (aperçu et impression)."
+        )
+
+        # Affichage caisse : texte agrandi pour serveur / précipitation.
+        self.pos_large_text = QCheckBox(
+            "Agrandir produits et prix en caisse (lecture rapide)"
+        )
+        self.pos_large_text.setToolTip(
+            "Utile pour le serveur : voir rapidement quoi servir "
+            "(noms et prix plus gros dans le catalogue et le panier)."
+        )
+        self.pos_text_size = QComboBox()
+        self.pos_text_size.addItem("Grand", "large")
+        self.pos_text_size.addItem("Très grand", "xlarge")
+        self.pos_text_size.setEnabled(False)
+        self.pos_large_text.toggled.connect(self.pos_text_size.setEnabled)
+
         # Liste déroulante des imprimantes détectées (éditable pour saisir un
         # chemin de périphérique si besoin) + bouton d'actualisation.
         self.printer = QComboBox()
@@ -201,6 +224,9 @@ class SettingsPage(QWidget):
 
         form.addRow("Thème", self.theme)
         form.addRow("Format du ticket", self.ticket_format)
+        form.addRow("Présentation ticket", self.ticket_layout)
+        form.addRow("Lecture rapide caisse", self.pos_large_text)
+        form.addRow("Taille du texte", self.pos_text_size)
         form.addRow("Imprimante", printer_row)
         form.addRow("Avance papier", self.feed_lines)
         form.addRow("Coupe", self.cut_mode)
@@ -284,6 +310,16 @@ class SettingsPage(QWidget):
         dark = self.theme.currentText() == "Sombre"
         self.state.set_dark(dark)
         settings_service.set_setting("ticket_format", self.ticket_format.currentData())
+        settings_service.set_setting(
+            "ticket_layout", self.ticket_layout.currentData() or "classic"
+        )
+        settings_service.set_setting(
+            "pos_catalog_large_text",
+            "1" if self.pos_large_text.isChecked() else "0",
+        )
+        settings_service.set_setting(
+            "pos_catalog_text_size", self.pos_text_size.currentData() or "large"
+        )
         settings_service.set_setting("printer_name", self._printer_value())
         settings_service.set_setting("ticket_feed_lines", str(self.feed_lines.value()))
         settings_service.set_setting("ticket_cut_mode", self.cut_mode.currentData())
@@ -291,6 +327,7 @@ class SettingsPage(QWidget):
             "auto_print_ticket", "1" if self.auto_print.isChecked() else "0"
         )
         settings_service.save_shop_info(ticket_footer=self.footer.text().strip())
+        self.state.notify_data_changed()
         if not silent:
             info(self, "Préférences appliquées.")
 
@@ -636,6 +673,18 @@ class SettingsPage(QWidget):
             fmt_index = self.ticket_format.findText(fmt)
         if fmt_index >= 0:
             self.ticket_format.setCurrentIndex(fmt_index)
+        layout_id = settings_service.get_setting("ticket_layout", "classic")
+        layout_index = self.ticket_layout.findData(layout_id)
+        if layout_index >= 0:
+            self.ticket_layout.setCurrentIndex(layout_index)
+        large = settings_service.get_setting("pos_catalog_large_text", "0") == "1"
+        self.pos_large_text.setChecked(large)
+        self.pos_text_size.setEnabled(large)
+        size_index = self.pos_text_size.findData(
+            settings_service.get_setting("pos_catalog_text_size", "large")
+        )
+        if size_index >= 0:
+            self.pos_text_size.setCurrentIndex(size_index)
         self._reload_printers(select=settings_service.get_setting("printer_name", ""))
         try:
             self.feed_lines.setValue(int(settings_service.get_setting("ticket_feed_lines", "5")))
