@@ -82,13 +82,29 @@ class TicketLayoutTestCase(unittest.TestCase):
             self.assertIn("TOTAL", classic)
             self.assertIn("Qté", table)
             self.assertIn("2x", compact)
-            self.assertIn("A PREPARER", kitchen)
-            self.assertIn("[2]", kitchen)
+            self.assertIn("A SERVIR", kitchen)
+            self.assertIn("2x", kitchen)
+            self.assertIn("JUS", kitchen)
+            # Bon serveur : court (pas de totaux / adresse / footer).
+            self.assertNotIn("TOTAL", kitchen)
+            self.assertLess(len(kitchen.splitlines()), len(classic.splitlines()))
             # Largeur respectée approximativement (pas de ligne monstrueuse).
             for text in (classic, table, compact, kitchen):
                 width = 32 if paper == "58mm" else 48
                 for line in text.splitlines():
                     self.assertLessEqual(len(line), width + 2, msg=repr(line))
+
+    def test_kitchen_shorter_than_verbose_header(self) -> None:
+        """Le bon serveur ne doit pas gaspiller de papier (pas de lignes vides)."""
+        sale = _sale()
+        shop = _shop()
+        kitchen = render_ticket_text(
+            sale, shop, paper="80mm", layout=TICKET_LAYOUT_KITCHEN
+        )
+        lines = kitchen.splitlines()
+        self.assertTrue(all(line.strip() for line in lines), msg=repr(kitchen))
+        # En-tête + 1 article + séparateurs ≈ 5 lignes max pour 1 produit.
+        self.assertLessEqual(len(lines), 6, msg=repr(kitchen))
 
 
 if __name__ == "__main__":

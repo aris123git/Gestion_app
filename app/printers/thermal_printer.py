@@ -58,7 +58,7 @@ TICKET_LAYOUT_LABELS = {
     TICKET_LAYOUT_CLASSIC: "Classique (nom + détail)",
     TICKET_LAYOUT_COMPACT: "Compact (une ligne)",
     TICKET_LAYOUT_TABLE: "Tableau (Qté / Prix / Total)",
-    TICKET_LAYOUT_KITCHEN: "Service / cuisine (produit + qté)",
+    TICKET_LAYOUT_KITCHEN: "Bon serveur — court (quoi servir)",
 }
 
 
@@ -160,18 +160,26 @@ def _render_items_table(items, width: int, currency: str) -> list[str]:
 
 
 def _render_items_kitchen(items, width: int, currency: str) -> list[str]:
-    """Focus service : produit + quantité (facile à lire en précipitation)."""
+    """Produits mis en exergue, sans gaspiller de papier.
+
+    Une seule ligne par article : ``2x CAFE EXPRESS``.
+    Le client présente le ticket ; le serveur lit d'un coup d'œil.
+    """
     lines: list[str] = []
-    lines.append(_center("A PREPARER / SERVIR", width))
-    lines.append(_line("=", width))
     item_list = list(items)
     for item in item_list:
         qty, _unit, _total = _item_amounts(item)
-        name = (item.product_name or "").strip()
-        badge = f"[{qty}]"
-        lines.append(_row(badge, name[: max(1, width - len(badge) - 1)], width))
-        lines.append(_line(".", width))
-    lines.append(_row("Articles", str(len(item_list)), width))
+        name = (item.product_name or "").strip().upper()
+        left = f"{qty}x {name}"
+        if len(left) <= width:
+            lines.append(left)
+        else:
+            # Nom long : qté sur la 1re ligne, suite du nom sur la suivante.
+            lines.append(f"{qty}x {name[: max(0, width - len(qty) - 2)]}")
+            rest = name[max(0, width - len(qty) - 2) :]
+            while rest:
+                lines.append(rest[:width])
+                rest = rest[width:]
     _ = currency
     return lines
 
@@ -200,16 +208,18 @@ def render_ticket_text(
     logo_path = Path(str(shop.logo_path or ""))
     shop_name = shop.name or "Commerce"
     if layout_id == TICKET_LAYOUT_KITCHEN:
-        lines.append(_center(shop_name.upper(), width))
-        lines.append(_row(f"Ticket: {sale.ticket_number}", "", width))
-        moment = sale.date or datetime.now()
-        lines.append(_row(f"Date: {moment:%d/%m/%Y}", f"{moment:%H:%M}", width))
-        if sale.client_id:
-            lines.append(_row(f"Client: {sale.client_name}", "", width))
+        # En-tête court : pas de logo / adresse / footer = économise le papier.
+        lines.append(_center("A SERVIR", width))
+        lines.append(
+            _row(
+                f"{sale.ticket_number}",
+                f"{(sale.date or datetime.now()):%H:%M}",
+                width,
+            )
+        )
         lines.append(_line("-", width))
         lines.extend(_render_items_kitchen(sale.items, width, currency))
-        lines.append("")
-        lines.append("")
+        lines.append(_line("-", width))
         return "\n".join(lines)
 
     if is_half_a4(paper):
@@ -380,6 +390,67 @@ def _load_logo_image(logo_path: Optional[str], paper: str):
         return None
 
 
+def _build_escpos_serveur_bytes(
+    sale,
+    shop=None,
+    *,
+    feed_lines: int = DEFAULT_FEED_LINES,
+    cut_mode: str = DEFAULT_CUT_MODE,
+    logo_path: Optional[str] = None,
+    paper: str = "80mm",
+) -> bytes:
+    """ESC/POS compact : produits en gras (sans double hauteur = pas de surconsommation)."""
+    shop = shop or settings_service.get_shop_info()
+    feed_lines = max(0, int(feed_lines))
+    # Pas de logo sur le bon serveur (trop de papier).
+    _ = logo_path
+    _ = shop
+    try:
+        from escpos.printer import Dummy
+
+        dummy = Dummy()
+        dummy.set(align="center", bold=True, width=1, height=1)
+        dummy.text("A SERVIR\n")
+        dummy.set(align="left", bold=False, width=1, height=1)
+        moment = sale.date or datetime.now()
+        dummy.text(f"{sale.ticket_number}  {moment:%H:%M}\n")
+        dummy.text("-" * 24 + "\n")
+
+        items = list(sale.items or [])
+        for item in items:
+            qty = format_quantity(item.quantity)
+            name = (item.product_name or "").strip().upper()
+            # Gras + majuscules = visible, hauteur normale = économe en papier.
+            dummy.set(align="left", bold=True, width=1, height=1)
+            dummy.text(f"{qty}x {name}\n")
+
+        dummy.set(bold=False)
+        dummy.text("-" * 24 + "\n")
+        if feed_lines:
+            dummy.text("\n" * feed_lines)
+        if cut_mode != "none":
+            escpos_mode = _CUT_MODES.get(cut_mode, "FULL")
+            try:
+                dummy.cut(mode=escpos_mode)
+            except Exception:
+                try:
+                    dummy.cut()
+                except Exception:
+                    logger.debug("Coupe ESC/POS ignorée.", exc_info=True)
+        return dummy.output
+    except Exception:
+        content = render_ticket_text(
+            sale, shop, paper=paper, layout=TICKET_LAYOUT_KITCHEN
+        )
+        return _build_escpos_bytes(
+            content,
+            feed_lines=feed_lines,
+            cut_mode=cut_mode,
+            logo_path=None,
+            paper=paper,
+        )
+
+
 def _build_escpos_bytes(
     content: str,
     feed_lines: int = DEFAULT_FEED_LINES,
@@ -407,7 +478,10 @@ def _build_escpos_bytes(
                 dummy.image(logo)
                 dummy.set(align="left")
             except Exception:
-                logger.debug("Logo thermique ignoré par le générateur ESC/POS.", exc_info=True)
+                logger.debug(
+                    "Logo thermique ignoré par le générateur ESC/POS.",
+                    exc_info=True,
+                )
         dummy.text(content)
         if feed_lines:
             dummy.text("\n" * feed_lines)
@@ -416,14 +490,12 @@ def _build_escpos_bytes(
             try:
                 dummy.cut(mode=escpos_mode)
             except Exception:
-                # Repli : coupe par défaut si le mode demandé n'est pas supporté.
                 try:
                     dummy.cut()
                 except Exception:
                     logger.debug("Commande de coupe ESC/POS ignorée.", exc_info=True)
         return dummy.output
     except Exception:
-        # Repli complet : texte brut + avance + commande de coupe ESC/POS brute.
         data = content.encode("utf-8", errors="replace")
         data += b"\n" * feed_lines
         if cut_mode != "none":
@@ -733,10 +805,22 @@ def print_ticket(
         return result
 
     path = save_ticket_file(sale, shop, paper)
-    content = render_ticket_text(sale, shop, paper)
-    result = _send_content(
-        content, printer_name, logo_path=shop.logo_path, paper=paper
-    )
+    layout = _resolve_layout(None)
+    if layout == TICKET_LAYOUT_KITCHEN:
+        # Bon serveur : flux ESC/POS dédié (gras, sans logo ni double hauteur).
+        result = _send_content(
+            "",
+            printer_name,
+            logo_path=None,
+            paper=paper,
+            sale=sale,
+            layout=TICKET_LAYOUT_KITCHEN,
+        )
+    else:
+        content = render_ticket_text(sale, shop, paper)
+        result = _send_content(
+            content, printer_name, logo_path=shop.logo_path, paper=paper
+        )
     result.file_path = path
     return result
 
@@ -746,6 +830,8 @@ def _send_content(
     printer_name: Optional[str] = None,
     logo_path: Optional[str] = None,
     paper: str = "80mm",
+    sale=None,
+    layout: Optional[str] = None,
 ) -> PrintResult:
     """Envoie un contenu déjà formaté à l'imprimante selon les réglages courants."""
     printer_name = (
@@ -765,13 +851,24 @@ def _send_content(
     if cut_mode not in ("full", "partial", "none"):
         cut_mode = DEFAULT_CUT_MODE
 
-    raw = _build_escpos_bytes(
-        content,
-        feed_lines=feed_lines,
-        cut_mode=cut_mode,
-        logo_path=logo_path,
-        paper=paper,
-    )
+    # Bon serveur : moins d'avance papier (contenu déjà très court).
+    if layout == TICKET_LAYOUT_KITCHEN and sale is not None:
+        feed_lines = min(feed_lines, 2)
+        raw = _build_escpos_serveur_bytes(
+            sale,
+            feed_lines=feed_lines,
+            cut_mode=cut_mode,
+            logo_path=None,
+            paper=paper,
+        )
+    else:
+        raw = _build_escpos_bytes(
+            content,
+            feed_lines=feed_lines,
+            cut_mode=cut_mode,
+            logo_path=logo_path,
+            paper=paper,
+        )
 
     if sys.platform.startswith("win"):
         result = _print_windows(raw, printer_name)

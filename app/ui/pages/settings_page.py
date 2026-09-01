@@ -172,7 +172,9 @@ class SettingsPage(QWidget):
         for layout_id in TICKET_LAYOUTS:
             self.ticket_layout.addItem(TICKET_LAYOUT_LABELS[layout_id], layout_id)
         self.ticket_layout.setToolTip(
-            "Présentation du ticket thermique 58/80 mm (aperçu et impression)."
+            "Présentation du ticket thermique 58/80 mm.\n"
+            "« Bon serveur » : ticket court (quoi servir), sans totaux ni "
+            "en-tête long — le client le présente au serveur."
         )
 
         # Affichage caisse : texte agrandi pour serveur / précipitation.
