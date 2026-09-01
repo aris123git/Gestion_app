@@ -91,6 +91,11 @@ def render_ticket_preview(
     data = sample_ticket_data()
     design = get_design(design_id)
     role = "kitchen" if design.category == "kitchen" else "client"
+    if options is None:
+        try:
+            options = load_ticket_options()
+        except Exception:
+            options = TicketOptions()
     return render_ticket_text_from_data(
         data, design_id=design_id, role=role, options=options, paper=paper
     )
