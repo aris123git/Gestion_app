@@ -97,11 +97,18 @@ class TicketDialog(QDialog):
         close.clicked.connect(self.accept)
         self.print_button = QPushButton("Imprimer")
         self.print_button.clicked.connect(self._print)
+        self.print_kitchen_button = QPushButton("Bon serveur")
+        self.print_kitchen_button.setToolTip(
+            "Imprime le bon serveur / cuisine (sans prix), selon le design choisi "
+            "dans Paramètres → Designs des tickets."
+        )
+        self.print_kitchen_button.clicked.connect(self._print_kitchen)
         self.save_button = QPushButton("Enregistrer le ticket")
         self.save_button.setObjectName("Primary")
         self.save_button.clicked.connect(self._save)
         buttons.addWidget(close)
         buttons.addStretch()
+        buttons.addWidget(self.print_kitchen_button)
         buttons.addWidget(self.print_button)
         buttons.addWidget(self.save_button)
         layout.addLayout(buttons)
@@ -134,18 +141,22 @@ class TicketDialog(QDialog):
             )
             self.print_button.setText("Imprimer la facture")
             self.save_button.setText("Enregistrer la facture")
+            self.print_kitchen_button.setVisible(False)
             self.setWindowTitle(f"Facture {self.sale.ticket_number}")
         else:
-            layout_id = thermal_printer._resolve_layout(None)
-            layout_label = thermal_printer.TICKET_LAYOUT_LABELS.get(
-                layout_id, layout_id
+            from app.printers.ticket.registry import (
+                get_design,
+                resolve_client_design_id,
             )
+
+            design = get_design(resolve_client_design_id())
             self.format_hint.setText(
-                f"Ticket thermique — présentation : {layout_label}. "
-                "Changez le modèle dans Paramètres → Apparence & Ticket."
+                f"Ticket thermique — design : {design.label}. "
+                "Changez le modèle dans Paramètres → Designs des tickets."
             )
             self.print_button.setText("Imprimer le ticket")
             self.save_button.setText("Enregistrer le ticket")
+            self.print_kitchen_button.setVisible(True)
             self.setWindowTitle(f"Ticket {self.sale.ticket_number}")
 
     def _default_save_path(self) -> Path:
@@ -250,7 +261,38 @@ class TicketDialog(QDialog):
                 f"Fichier enregistré :\n{result.file_path}\n\n"
                 "Astuce : utilisez « Enregistrer le ticket » pour conserver "
                 "une copie, puis imprimez quand l'imprimante est prête.\n"
-                "Paramètres → Apparence & Ticket pour choisir l'imprimante "
-                "ou vider la file d'attente.",
+                "Paramètres → Designs des tickets pour changer le modèle.",
                 "Impression impossible",
+            )
+
+    def _print_kitchen(self) -> None:
+        paper = self._paper_value()
+        if is_half_a4(paper):
+            return
+        self.print_kitchen_button.setEnabled(False)
+        self.status.setText("Envoi du bon serveur / cuisine…")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+        try:
+            result = thermal_printer.print_ticket(
+                self.sale, paper=paper, role="kitchen"
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
+            self.print_kitchen_button.setEnabled(True)
+
+        if result.printed:
+            self.status.setText(result.message)
+            info(
+                self,
+                f"{result.message}\n\nFichier :\n{result.file_path}",
+                "Bon serveur",
+            )
+        else:
+            self.status.setText(result.message)
+            warn(
+                self,
+                f"Impression impossible.\n\n{result.message}\n\n"
+                f"Fichier :\n{result.file_path}",
+                "Bon serveur",
             )

@@ -7,16 +7,20 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -59,6 +63,7 @@ class SettingsPage(QWidget):
         tabs = QTabWidget()
         tabs.addTab(self._build_shop_tab(), "Commerce")
         tabs.addTab(self._build_appearance_tab(), "Apparence & Ticket")
+        tabs.addTab(self._build_designs_tab(), "Designs des tickets")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
@@ -166,16 +171,6 @@ class SettingsPage(QWidget):
             "Par défaut : ticket thermique. « Facture papier » = PDF 210×148,5 mm "
             "(A4 coupé en deux) pour imprimante bureau."
         )
-        from app.printers.thermal_printer import TICKET_LAYOUT_LABELS, TICKET_LAYOUTS
-
-        self.ticket_layout = QComboBox()
-        for layout_id in TICKET_LAYOUTS:
-            self.ticket_layout.addItem(TICKET_LAYOUT_LABELS[layout_id], layout_id)
-        self.ticket_layout.setToolTip(
-            "Présentation du ticket thermique 58/80 mm.\n"
-            "« Bon serveur » : ticket court (quoi servir), sans totaux ni "
-            "en-tête long — le client le présente au serveur."
-        )
 
         # Affichage caisse : texte agrandi pour serveur / précipitation.
         self.pos_large_text = QCheckBox(
@@ -226,7 +221,6 @@ class SettingsPage(QWidget):
 
         form.addRow("Thème", self.theme)
         form.addRow("Format du ticket", self.ticket_format)
-        form.addRow("Présentation ticket", self.ticket_layout)
         form.addRow("Lecture rapide caisse", self.pos_large_text)
         form.addRow("Taille du texte", self.pos_text_size)
         form.addRow("Imprimante", printer_row)
@@ -235,6 +229,14 @@ class SettingsPage(QWidget):
         form.addRow("Après vente", self.auto_print)
         form.addRow("Message du ticket", self.footer)
         outer.addWidget(make_card(form_widget))
+
+        designs_hint = QLabel(
+            "Les designs visuels (Classique, Moderne, Bon serveur…) se "
+            "choisissent dans l'onglet <b>Designs des tickets</b>."
+        )
+        designs_hint.setWordWrap(True)
+        designs_hint.setStyleSheet("color: #64748b;")
+        outer.addWidget(designs_hint)
 
         actions = QHBoxLayout()
         save = QPushButton("Appliquer")
@@ -255,6 +257,280 @@ class SettingsPage(QWidget):
         outer.addLayout(actions)
         outer.addStretch()
         return wrap
+
+    # --- Onglet designs des tickets ---------------------------------------
+    def _build_designs_tab(self) -> QWidget:
+        from app.printers.ticket.options import DENSITIES
+        from app.printers.ticket.registry import CLIENT_DESIGNS, KITCHEN_DESIGNS
+        from app.ui.widgets.ticket_design_card import TicketDesignCard
+
+        wrap = QWidget()
+        outer = QVBoxLayout(wrap)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setSpacing(14)
+
+        intro = QLabel(
+            "Choisissez indépendamment le design du <b>ticket client</b> et "
+            "celui du <b>bon serveur / cuisine</b>. Les données restent "
+            "identiques : seule la présentation change."
+        )
+        intro.setWordWrap(True)
+        body_layout.addWidget(intro)
+
+        # --- Ticket client ---
+        client_box = QGroupBox("Ticket client")
+        client_layout = QVBoxLayout(client_box)
+        self._client_cards: dict[str, TicketDesignCard] = {}
+        self._client_group = QButtonGroup(self)
+        self._client_group.setExclusive(True)
+        client_grid = QGridLayout()
+        client_grid.setSpacing(10)
+        for i, design in enumerate(CLIENT_DESIGNS):
+            card = TicketDesignCard(design.id, design.label, design.description)
+            card.selected.connect(self._on_client_design_selected)
+            self._client_cards[design.id] = card
+            self._client_group.addButton(card.radio)
+            client_grid.addWidget(card, i // 4, i % 4)
+        client_layout.addLayout(client_grid)
+        body_layout.addWidget(client_box)
+
+        # --- Bon serveur / cuisine ---
+        kitchen_box = QGroupBox("Bon serveur / cuisine")
+        kitchen_layout = QVBoxLayout(kitchen_box)
+        self._kitchen_cards: dict[str, TicketDesignCard] = {}
+        self._kitchen_group = QButtonGroup(self)
+        self._kitchen_group.setExclusive(True)
+        kitchen_grid = QGridLayout()
+        kitchen_grid.setSpacing(10)
+        for i, design in enumerate(KITCHEN_DESIGNS):
+            card = TicketDesignCard(design.id, design.label, design.description)
+            card.selected.connect(self._on_kitchen_design_selected)
+            self._kitchen_cards[design.id] = card
+            self._kitchen_group.addButton(card.radio)
+            kitchen_grid.addWidget(card, i // 3, i % 3)
+        kitchen_layout.addLayout(kitchen_grid)
+        body_layout.addWidget(kitchen_box)
+
+        # --- Densité + personnalisation ---
+        opts_widget = QWidget()
+        opts_form = QFormLayout(opts_widget)
+        opts_form.setSpacing(8)
+
+        self.ticket_density = QComboBox()
+        self.ticket_density.addItem("Compact", "compact")
+        self.ticket_density.addItem("Normal", "normal")
+        self.ticket_density.addItem("Aéré", "airy")
+        self.ticket_density.setToolTip(
+            "Modifie les espaces verticaux sans casser la structure du design."
+        )
+        _ = DENSITIES
+
+        self.header_align = QComboBox()
+        self.header_align.addItem("Centré", "center")
+        self.header_align.addItem("À gauche", "left")
+
+        self.opt_show_name = QCheckBox("Nom du commerce")
+        self.opt_show_phone = QCheckBox("Téléphone")
+        self.opt_show_address = QCheckBox("Adresse")
+        self.opt_show_logo = QCheckBox("Logo (si disponible)")
+        self.opt_show_number = QCheckBox("N° ticket")
+        self.opt_show_date = QCheckBox("Date")
+        self.opt_show_time = QCheckBox("Heure")
+        self.opt_show_cashier = QCheckBox("Caissier")
+        self.opt_show_subtotal = QCheckBox("Sous-total")
+        self.opt_show_discount = QCheckBox("Remise (si présente)")
+        self.opt_show_tax = QCheckBox("Taxes (si TVA > 0)")
+        self.opt_show_total = QCheckBox("Total")
+        self.opt_show_received = QCheckBox("Montant reçu")
+        self.opt_show_change = QCheckBox("Monnaie")
+        self.opt_hide_zero_change = QCheckBox("Masquer monnaie à 0")
+        self.opt_show_payment = QCheckBox("Mode de paiement")
+        self.opt_show_footer = QCheckBox("Message de fin")
+
+        opts_form.addRow("Densité", self.ticket_density)
+        opts_form.addRow("Alignement en-tête", self.header_align)
+        opts_form.addRow(section_title("En-tête"))
+        for w in (
+            self.opt_show_name,
+            self.opt_show_phone,
+            self.opt_show_address,
+            self.opt_show_logo,
+        ):
+            opts_form.addRow("", w)
+        opts_form.addRow(section_title("Informations"))
+        for w in (
+            self.opt_show_number,
+            self.opt_show_date,
+            self.opt_show_time,
+            self.opt_show_cashier,
+        ):
+            opts_form.addRow("", w)
+        opts_form.addRow(section_title("Totaux"))
+        for w in (
+            self.opt_show_subtotal,
+            self.opt_show_discount,
+            self.opt_show_tax,
+            self.opt_show_total,
+            self.opt_show_received,
+            self.opt_show_change,
+            self.opt_hide_zero_change,
+            self.opt_show_payment,
+            self.opt_show_footer,
+        ):
+            opts_form.addRow("", w)
+
+        body_layout.addWidget(make_card(opts_widget))
+
+        actions = QHBoxLayout()
+        save = QPushButton("Enregistrer les designs")
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save_designs)
+        test_btn = QPushButton("Imprimer un ticket de test")
+        test_btn.setToolTip("Imprime un aperçu du design client actuellement sélectionné.")
+        test_btn.clicked.connect(self._print_design_test)
+        test_kitchen = QPushButton("Tester bon serveur / cuisine")
+        test_kitchen.clicked.connect(self._print_kitchen_design_test)
+        actions.addWidget(save)
+        actions.addWidget(test_btn)
+        actions.addWidget(test_kitchen)
+        actions.addStretch()
+        body_layout.addLayout(actions)
+        body_layout.addStretch()
+
+        scroll.setWidget(body)
+        outer.addWidget(scroll)
+        return wrap
+
+    def _on_client_design_selected(self, design_id: str) -> None:
+        for did, card in self._client_cards.items():
+            card.set_checked(did == design_id)
+
+    def _on_kitchen_design_selected(self, design_id: str) -> None:
+        for did, card in self._kitchen_cards.items():
+            card.set_checked(did == design_id)
+
+    def _selected_client_design(self) -> str:
+        for did, card in self._client_cards.items():
+            if card.is_checked():
+                return did
+        return "classic"
+
+    def _selected_kitchen_design(self) -> str:
+        for did, card in self._kitchen_cards.items():
+            if card.is_checked():
+                return did
+        return "serveur"
+
+    def _save_designs(self, silent: bool = False) -> None:
+        from app.printers.ticket.options import TicketOptions, save_ticket_options
+
+        client_id = self._selected_client_design()
+        kitchen_id = self._selected_kitchen_design()
+        settings_service.set_setting("ticket_client_design", client_id)
+        settings_service.set_setting("ticket_kitchen_design", kitchen_id)
+        # Compatibilité ancien paramètre.
+        settings_service.set_setting("ticket_layout", client_id)
+
+        opts = TicketOptions(
+            density=self.ticket_density.currentData() or "normal",
+            show_shop_name=self.opt_show_name.isChecked(),
+            show_phone=self.opt_show_phone.isChecked(),
+            show_address=self.opt_show_address.isChecked(),
+            show_logo=self.opt_show_logo.isChecked(),
+            header_align=self.header_align.currentData() or "center",
+            show_number=self.opt_show_number.isChecked(),
+            show_date=self.opt_show_date.isChecked(),
+            show_time=self.opt_show_time.isChecked(),
+            show_cashier=self.opt_show_cashier.isChecked(),
+            show_subtotal=self.opt_show_subtotal.isChecked(),
+            show_discount=self.opt_show_discount.isChecked(),
+            show_tax=self.opt_show_tax.isChecked(),
+            show_total=self.opt_show_total.isChecked(),
+            show_received=self.opt_show_received.isChecked(),
+            show_change=self.opt_show_change.isChecked(),
+            hide_zero_change=self.opt_hide_zero_change.isChecked(),
+            show_payment=self.opt_show_payment.isChecked(),
+            show_footer=self.opt_show_footer.isChecked(),
+        )
+        save_ticket_options(opts)
+        self.state.notify_data_changed()
+        if not silent:
+            info(self, "Designs et options d'affichage enregistrés.")
+
+    def _print_design_test(self) -> None:
+        self._save_designs(silent=True)
+        from app.printers import thermal_printer
+
+        result = thermal_printer.print_design_test(self._selected_client_design())
+        if result.printed:
+            info(self, f"Ticket de test envoyé.\n{result.message}", "Test design")
+        else:
+            warn(
+                self,
+                f"Impression impossible.\n{result.message}\n\n"
+                f"Aperçu enregistré :\n{result.file_path}",
+                "Test design",
+            )
+
+    def _print_kitchen_design_test(self) -> None:
+        self._save_designs(silent=True)
+        from app.printers import thermal_printer
+
+        result = thermal_printer.print_design_test(self._selected_kitchen_design())
+        if result.printed:
+            info(self, f"Bon de test envoyé.\n{result.message}", "Test cuisine")
+        else:
+            warn(
+                self,
+                f"Impression impossible.\n{result.message}\n\n"
+                f"Aperçu enregistré :\n{result.file_path}",
+                "Test cuisine",
+            )
+
+    def _load_designs_ui(self) -> None:
+        from app.printers.ticket.options import load_ticket_options
+        from app.printers.ticket.registry import (
+            resolve_client_design_id,
+            resolve_kitchen_design_id,
+        )
+
+        client_id = resolve_client_design_id()
+        kitchen_id = resolve_kitchen_design_id()
+        for did, card in self._client_cards.items():
+            card.set_checked(did == client_id)
+        for did, card in self._kitchen_cards.items():
+            card.set_checked(did == kitchen_id)
+
+        opts = load_ticket_options()
+        dens_idx = self.ticket_density.findData(opts.density)
+        if dens_idx >= 0:
+            self.ticket_density.setCurrentIndex(dens_idx)
+        align_idx = self.header_align.findData(opts.header_align)
+        if align_idx >= 0:
+            self.header_align.setCurrentIndex(align_idx)
+        self.opt_show_name.setChecked(opts.show_shop_name)
+        self.opt_show_phone.setChecked(opts.show_phone)
+        self.opt_show_address.setChecked(opts.show_address)
+        self.opt_show_logo.setChecked(opts.show_logo)
+        self.opt_show_number.setChecked(opts.show_number)
+        self.opt_show_date.setChecked(opts.show_date)
+        self.opt_show_time.setChecked(opts.show_time)
+        self.opt_show_cashier.setChecked(opts.show_cashier)
+        self.opt_show_subtotal.setChecked(opts.show_subtotal)
+        self.opt_show_discount.setChecked(opts.show_discount)
+        self.opt_show_tax.setChecked(opts.show_tax)
+        self.opt_show_total.setChecked(opts.show_total)
+        self.opt_show_received.setChecked(opts.show_received)
+        self.opt_show_change.setChecked(opts.show_change)
+        self.opt_hide_zero_change.setChecked(opts.hide_zero_change)
+        self.opt_show_payment.setChecked(opts.show_payment)
+        self.opt_show_footer.setChecked(opts.show_footer)
 
     def _purge_printer_queue(self) -> None:
         self._save_appearance(silent=True)
@@ -312,9 +588,6 @@ class SettingsPage(QWidget):
         dark = self.theme.currentText() == "Sombre"
         self.state.set_dark(dark)
         settings_service.set_setting("ticket_format", self.ticket_format.currentData())
-        settings_service.set_setting(
-            "ticket_layout", self.ticket_layout.currentData() or "classic"
-        )
         settings_service.set_setting(
             "pos_catalog_large_text",
             "1" if self.pos_large_text.isChecked() else "0",
@@ -646,11 +919,13 @@ class SettingsPage(QWidget):
             self.audit_table.setItem(row, 3, QTableWidgetItem(log.details))
 
     def _on_tab(self, index: int) -> None:
-        # Onglets : 0 Commerce, 1 Apparence, 2 Contrôles, 3 Sauvegarde, 4 Audit
-        if index == 3:
+        # 0 Commerce, 1 Apparence, 2 Designs, 3 Contrôles, 4 Sauvegarde, 5 Audit
+        if index == 2:
+            self._load_designs_ui()
+        elif index == 4:
             self._load_auto_options()
             self._reload_backups()
-        elif index == 4:
+        elif index == 5:
             self._reload_audit()
 
     # --- Rafraîchissement --------------------------------------------------
@@ -675,10 +950,6 @@ class SettingsPage(QWidget):
             fmt_index = self.ticket_format.findText(fmt)
         if fmt_index >= 0:
             self.ticket_format.setCurrentIndex(fmt_index)
-        layout_id = settings_service.get_setting("ticket_layout", "classic")
-        layout_index = self.ticket_layout.findData(layout_id)
-        if layout_index >= 0:
-            self.ticket_layout.setCurrentIndex(layout_index)
         large = settings_service.get_setting("pos_catalog_large_text", "0") == "1"
         self.pos_large_text.setChecked(large)
         self.pos_text_size.setEnabled(large)
@@ -700,5 +971,6 @@ class SettingsPage(QWidget):
         self.auto_print.setChecked(
             settings_service.get_setting("auto_print_ticket", "0") == "1"
         )
+        self._load_designs_ui()
         self._load_auto_options()
         self._reload_backups()

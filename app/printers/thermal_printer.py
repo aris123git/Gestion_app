@@ -43,11 +43,11 @@ class PrintResult:
 WIDTH_CHARS = {"58mm": 32, "80mm": 48, "demi-A4": 72}
 PAPER_FORMATS = ("80mm", "58mm", "demi-A4")
 
-# Présentations thermique (paramètre ``ticket_layout``).
+# Compatibilité : anciens IDs ``ticket_layout`` (migrés vers la biblio designs).
 TICKET_LAYOUT_CLASSIC = "classic"
 TICKET_LAYOUT_COMPACT = "compact"
-TICKET_LAYOUT_TABLE = "table"
-TICKET_LAYOUT_KITCHEN = "kitchen"
+TICKET_LAYOUT_TABLE = "table"  # → design « terminal »
+TICKET_LAYOUT_KITCHEN = "kitchen"  # → design « serveur »
 TICKET_LAYOUTS = (
     TICKET_LAYOUT_CLASSIC,
     TICKET_LAYOUT_COMPACT,
@@ -55,10 +55,10 @@ TICKET_LAYOUTS = (
     TICKET_LAYOUT_KITCHEN,
 )
 TICKET_LAYOUT_LABELS = {
-    TICKET_LAYOUT_CLASSIC: "Classique (nom + détail)",
-    TICKET_LAYOUT_COMPACT: "Compact (une ligne)",
-    TICKET_LAYOUT_TABLE: "Tableau (Qté / Prix / Total)",
-    TICKET_LAYOUT_KITCHEN: "Bon serveur — court (quoi servir)",
+    TICKET_LAYOUT_CLASSIC: "Classique",
+    TICKET_LAYOUT_COMPACT: "Compact",
+    TICKET_LAYOUT_TABLE: "Terminal",
+    TICKET_LAYOUT_KITCHEN: "Bon serveur",
 }
 
 
@@ -68,120 +68,22 @@ def _line(char: str = "-", width: int = 32) -> str:
 
 def _row(left: str, right: str, width: int) -> str:
     """Place ``left`` à gauche et ``right`` à droite sur une même ligne."""
-    space = width - len(left) - len(right)
-    if space < 1:
-        left = left[: max(0, width - len(right) - 1)]
-        space = max(1, width - len(left) - len(right))
-    return f"{left}{' ' * space}{right}"
+    from app.printers.ticket.layout import row
+
+    return row(left, right, width)
 
 
 def _center(text: str, width: int) -> str:
-    return text.center(width)
+    from app.printers.ticket.layout import center
+
+    return center(text, width)
 
 
-def _resolve_layout(layout: Optional[str]) -> str:
-    if layout in TICKET_LAYOUTS:
-        return layout
-    stored = settings_service.get_setting("ticket_layout", TICKET_LAYOUT_CLASSIC)
-    return stored if stored in TICKET_LAYOUTS else TICKET_LAYOUT_CLASSIC
+def _resolve_layout(layout: Optional[str] = None) -> str:
+    """Résout l'ID de design client (compat. ancien ``ticket_layout``)."""
+    from app.printers.ticket.registry import resolve_client_design_id
 
-
-def _item_amounts(item) -> tuple[str, float, float]:
-    qty = format_quantity(item.quantity)
-    unit_price = float(item.unit_price or 0)
-    line_total = float(item.line_total or 0)
-    return qty, unit_price, line_total
-
-
-def _render_items_classic(items, width: int, currency: str) -> list[str]:
-    lines: list[str] = []
-    for item in items:
-        name = item.product_name or ""
-        lines.append(name[:width])
-        qty, unit_price, line_total = _item_amounts(item)
-        expected = round(unit_price * float(item.quantity or 0), 2)
-        if abs(expected - line_total) > 0.01:
-            detail = f"montant {format_money(line_total, currency)}"
-        else:
-            detail = f"{qty} x {format_money(unit_price, currency)}"
-        lines.append(_row(f"  {detail}", format_money(line_total, currency), width))
-    return lines
-
-
-def _render_items_compact(items, width: int, currency: str) -> list[str]:
-    lines: list[str] = []
-    for item in items:
-        name = (item.product_name or "").strip()
-        qty, unit_price, line_total = _item_amounts(item)
-        total_txt = format_money(line_total, currency)
-        # Ex. "2x Jus ........ 1 000"
-        left = f"{qty}x {name}"
-        max_left = max(8, width - len(total_txt) - 1)
-        if len(left) > max_left:
-            lines.append(name[:width])
-            lines.append(_row(f"  {qty}x", total_txt, width))
-        else:
-            lines.append(_row(left, total_txt, width))
-    return lines
-
-
-def _render_items_table(items, width: int, currency: str) -> list[str]:
-    """Tableau Qté / Prix / Total (adapté 58 et 80 mm)."""
-    lines: list[str] = []
-    if width <= 32:
-        # 58 mm : colonnes serrées.
-        header = f"{'Qté':>4} {'Prix':>10} {'Total':>12}"
-        lines.append(header[:width].ljust(width) if len(header) <= width else header[:width])
-        lines.append(_line("-", width))
-        for item in items:
-            name = (item.product_name or "")[:width]
-            lines.append(name)
-            qty, unit_price, line_total = _item_amounts(item)
-            row = (
-                f"{qty:>4} "
-                f"{format_money(unit_price, currency):>10} "
-                f"{format_money(line_total, currency):>12}"
-            )
-            lines.append(row[:width])
-    else:
-        # 80 mm : en-tête plus lisible.
-        lines.append(_row("Article", "Qté  Prix     Total", width))
-        lines.append(_line("-", width))
-        for item in items:
-            name = (item.product_name or "")[: max(12, width - 22)]
-            qty, unit_price, line_total = _item_amounts(item)
-            right = (
-                f"{qty:>4} "
-                f"{format_money(unit_price, currency):>8} "
-                f"{format_money(line_total, currency):>9}"
-            )
-            lines.append(_row(name, right, width))
-    return lines
-
-
-def _render_items_kitchen(items, width: int, currency: str) -> list[str]:
-    """Produits mis en exergue, sans gaspiller de papier.
-
-    Une seule ligne par article : ``2x CAFE EXPRESS``.
-    Le client présente le ticket ; le serveur lit d'un coup d'œil.
-    """
-    lines: list[str] = []
-    item_list = list(items)
-    for item in item_list:
-        qty, _unit, _total = _item_amounts(item)
-        name = (item.product_name or "").strip().upper()
-        left = f"{qty}x {name}"
-        if len(left) <= width:
-            lines.append(left)
-        else:
-            # Nom long : qté sur la 1re ligne, suite du nom sur la suivante.
-            lines.append(f"{qty}x {name[: max(0, width - len(qty) - 2)]}")
-            rest = name[max(0, width - len(qty) - 2) :]
-            while rest:
-                lines.append(rest[:width])
-                rest = rest[width:]
-    _ = currency
-    return lines
+    return resolve_client_design_id(layout)
 
 
 def render_ticket_text(
@@ -189,106 +91,59 @@ def render_ticket_text(
     shop=None,
     paper: str = "80mm",
     layout: Optional[str] = None,
+    *,
+    design_id: Optional[str] = None,
+    role: str = "client",
 ) -> str:
-    """Construit le contenu texte d'un ticket à partir d'une vente ORM."""
-    from app.printers.half_a4_invoice import HALF_A4_WIDTH_CHARS, is_half_a4
+    """Construit le contenu texte d'un ticket à partir d'une vente ORM.
+
+    Le rendu est délégué à ``app.printers.ticket`` (données → design → texte).
+    ``layout`` reste accepté pour compatibilité (alias de ``design_id``).
+    """
+    from app.printers.half_a4_invoice import is_half_a4
+    from app.printers.ticket.data import TicketData
+    from app.printers.ticket.registry import get_design
+    from app.printers.ticket.renderer import render_ticket_text_from_data
 
     shop = shop or settings_service.get_shop_info()
+    did = design_id or layout
+    resolved_role = role
+    if did:
+        design = get_design(did)
+        if design.category == "kitchen":
+            resolved_role = "kitchen"
+    elif role == "client":
+        # Si l'ancien réglage unique était « kitchen », le ticket client
+        # standard utilise quand même le design client (classic) sauf
+        # appel explicite role=kitchen.
+        pass
+
+    data = TicketData.from_sale(sale, shop)
+    text = render_ticket_text_from_data(
+        data, design_id=did, role=resolved_role, paper=paper
+    )
     if is_half_a4(paper):
-        width = HALF_A4_WIDTH_CHARS
-    else:
-        width = WIDTH_CHARS.get(paper, 48)
-    currency = shop.currency or "FCFA"
-    layout_id = _resolve_layout(layout)
-    # Demi-A4 garde le rendu classique (PDF a son propre moteur).
-    if is_half_a4(paper):
-        layout_id = TICKET_LAYOUT_CLASSIC
-
-    lines = []
-    logo_path = Path(str(shop.logo_path or ""))
-    shop_name = shop.name or "Commerce"
-    if layout_id == TICKET_LAYOUT_KITCHEN:
-        # En-tête court : pas de logo / adresse / footer = économise le papier.
-        lines.append(_center("A SERVIR", width))
-        lines.append(
-            _row(
-                f"{sale.ticket_number}",
-                f"{(sale.date or datetime.now()):%H:%M}",
-                width,
-            )
-        )
-        lines.append(_line("-", width))
-        lines.extend(_render_items_kitchen(sale.items, width, currency))
-        lines.append(_line("-", width))
-        return "\n".join(lines)
-
-    if is_half_a4(paper):
-        lines.append(_center("FACTURE", width))
-    if shop.logo_path and logo_path.exists():
-        lines.append(_center(shop_name.upper(), width))
-    else:
-        lines.append(_center(shop_name, width))
-    if shop.address:
-        lines.append(_center(shop.address, width))
-    if shop.phone:
-        lines.append(_center(f"Tel: {shop.phone}", width))
-    lines.append(_line("=", width))
-    label = "Facture" if is_half_a4(paper) else "Ticket"
-    lines.append(_row(f"{label}: {sale.ticket_number}", "", width))
-    moment = sale.date or datetime.now()
-    lines.append(_row(f"Date: {moment:%d/%m/%Y}", f"{moment:%H:%M}", width))
-    lines.append(_row(f"Caissier: {sale.cashier_name}", "", width))
-    if sale.client_id:
-        lines.append(_row(f"Client: {sale.client_name}", "", width))
-    lines.append(_line("-", width))
-
-    items = list(sale.items or [])
-    if layout_id == TICKET_LAYOUT_COMPACT:
-        lines.extend(_render_items_compact(items, width, currency))
-    elif layout_id == TICKET_LAYOUT_TABLE:
-        lines.extend(_render_items_table(items, width, currency))
-    else:
-        lines.extend(_render_items_classic(items, width, currency))
-
-    lines.append(_line("-", width))
-    lines.append(_row("Sous-total", format_money(sale.subtotal, currency), width))
-    if float(sale.discount or 0) > 0:
-        lines.append(_row("Remise", format_money(sale.discount, currency), width))
-    vat_rate = settings_service.get_vat_rate()
-    if vat_rate > 0:
-        total_ttc = float(sale.total or 0)
-        vat_amount = round(total_ttc * vat_rate / (100 + vat_rate), 2)
-        total_ht = round(total_ttc - vat_amount, 2)
-        lines.append(_row("TOTAL TTC", format_money(total_ttc, currency), width))
-        lines.append(_row("Total HT", format_money(total_ht, currency), width))
-        lines.append(
-            _row(f"dont TVA {vat_rate:g}%", format_money(vat_amount, currency), width)
-        )
-    else:
-        lines.append(_row("TOTAL", format_money(sale.total, currency), width))
-    lines.append(_row("Recu", format_money(sale.amount_received, currency), width))
-    lines.append(_row("Monnaie", format_money(sale.change_due, currency), width))
-    lines.append(_line("-", width))
-
-    if sale.payments:
-        lines.append("Paiement:")
-        for pay in sale.payments:
-            lines.append(_row(f"  {pay.method}", format_money(pay.amount, currency), width))
-        lines.append(_line("-", width))
-
-    footer = shop.ticket_footer or "Merci pour votre visite."
-    lines.append(_center(footer, width))
-    if is_half_a4(paper):
-        lines.append(_center("Format demi-A4 (210 × 148,5 mm)", width))
-    lines.append("")
-    lines.append("")
-    return "\n".join(lines)
+        # Préfixe facture pour l'aperçu texte demi-A4.
+        width = WIDTH_CHARS.get("demi-A4", 72)
+        header = _center("FACTURE", width) + "\n"
+        footer = "\n" + _center("Format demi-A4 (210 × 148,5 mm)", width)
+        text = header + text.rstrip("\n") + footer + "\n\n"
+    return text
 
 
-def save_ticket_file(sale, shop=None, paper: str = "80mm") -> Path:
+def save_ticket_file(
+    sale,
+    shop=None,
+    paper: str = "80mm",
+    *,
+    design_id: Optional[str] = None,
+    role: str = "client",
+) -> Path:
     """Enregistre le ticket dans un fichier texte (repli sans imprimante)."""
     config.ensure_directories()
-    content = render_ticket_text(sale, shop, paper)
+    content = render_ticket_text(
+        sale, shop, paper, design_id=design_id, role=role
+    )
     path = config.TICKET_DIR / f"{sale.ticket_number}.txt"
     if path.exists():
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -398,57 +253,27 @@ def _build_escpos_serveur_bytes(
     cut_mode: str = DEFAULT_CUT_MODE,
     logo_path: Optional[str] = None,
     paper: str = "80mm",
+    design_id: Optional[str] = None,
 ) -> bytes:
-    """ESC/POS compact : produits en gras (sans double hauteur = pas de surconsommation)."""
-    shop = shop or settings_service.get_shop_info()
-    feed_lines = max(0, int(feed_lines))
-    # Pas de logo sur le bon serveur (trop de papier).
+    """ESC/POS pour designs cuisine / bon serveur (lignes stylées)."""
     _ = logo_path
-    _ = shop
-    try:
-        from escpos.printer import Dummy
+    from app.printers.ticket.data import TicketData
+    from app.printers.ticket.registry import resolve_kitchen_design_id
+    from app.printers.ticket.renderer import render_ticket
+    from app.printers.ticket.styled import lines_to_escpos_bytes
 
-        dummy = Dummy()
-        dummy.set(align="center", bold=True, width=1, height=1)
-        dummy.text("A SERVIR\n")
-        dummy.set(align="left", bold=False, width=1, height=1)
-        moment = sale.date or datetime.now()
-        dummy.text(f"{sale.ticket_number}  {moment:%H:%M}\n")
-        dummy.text("-" * 24 + "\n")
-
-        items = list(sale.items or [])
-        for item in items:
-            qty = format_quantity(item.quantity)
-            name = (item.product_name or "").strip().upper()
-            # Gras + majuscules = visible, hauteur normale = économe en papier.
-            dummy.set(align="left", bold=True, width=1, height=1)
-            dummy.text(f"{qty}x {name}\n")
-
-        dummy.set(bold=False)
-        dummy.text("-" * 24 + "\n")
-        if feed_lines:
-            dummy.text("\n" * feed_lines)
-        if cut_mode != "none":
-            escpos_mode = _CUT_MODES.get(cut_mode, "FULL")
-            try:
-                dummy.cut(mode=escpos_mode)
-            except Exception:
-                try:
-                    dummy.cut()
-                except Exception:
-                    logger.debug("Coupe ESC/POS ignorée.", exc_info=True)
-        return dummy.output
-    except Exception:
-        content = render_ticket_text(
-            sale, shop, paper=paper, layout=TICKET_LAYOUT_KITCHEN
-        )
-        return _build_escpos_bytes(
-            content,
-            feed_lines=feed_lines,
-            cut_mode=cut_mode,
-            logo_path=None,
-            paper=paper,
-        )
+    shop = shop or settings_service.get_shop_info()
+    data = TicketData.from_sale(sale, shop)
+    kid = resolve_kitchen_design_id(design_id)
+    styled = render_ticket(data, design_id=kid, role="kitchen", paper=paper)
+    return lines_to_escpos_bytes(
+        styled,
+        feed_lines=feed_lines,
+        cut_mode=cut_mode,
+        logo_path=None,
+        paper=paper,
+        include_logo=False,
+    )
 
 
 def _build_escpos_bytes(
@@ -781,21 +606,25 @@ def print_ticket(
     shop=None,
     paper: str = "80mm",
     printer_name: Optional[str] = None,
+    *,
+    design_id: Optional[str] = None,
+    role: str = "client",
 ) -> PrintResult:
     """Imprime réellement le ticket / la facture et retourne le résultat.
 
     - Format thermique (58/80 mm) : copie texte + envoi ESC/POS RAW.
     - Format ``demi-A4`` : PDF 210×148,5 mm + impression bureau (non RAW).
+    - ``role="kitchen"`` : design bon serveur / cuisine (sans prix).
     """
     from app.printers.half_a4_invoice import is_half_a4, print_half_a4_invoice
+    from app.printers.ticket.registry import get_design, resolve_design_id
 
     shop = shop or settings_service.get_shop_info()
-    if is_half_a4(paper):
+    if is_half_a4(paper) and role == "client":
         # Archive texte + impression PDF facture.
         text_path = save_ticket_file(sale, shop, paper)
         result = print_half_a4_invoice(sale, shop=shop, printer_name=printer_name)
         if result.file_path and result.file_path.suffix.lower() == ".pdf":
-            # Conserve aussi le chemin texte dans le message si utile.
             if text_path and text_path.exists():
                 result.message = (
                     f"{result.message}\nCopie texte : {text_path}"
@@ -804,25 +633,100 @@ def print_ticket(
             result.file_path = text_path
         return result
 
-    path = save_ticket_file(sale, shop, paper)
-    layout = _resolve_layout(None)
-    if layout == TICKET_LAYOUT_KITCHEN:
-        # Bon serveur : flux ESC/POS dédié (gras, sans logo ni double hauteur).
+    path = save_ticket_file(sale, shop, paper, design_id=design_id, role=role)
+    resolved = resolve_design_id(design_id, role=role)
+    design = get_design(resolved)
+    from app.printers.ticket.options import load_ticket_options
+
+    opts = load_ticket_options()
+    use_logo = bool(design.uses_logo and opts.show_logo and shop.logo_path)
+    if design.category == "kitchen":
         result = _send_content(
             "",
             printer_name,
             logo_path=None,
             paper=paper,
             sale=sale,
-            layout=TICKET_LAYOUT_KITCHEN,
+            layout=resolved,
+            design_id=resolved,
+            role="kitchen",
         )
     else:
-        content = render_ticket_text(sale, shop, paper)
+        content = render_ticket_text(
+            sale, shop, paper, design_id=resolved, role="client"
+        )
         result = _send_content(
-            content, printer_name, logo_path=shop.logo_path, paper=paper
+            content,
+            printer_name,
+            logo_path=shop.logo_path if use_logo else None,
+            paper=paper,
+            sale=sale,
+            design_id=resolved,
+            role="client",
         )
     result.file_path = path
     return result
+
+
+def print_design_test(
+    design_id: str,
+    *,
+    paper: Optional[str] = None,
+    printer_name: Optional[str] = None,
+) -> PrintResult:
+    """Imprime un ticket de test avec le design choisi (données fictives)."""
+    from types import SimpleNamespace
+
+    from app.printers.ticket.data import sample_ticket_data
+    from app.printers.ticket.registry import get_design
+
+    paper = paper or settings_service.get_setting("ticket_format", "80mm")
+    if paper not in ("58mm", "80mm"):
+        paper = "80mm"
+    data = sample_ticket_data()
+    design = get_design(design_id)
+    # Transforme TicketData en objet sale-like pour print_ticket.
+    sale = SimpleNamespace(
+        ticket_number=data.ticket_number,
+        date=data.moment,
+        cashier_name=data.cashier_name,
+        client_id=None,
+        client_name="",
+        items=[
+            SimpleNamespace(
+                product_name=it.name,
+                quantity=it.quantity,
+                unit_price=it.unit_price,
+                line_total=it.line_total,
+            )
+            for it in data.items
+        ],
+        subtotal=data.subtotal,
+        discount=data.discount,
+        total=data.total,
+        amount_received=data.amount_received,
+        change_due=data.change_due,
+        payments=[
+            SimpleNamespace(method=p.method, amount=p.amount) for p in data.payments
+        ],
+    )
+    shop = SimpleNamespace(
+        name=data.shop_name,
+        address=data.shop_address,
+        phone=data.shop_phone,
+        currency=data.currency,
+        logo_path="",
+        ticket_footer=data.footer,
+    )
+    role = "kitchen" if design.category == "kitchen" else "client"
+    return print_ticket(
+        sale,
+        shop=shop,
+        paper=paper,
+        printer_name=printer_name,
+        design_id=design.id,
+        role=role,
+    )
 
 
 def _send_content(
@@ -832,15 +736,21 @@ def _send_content(
     paper: str = "80mm",
     sale=None,
     layout: Optional[str] = None,
+    design_id: Optional[str] = None,
+    role: str = "client",
 ) -> PrintResult:
     """Envoie un contenu déjà formaté à l'imprimante selon les réglages courants."""
+    from app.printers.ticket.data import TicketData
+    from app.printers.ticket.registry import get_design, resolve_design_id
+    from app.printers.ticket.renderer import render_ticket
+    from app.printers.ticket.styled import lines_to_escpos_bytes
+
     printer_name = (
         printer_name
         if printer_name is not None
         else settings_service.get_setting("printer_name", "")
     ).strip()
 
-    # Réglages d'avance papier / coupe (configurables dans les Paramètres).
     try:
         feed_lines = int(
             settings_service.get_setting("ticket_feed_lines", str(DEFAULT_FEED_LINES))
@@ -851,15 +761,23 @@ def _send_content(
     if cut_mode not in ("full", "partial", "none"):
         cut_mode = DEFAULT_CUT_MODE
 
-    # Bon serveur : moins d'avance papier (contenu déjà très court).
-    if layout == TICKET_LAYOUT_KITCHEN and sale is not None:
-        feed_lines = min(feed_lines, 2)
-        raw = _build_escpos_serveur_bytes(
-            sale,
+    resolved = resolve_design_id(design_id or layout, role=role)
+    design = get_design(resolved)
+    if design.preferred_feed is not None:
+        feed_lines = min(feed_lines, design.preferred_feed)
+
+    if sale is not None:
+        data = TicketData.from_sale(sale)
+        styled = render_ticket(
+            data, design_id=resolved, role=role, paper=paper
+        )
+        raw = lines_to_escpos_bytes(
+            styled,
             feed_lines=feed_lines,
             cut_mode=cut_mode,
-            logo_path=None,
+            logo_path=logo_path if design.uses_logo else None,
             paper=paper,
+            include_logo=bool(design.uses_logo and logo_path),
         )
     else:
         raw = _build_escpos_bytes(
