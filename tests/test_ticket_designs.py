@@ -102,10 +102,11 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
                 "minimal",
                 "bold",
                 "terminal",
+                "facture",
             },
         )
         self.assertEqual(kitchen_ids, {"serveur", "cuisine", "cuisine_compact"})
-        self.assertEqual(len(list_designs()), 11)
+        self.assertEqual(len(list_designs()), 12)
 
     def test_each_design_renders_58_and_80(self) -> None:
         data = sample_ticket_data()
@@ -266,6 +267,52 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
                     line.rstrip().endswith("FCFA") or "FCFA" in line[-20:],
                     msg=repr(line),
                 )
+
+    def test_facture_tableau_structure(self) -> None:
+        data = sample_ticket_data()
+        for paper in ("58mm", "80mm"):
+            text = render_ticket_text_from_data(
+                data, design_id="facture", paper=paper
+            )
+            self.assertTrue("Designation" in text or "Article" in text)
+            self.assertTrue("Qte" in text or "Qt" in text)
+            self.assertIn("Prix", text)
+            self.assertTrue("Montant" in text or "Total" in text)
+            self.assertIn("TOTAL", text)
+            self.assertIn("N° Facture", text)
+            self.assertIn("Arrêtée la présente facture", text)
+            # Bordures tableau.
+            self.assertIn("+", text)
+            self.assertIn("|", text)
+            # Montant en lettres (1300).
+            self.assertIn("mille", text.lower())
+            width = 32 if paper == "58mm" else 48
+            for line in text.splitlines():
+                self.assertLessEqual(len(line), width + 2, msg=repr(line))
+
+    def test_kitchen_enable_disable_setting(self) -> None:
+        from app.printers.ticket.options import (
+            is_kitchen_ticket_enabled,
+            set_kitchen_ticket_enabled,
+        )
+
+        set_kitchen_ticket_enabled(True)
+        self.assertTrue(is_kitchen_ticket_enabled())
+        set_kitchen_ticket_enabled(False)
+        self.assertFalse(is_kitchen_ticket_enabled())
+        set_kitchen_ticket_enabled(True)
+
+
+class AmountWordsTestCase(unittest.TestCase):
+    def test_basic_amounts(self) -> None:
+        from app.utils.amount_words import amount_in_words, int_to_french_words
+
+        self.assertEqual(int_to_french_words(0), "zéro")
+        self.assertEqual(int_to_french_words(21), "vingt et un")
+        self.assertEqual(int_to_french_words(80), "quatre-vingts")
+        self.assertIn("mille", int_to_french_words(1300))
+        self.assertIn("F CFA", amount_in_words(78000, "FCFA"))
+        self.assertIn("soixante", amount_in_words(78, "FCFA").lower())
 
 
 if __name__ == "__main__":

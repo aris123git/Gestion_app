@@ -14,6 +14,8 @@ DENSITIES = (DENSITY_COMPACT, DENSITY_NORMAL, DENSITY_AIRY)
 HEADER_ALIGN_LEFT = "left"
 HEADER_ALIGN_CENTER = "center"
 
+SETTING_KITCHEN_ENABLED = "ticket_kitchen_enabled"
+
 
 @dataclass
 class TicketOptions:
@@ -117,3 +119,13 @@ def save_ticket_options(opts: TicketOptions) -> None:
     put("ticket_hide_zero_change", opts.hide_zero_change)
     put("ticket_show_payment", opts.show_payment)
     put("ticket_show_footer", opts.show_footer)
+
+
+def is_kitchen_ticket_enabled() -> bool:
+    """Indique si le bon serveur / cuisine est activé dans les paramètres."""
+    raw = settings_service.get_setting(SETTING_KITCHEN_ENABLED, "1")
+    return str(raw).strip() not in ("0", "false", "False", "")
+
+
+def set_kitchen_ticket_enabled(enabled: bool) -> None:
+    settings_service.set_setting(SETTING_KITCHEN_ENABLED, "1" if enabled else "0")

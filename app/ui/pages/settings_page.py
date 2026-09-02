@@ -303,6 +303,20 @@ class SettingsPage(QWidget):
         # --- Bon serveur / cuisine ---
         kitchen_box = QGroupBox("Bon serveur / cuisine")
         kitchen_layout = QVBoxLayout(kitchen_box)
+        self.kitchen_enabled = QCheckBox(
+            "Activer le bon serveur / cuisine (impression séparée)"
+        )
+        self.kitchen_enabled.setChecked(True)
+        self.kitchen_enabled.setToolTip(
+            "Décochez pour masquer le bouton « Bon serveur » après une vente "
+            "et désactiver l'impression cuisine."
+        )
+        self.kitchen_enabled.toggled.connect(self._on_kitchen_enabled_toggled)
+        kitchen_layout.addWidget(self.kitchen_enabled)
+
+        self._kitchen_cards_wrap = QWidget()
+        kitchen_cards_layout = QVBoxLayout(self._kitchen_cards_wrap)
+        kitchen_cards_layout.setContentsMargins(0, 0, 0, 0)
         self._kitchen_cards: dict[str, TicketDesignCard] = {}
         self._kitchen_group = QButtonGroup(self)
         self._kitchen_group.setExclusive(True)
@@ -314,7 +328,8 @@ class SettingsPage(QWidget):
             self._kitchen_cards[design.id] = card
             self._kitchen_group.addButton(card.radio)
             kitchen_grid.addWidget(card, i // 3, i % 3)
-        kitchen_layout.addLayout(kitchen_grid)
+        kitchen_cards_layout.addLayout(kitchen_grid)
+        kitchen_layout.addWidget(self._kitchen_cards_wrap)
         body_layout.addWidget(kitchen_box)
 
         # --- Densité + personnalisation ---
@@ -396,6 +411,7 @@ class SettingsPage(QWidget):
         test_btn.clicked.connect(self._print_design_test)
         test_kitchen = QPushButton("Tester bon serveur / cuisine")
         test_kitchen.clicked.connect(self._print_kitchen_design_test)
+        self._test_kitchen_btn = test_kitchen
         actions.addWidget(save)
         actions.addWidget(test_btn)
         actions.addWidget(test_kitchen)
@@ -406,6 +422,11 @@ class SettingsPage(QWidget):
         scroll.setWidget(body)
         outer.addWidget(scroll)
         return wrap
+
+    def _on_kitchen_enabled_toggled(self, enabled: bool) -> None:
+        self._kitchen_cards_wrap.setEnabled(enabled)
+        if hasattr(self, "_test_kitchen_btn"):
+            self._test_kitchen_btn.setEnabled(enabled)
 
     def _on_client_design_selected(self, design_id: str) -> None:
         for did, card in self._client_cards.items():
@@ -428,7 +449,11 @@ class SettingsPage(QWidget):
         return "serveur"
 
     def _save_designs(self, silent: bool = False) -> None:
-        from app.printers.ticket.options import TicketOptions, save_ticket_options
+        from app.printers.ticket.options import (
+            TicketOptions,
+            save_ticket_options,
+            set_kitchen_ticket_enabled,
+        )
 
         client_id = self._selected_client_design()
         kitchen_id = self._selected_kitchen_design()
@@ -436,6 +461,7 @@ class SettingsPage(QWidget):
         settings_service.set_setting("ticket_kitchen_design", kitchen_id)
         # Compatibilité ancien paramètre.
         settings_service.set_setting("ticket_layout", client_id)
+        set_kitchen_ticket_enabled(self.kitchen_enabled.isChecked())
 
         opts = TicketOptions(
             density=self.ticket_density.currentData() or "normal",
@@ -479,6 +505,11 @@ class SettingsPage(QWidget):
             )
 
     def _print_kitchen_design_test(self) -> None:
+        from app.printers.ticket.options import is_kitchen_ticket_enabled
+
+        if not is_kitchen_ticket_enabled() and not self.kitchen_enabled.isChecked():
+            warn(self, "Le bon serveur / cuisine est désactivé.", "Test cuisine")
+            return
         self._save_designs(silent=True)
         from app.printers import thermal_printer
 
@@ -494,7 +525,10 @@ class SettingsPage(QWidget):
             )
 
     def _load_designs_ui(self) -> None:
-        from app.printers.ticket.options import load_ticket_options
+        from app.printers.ticket.options import (
+            is_kitchen_ticket_enabled,
+            load_ticket_options,
+        )
         from app.printers.ticket.registry import (
             resolve_client_design_id,
             resolve_kitchen_design_id,
@@ -506,6 +540,12 @@ class SettingsPage(QWidget):
             card.set_checked(did == client_id)
         for did, card in self._kitchen_cards.items():
             card.set_checked(did == kitchen_id)
+
+        enabled = is_kitchen_ticket_enabled()
+        self.kitchen_enabled.blockSignals(True)
+        self.kitchen_enabled.setChecked(enabled)
+        self.kitchen_enabled.blockSignals(False)
+        self._on_kitchen_enabled_toggled(enabled)
 
         opts = load_ticket_options()
         dens_idx = self.ticket_density.findData(opts.density)
