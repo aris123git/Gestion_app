@@ -40,6 +40,9 @@ class TicketOptions:
     hide_zero_change: bool = True
     show_payment: bool = True
     show_footer: bool = True
+    # Gras ESC/POS pour montants (facture tableau / lecture rapide).
+    bold_prices: bool = True
+    bold_total: bool = True
 
     @property
     def blank_lines(self) -> int:
@@ -90,6 +93,8 @@ def load_ticket_options() -> TicketOptions:
         hide_zero_change=_flag("ticket_hide_zero_change", True),
         show_payment=_flag("ticket_show_payment", True),
         show_footer=_flag("ticket_show_footer", True),
+        bold_prices=_flag("ticket_bold_prices", True),
+        bold_total=_flag("ticket_bold_total", True),
     )
 
 
@@ -119,6 +124,8 @@ def save_ticket_options(opts: TicketOptions) -> None:
     put("ticket_hide_zero_change", opts.hide_zero_change)
     put("ticket_show_payment", opts.show_payment)
     put("ticket_show_footer", opts.show_footer)
+    put("ticket_bold_prices", opts.bold_prices)
+    put("ticket_bold_total", opts.bold_total)
 
 
 def is_kitchen_ticket_enabled() -> bool:

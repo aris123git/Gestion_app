@@ -281,14 +281,39 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
             self.assertIn("TOTAL", text)
             self.assertIn("N° Facture", text)
             self.assertIn("Arrêtée la présente facture", text)
-            # Bordures tableau.
-            self.assertIn("+", text)
-            self.assertIn("|", text)
+            # Traits continus / coins arrondis.
+            self.assertTrue("┌" in text or "╭" in text)
+            self.assertIn("│", text)
+            self.assertIn("╭", text)
+            self.assertIn("╰", text)
             # Montant en lettres (1300).
             self.assertIn("mille", text.lower())
             width = 32 if paper == "58mm" else 48
             for line in text.splitlines():
                 self.assertLessEqual(len(line), width + 2, msg=repr(line))
+
+    def test_facture_bold_amount_lines(self) -> None:
+        from app.printers.ticket.renderer import render_ticket
+        from app.printers.ticket.options import TicketOptions
+
+        data = sample_ticket_data()
+        opts = TicketOptions(bold_prices=True, bold_total=True)
+        styled = render_ticket(
+            data, design_id="facture", options=opts, paper="80mm"
+        )
+        bold_texts = [s.text for s in styled if s.bold]
+        self.assertTrue(any("TOTAL" in t for t in bold_texts))
+        self.assertTrue(any("Café" in t or "Croissant" in t for t in bold_texts))
+        # Désactivé : lignes articles non gras (hors en-tête).
+        opts2 = TicketOptions(bold_prices=False, bold_total=False, show_footer=False)
+        styled2 = render_ticket(
+            data, design_id="facture", options=opts2, paper="80mm"
+        )
+        item_lines = [
+            s for s in styled2 if "Café" in s.text or "Croissant" in s.text
+        ]
+        self.assertTrue(item_lines)
+        self.assertTrue(all(not s.bold for s in item_lines))
 
     def test_kitchen_enable_disable_setting(self) -> None:
         from app.printers.ticket.options import (

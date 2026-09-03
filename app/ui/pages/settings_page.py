@@ -367,6 +367,16 @@ class SettingsPage(QWidget):
         self.opt_hide_zero_change = QCheckBox("Masquer monnaie à 0")
         self.opt_show_payment = QCheckBox("Mode de paiement")
         self.opt_show_footer = QCheckBox("Message de fin")
+        self.opt_bold_prices = QCheckBox(
+            "Prix des produits en gras (impression thermique)"
+        )
+        self.opt_bold_total = QCheckBox("Total en gras (impression thermique)")
+        self.opt_bold_prices.setToolTip(
+            "Appliqué notamment au design Facture tableau (lignes d'articles)."
+        )
+        self.opt_bold_total.setToolTip(
+            "Met en gras la ligne TOTAL et le montant en lettres."
+        )
 
         opts_form.addRow("Densité", self.ticket_density)
         opts_form.addRow("Alignement en-tête", self.header_align)
@@ -397,6 +407,8 @@ class SettingsPage(QWidget):
             self.opt_hide_zero_change,
             self.opt_show_payment,
             self.opt_show_footer,
+            self.opt_bold_prices,
+            self.opt_bold_total,
         ):
             opts_form.addRow("", w)
 
@@ -483,6 +495,8 @@ class SettingsPage(QWidget):
             hide_zero_change=self.opt_hide_zero_change.isChecked(),
             show_payment=self.opt_show_payment.isChecked(),
             show_footer=self.opt_show_footer.isChecked(),
+            bold_prices=self.opt_bold_prices.isChecked(),
+            bold_total=self.opt_bold_total.isChecked(),
         )
         save_ticket_options(opts)
         self.state.notify_data_changed()
@@ -571,6 +585,8 @@ class SettingsPage(QWidget):
         self.opt_hide_zero_change.setChecked(opts.hide_zero_change)
         self.opt_show_payment.setChecked(opts.show_payment)
         self.opt_show_footer.setChecked(opts.show_footer)
+        self.opt_bold_prices.setChecked(opts.bold_prices)
+        self.opt_bold_total.setChecked(opts.bold_total)
 
     def _purge_printer_queue(self) -> None:
         self._save_appearance(silent=True)

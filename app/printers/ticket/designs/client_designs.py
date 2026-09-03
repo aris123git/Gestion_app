@@ -22,12 +22,15 @@ from app.printers.ticket.options import TicketOptions
 from app.printers.ticket.styled import StyledLine
 from app.printers.ticket.table_ascii import (
     frame_text,
+    table_bottom,
     table_column_widths,
     table_data_row,
     table_header_row,
-    table_rule,
+    table_mid,
+    table_top,
+    table_total_bottom,
     table_total_row,
-    table_total_rule,
+    table_total_top,
 )
 from app.utils.amount_words import amount_in_words
 from app.utils.helpers import format_quantity
@@ -330,19 +333,19 @@ class TerminalDesign(TicketDesign):
 
 
 class FactureTableauDesign(TicketDesign):
-    """Facture structurée : grille Designation / Qte / Prix / Montant.
+    """Facture structurée proche des tickets commerciaux type HARD SARL.
 
-    Inspirée des factures commerciales (en-tête commerce, métadonnées,
-    tableau bordé, total encadré, montant en lettres) — adaptée thermique.
+    Tableau à traits continus, pastille arrondie pour le montant en lettres,
+    prix / total en gras ESC/POS (réglable).
     """
 
     id = "facture"
     label = "Facture tableau"
-    description = "Grille Designation / Qte / Prix / Montant + total en lettres."
+    description = "Grille fluide Designation / Qte / Prix / Montant + total en lettres."
 
     def render(self, data: TicketData, opts: TicketOptions, width: int) -> list[StyledLine]:
         lines: list[StyledLine] = []
-        # En-tête : nom mis en avant, coordonnées à droite si possible.
+        # En-tête : nom gras, coordonnées à droite.
         name = (data.shop_name or "Commerce").strip().upper()
         phone = (data.shop_phone or "").strip()
         address = (data.shop_address or "").strip()
@@ -360,7 +363,7 @@ class FactureTableauDesign(TicketDesign):
             lines.append(L(f"Tel: {phone}"))
         lines.extend(opts.gap())
 
-        # Mode paiement + n° facture + client.
+        # COMPTANT / N° Facture / Client (comme le ticket papier).
         pay_label = ""
         if opts.show_payment and data.payments:
             pay_label = (data.payments[0].method or "").strip().upper() or "COMPTANT"
@@ -370,18 +373,23 @@ class FactureTableauDesign(TicketDesign):
             lines.append(L(pay_label, bold=True))
         m = meta_bits(data, opts)
         if m["number"]:
-            lines.append(L(f"N° Facture  {m['number']}", bold=True, align="center"))
+            # Espacement type « N° Facture/ 260 831 … »
+            num = m["number"]
+            spaced = " ".join(
+                [num[i : i + 3] for i in range(0, len(num), 3)]
+            ) if num.isdigit() and len(num) >= 6 else num
+            lines.append(L(f"N° Facture/ {spaced}", bold=True, align="center"))
         client = (data.client_name or "").strip()
         if data.client_id or client:
-            lines.append(L(f"Client : {client or '—'}"))
+            lines.append(L(f"Client  {client or ''}"))
         else:
-            lines.append(L("Client :"))
+            lines.append(L("Client"))
         lines.extend(opts.gap()[:1])
 
-        # Tableau articles.
         cols = table_column_widths(width)
-        # Sur 58 mm : montants sans espaces pour tenir dans les colonnes.
         compact_amt = width <= 32
+        bold_prices = bool(getattr(opts, "bold_prices", True))
+        bold_total = bool(getattr(opts, "bold_total", True))
 
         def cell_amt(value: float) -> str:
             if compact_amt:
@@ -391,61 +399,70 @@ class FactureTableauDesign(TicketDesign):
                     return "0"
             return money(value, data.currency, with_currency=False)
 
-        lines.append(L(table_rule(width, cols)))
+        # Tableau à traits continus.
+        lines.append(L(table_top(width, cols)))
         lines.append(L(table_header_row(width, cols), bold=True))
-        lines.append(L(table_rule(width, cols)))
+        lines.append(L(table_mid(width, cols)))
         for item in data.items:
             des = (item.name or "").strip()
             q = format_quantity(item.quantity)
             prix = cell_amt(item.unit_price)
             mont = cell_amt(item.line_total)
-            lines.append(L(table_data_row(width, cols, des, q, prix, mont)))
-        lines.append(L(table_rule(width, cols)))
-
+            lines.append(
+                L(
+                    table_data_row(width, cols, des, q, prix, mont),
+                    bold=bold_prices,
+                )
+            )
         if opts.show_discount and data.has_discount:
+            lines.append(L(table_mid(width, cols)))
             lines.append(
                 L(
                     table_data_row(
-                        width,
-                        cols,
-                        "Remise",
-                        "",
-                        "",
-                        cell_amt(data.discount),
-                    )
+                        width, cols, "Remise", "", "", cell_amt(data.discount)
+                    ),
+                    bold=bold_prices,
                 )
             )
-            lines.append(L(table_rule(width, cols)))
 
         if opts.show_total:
-            total_txt = cell_amt(data.total)
-            lines.append(L(table_total_row(width, cols, total_txt), bold=True))
-            lines.append(L(table_total_rule(width, cols)))
+            lines.append(L(table_total_top(width, cols)))
+            lines.append(
+                L(
+                    table_total_row(width, cols, cell_amt(data.total)),
+                    bold=bold_total,
+                )
+            )
+            lines.append(L(table_total_bottom(width, cols)))
+        else:
+            lines.append(L(table_bottom(width, cols)))
 
         lines.extend(opts.gap())
-        # Montant en lettres.
         lines.append(L("Arrêtée la présente facture à la somme de :"))
         words = amount_in_words(data.total, data.currency)
-        for framed in frame_text(words, width):
-            lines.append(L(framed, bold=True))
+        for framed in frame_text(words, width, rounded=True):
+            lines.append(L(framed, bold=bold_total))
 
         lines.extend(opts.gap())
-        # Pied : caissier · date · heure
         footer_bits = []
         if m["cashier"]:
             footer_bits.append(m["cashier"].upper())
         if m["date"]:
             footer_bits.append(m["date"])
         if m["time"]:
-            footer_bits.append(m["time"])
+            # Heure type HH:MM:SS si possible
+            try:
+                footer_bits.append(data.moment.strftime("%H:%M:%S"))
+            except Exception:
+                footer_bits.append(m["time"])
         if footer_bits:
-            if len(footer_bits) == 3:
-                left, mid, right = footer_bits
-                # Répartir sur la largeur.
+            if len(footer_bits) >= 3:
+                left, mid, right = footer_bits[0], footer_bits[1], footer_bits[2]
                 mid_start = (width - len(mid)) // 2
                 line = [" "] * width
-                for i, ch in enumerate(left[: width // 3]):
-                    line[i] = ch
+                for i, ch in enumerate(left[: max(1, width // 3)]):
+                    if i < width:
+                        line[i] = ch
                 for i, ch in enumerate(mid):
                     pos = mid_start + i
                     if 0 <= pos < width:
