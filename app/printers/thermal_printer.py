@@ -220,6 +220,65 @@ def default_printer() -> str:
     return ""
 
 
+def is_device_path(name: str) -> bool:
+    """True si ``name`` ressemble à un chemin de périphérique (/dev/…, \\\\…)."""
+    name = (name or "").strip()
+    return bool(name) and ("/" in name or name.startswith("\\"))
+
+
+def printer_is_available(name: str, available: Optional[list[str]] = None) -> bool:
+    """Indique si l'imprimante nommée (ou le périphérique) est utilisable."""
+    name = (name or "").strip()
+    if not name:
+        return True  # = imprimante par défaut du système
+    if is_device_path(name):
+        return Path(name).exists()
+    known = available if available is not None else list_printers()
+    return name in known
+
+
+def resolve_printer_name(
+    preferred: Optional[str] = None,
+    *,
+    clear_invalid: bool = True,
+) -> tuple[str, str]:
+    """Résout une cible d'impression valide.
+
+    Retourne ``(nom_resolu, avertissement)``.
+    - ``nom_resolu`` vide = imprimante par défaut du système ;
+    - si le réglage pointe vers une imprimante absente, on bascule sur
+      le défaut et on efface le réglage invalide (si ``clear_invalid``).
+    """
+    if preferred is None:
+        preferred = settings_service.get_setting("printer_name", "")
+    preferred = (preferred or "").strip()
+    if not preferred:
+        return "", ""
+
+    available = list_printers()
+    if printer_is_available(preferred, available):
+        return preferred, ""
+
+    # Cible obsolète / débranchée / mal orthographiée.
+    if clear_invalid:
+        stored = settings_service.get_setting("printer_name", "").strip()
+        if stored == preferred:
+            try:
+                settings_service.set_setting("printer_name", "")
+            except Exception:
+                logger.debug(
+                    "Impossible d'effacer printer_name invalide.", exc_info=True
+                )
+
+    warning = (
+        f"Imprimante « {preferred} » introuvable. "
+        "Passage sur l'imprimante par défaut du système. "
+        "Choisissez une imprimante valide dans Paramètres → Apparence & Ticket."
+    )
+    logger.warning(warning)
+    return "", warning
+
+
 # Largeur d'impression (points) selon le papier, pour redimensionner le logo.
 _LOGO_WIDTH_DOTS = {"58mm": 384, "80mm": 576}
 
@@ -342,7 +401,13 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
 
     target = printer_name or win32print.GetDefaultPrinter()
     if not target:
-        return PrintResult(False, Path(), "Aucune imprimante Windows configurée.")
+        return PrintResult(
+            False,
+            Path(),
+            "Aucune imprimante Windows configurée. "
+            "Installez une imprimante ou choisissez-en une dans "
+            "Paramètres → Apparence & Ticket.",
+        )
 
     # Pré-contrôle : ne pas alimenter la file si le périphérique est indisponible.
     preflight = _windows_printer_preflight(target)
@@ -537,10 +602,15 @@ def purge_printer_queue(printer_name: Optional[str] = None) -> PrintResult:
     except Exception as exc:
         return PrintResult(False, Path(), f"Module d'impression Windows absent : {exc}")
 
-    name = (printer_name or "").strip() or settings_service.get_setting("printer_name", "")
+    name, warning = resolve_printer_name(
+        printer_name if printer_name is not None else None
+    )
     target = name or win32print.GetDefaultPrinter()
     if not target:
-        return PrintResult(False, Path(), "Aucune imprimante à purger.")
+        msg = "Aucune imprimante à purger."
+        if warning:
+            msg = f"{warning}\n{msg}"
+        return PrintResult(False, Path(), msg)
     try:
         handle = win32print.OpenPrinter(target)
         try:
@@ -561,10 +631,13 @@ def purge_printer_queue(printer_name: Optional[str] = None) -> PrintResult:
             win32print.ClosePrinter(handle)
     except Exception as exc:
         return PrintResult(False, Path(), f"Impossible de purger « {target} » : {exc}")
+    message = f"File d'attente de « {target} » vidée ({cancelled} job(s) annulé(s))."
+    if warning:
+        message = f"{warning}\n{message}"
     return PrintResult(
         True,
         Path(),
-        f"File d'attente de « {target} » vidée ({cancelled} job(s) annulé(s)).",
+        message,
     )
 
 
@@ -750,6 +823,7 @@ def _send_content(
         if printer_name is not None
         else settings_service.get_setting("printer_name", "")
     ).strip()
+    printer_name, printer_warning = resolve_printer_name(printer_name)
 
     try:
         feed_lines = int(
@@ -793,8 +867,18 @@ def _send_content(
     else:
         result = _print_posix(raw, printer_name)
 
+    if printer_warning:
+        result.message = (
+            f"{printer_warning}\n{result.message}".strip()
+            if result.message
+            else printer_warning
+        )
+
     if not result.printed and not result.message:
-        result.message = "Aucune imprimante configurée."
+        result.message = (
+            "Aucune imprimante configurée. "
+            "Paramètres → Apparence & Ticket → Imprimante."
+        )
     return result
 
 
