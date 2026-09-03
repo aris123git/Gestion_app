@@ -144,6 +144,7 @@ class TicketDialog(QDialog):
             self.print_kitchen_button.setVisible(False)
             self.setWindowTitle(f"Facture {self.sale.ticket_number}")
         else:
+            from app.printers.ticket.options import is_kitchen_ticket_enabled
             from app.printers.ticket.registry import (
                 get_design,
                 resolve_client_design_id,
@@ -156,7 +157,7 @@ class TicketDialog(QDialog):
             )
             self.print_button.setText("Imprimer le ticket")
             self.save_button.setText("Enregistrer le ticket")
-            self.print_kitchen_button.setVisible(True)
+            self.print_kitchen_button.setVisible(is_kitchen_ticket_enabled())
             self.setWindowTitle(f"Ticket {self.sale.ticket_number}")
 
     def _default_save_path(self) -> Path:
@@ -266,8 +267,18 @@ class TicketDialog(QDialog):
             )
 
     def _print_kitchen(self) -> None:
+        from app.printers.ticket.options import is_kitchen_ticket_enabled
+
         paper = self._paper_value()
         if is_half_a4(paper):
+            return
+        if not is_kitchen_ticket_enabled():
+            warn(
+                self,
+                "Le bon serveur / cuisine est désactivé dans "
+                "Paramètres → Designs des tickets.",
+                "Bon serveur",
+            )
             return
         self.print_kitchen_button.setEnabled(False)
         self.status.setText("Envoi du bon serveur / cuisine…")

@@ -5,6 +5,10 @@ Architecture : TicketData → TicketDesign → rendu (texte / ESC/POS) → Therm
 
 from app.printers.ticket.data import TicketData, sample_ticket_data
 from app.printers.ticket.options import TicketOptions, load_ticket_options
+from app.printers.ticket.options import (  # noqa: F401 — API publique
+    is_kitchen_ticket_enabled,
+    set_kitchen_ticket_enabled,
+)
 from app.printers.ticket.registry import (
     CLIENT_DESIGNS,
     KITCHEN_DESIGNS,
@@ -24,6 +28,8 @@ __all__ = [
     "TicketOptions",
     "sample_ticket_data",
     "load_ticket_options",
+    "is_kitchen_ticket_enabled",
+    "set_kitchen_ticket_enabled",
     "CLIENT_DESIGNS",
     "KITCHEN_DESIGNS",
     "get_design",

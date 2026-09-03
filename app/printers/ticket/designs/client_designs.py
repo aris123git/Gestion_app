@@ -20,6 +20,17 @@ from app.printers.ticket.designs.base import (
 from app.printers.ticket.layout import fit_left_right, row
 from app.printers.ticket.options import TicketOptions
 from app.printers.ticket.styled import StyledLine
+from app.printers.ticket.table_ascii import (
+    frame_text,
+    table_column_widths,
+    table_data_row,
+    table_header_row,
+    table_rule,
+    table_total_row,
+    table_total_rule,
+)
+from app.utils.amount_words import amount_in_words
+from app.utils.helpers import format_quantity
 
 
 class ClassicDesign(TicketDesign):
@@ -318,6 +329,148 @@ class TerminalDesign(TicketDesign):
         return lines
 
 
+class FactureTableauDesign(TicketDesign):
+    """Facture structurée : grille Designation / Qte / Prix / Montant.
+
+    Inspirée des factures commerciales (en-tête commerce, métadonnées,
+    tableau bordé, total encadré, montant en lettres) — adaptée thermique.
+    """
+
+    id = "facture"
+    label = "Facture tableau"
+    description = "Grille Designation / Qte / Prix / Montant + total en lettres."
+
+    def render(self, data: TicketData, opts: TicketOptions, width: int) -> list[StyledLine]:
+        lines: list[StyledLine] = []
+        # En-tête : nom mis en avant, coordonnées à droite si possible.
+        name = (data.shop_name or "Commerce").strip().upper()
+        phone = (data.shop_phone or "").strip()
+        address = (data.shop_address or "").strip()
+        phone_on_name_line = False
+        if opts.show_shop_name and opts.show_phone and phone:
+            for piece in fit_left_right(name, f"Tel: {phone}", width):
+                lines.append(L(piece, bold=True))
+            phone_on_name_line = True
+        elif opts.show_shop_name:
+            lines.append(L(name, bold=True, double_height=True, align="center"))
+        if opts.show_address and address:
+            for piece in wrap_text_local(address, width):
+                lines.append(L(piece))
+        if opts.show_phone and phone and not phone_on_name_line:
+            lines.append(L(f"Tel: {phone}"))
+        lines.extend(opts.gap())
+
+        # Mode paiement + n° facture + client.
+        pay_label = ""
+        if opts.show_payment and data.payments:
+            pay_label = (data.payments[0].method or "").strip().upper() or "COMPTANT"
+        elif opts.show_payment:
+            pay_label = "COMPTANT"
+        if pay_label:
+            lines.append(L(pay_label, bold=True))
+        m = meta_bits(data, opts)
+        if m["number"]:
+            lines.append(L(f"N° Facture  {m['number']}", bold=True, align="center"))
+        client = (data.client_name or "").strip()
+        if data.client_id or client:
+            lines.append(L(f"Client : {client or '—'}"))
+        else:
+            lines.append(L("Client :"))
+        lines.extend(opts.gap()[:1])
+
+        # Tableau articles.
+        cols = table_column_widths(width)
+        # Sur 58 mm : montants sans espaces pour tenir dans les colonnes.
+        compact_amt = width <= 32
+
+        def cell_amt(value: float) -> str:
+            if compact_amt:
+                try:
+                    return f"{int(round(float(value)))}"
+                except (TypeError, ValueError):
+                    return "0"
+            return money(value, data.currency, with_currency=False)
+
+        lines.append(L(table_rule(width, cols)))
+        lines.append(L(table_header_row(width, cols), bold=True))
+        lines.append(L(table_rule(width, cols)))
+        for item in data.items:
+            des = (item.name or "").strip()
+            q = format_quantity(item.quantity)
+            prix = cell_amt(item.unit_price)
+            mont = cell_amt(item.line_total)
+            lines.append(L(table_data_row(width, cols, des, q, prix, mont)))
+        lines.append(L(table_rule(width, cols)))
+
+        if opts.show_discount and data.has_discount:
+            lines.append(
+                L(
+                    table_data_row(
+                        width,
+                        cols,
+                        "Remise",
+                        "",
+                        "",
+                        cell_amt(data.discount),
+                    )
+                )
+            )
+            lines.append(L(table_rule(width, cols)))
+
+        if opts.show_total:
+            total_txt = cell_amt(data.total)
+            lines.append(L(table_total_row(width, cols, total_txt), bold=True))
+            lines.append(L(table_total_rule(width, cols)))
+
+        lines.extend(opts.gap())
+        # Montant en lettres.
+        lines.append(L("Arrêtée la présente facture à la somme de :"))
+        words = amount_in_words(data.total, data.currency)
+        for framed in frame_text(words, width):
+            lines.append(L(framed, bold=True))
+
+        lines.extend(opts.gap())
+        # Pied : caissier · date · heure
+        footer_bits = []
+        if m["cashier"]:
+            footer_bits.append(m["cashier"].upper())
+        if m["date"]:
+            footer_bits.append(m["date"])
+        if m["time"]:
+            footer_bits.append(m["time"])
+        if footer_bits:
+            if len(footer_bits) == 3:
+                left, mid, right = footer_bits
+                # Répartir sur la largeur.
+                mid_start = (width - len(mid)) // 2
+                line = [" "] * width
+                for i, ch in enumerate(left[: width // 3]):
+                    line[i] = ch
+                for i, ch in enumerate(mid):
+                    pos = mid_start + i
+                    if 0 <= pos < width:
+                        line[pos] = ch
+                right_start = max(0, width - len(right))
+                for i, ch in enumerate(right):
+                    pos = right_start + i
+                    if 0 <= pos < width:
+                        line[pos] = ch
+                lines.append(L("".join(line)))
+            else:
+                lines.append(L("  ".join(footer_bits)))
+
+        if opts.show_footer and data.footer:
+            lines.extend(opts.gap()[:1])
+            lines.extend(footer_block(data, opts, width))
+        return lines
+
+
+def wrap_text_local(text: str, width: int) -> list[str]:
+    from app.printers.ticket.layout import wrap_text
+
+    return wrap_text(text, width)
+
+
 CLIENT_DESIGN_CLASSES = (
     ClassicDesign,
     ModernDesign,
@@ -327,4 +480,5 @@ CLIENT_DESIGN_CLASSES = (
     MinimalDesign,
     BoldDesign,
     TerminalDesign,
+    FactureTableauDesign,
 )
