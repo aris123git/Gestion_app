@@ -288,11 +288,20 @@ def print_half_a4_invoice(
         if printer_name is not None
         else settings_service.get_setting("printer_name", "")
     ).strip()
+    from app.printers.thermal_printer import resolve_printer_name
+
+    printer_name, printer_warning = resolve_printer_name(printer_name)
 
     if sys.platform.startswith("win"):
         result = _print_pdf_windows(pdf_path, printer_name)
     else:
         result = _print_pdf_posix(pdf_path, printer_name)
+    if printer_warning:
+        result.message = (
+            f"{printer_warning}\n{result.message}".strip()
+            if result.message
+            else printer_warning
+        )
     result.file_path = pdf_path
     return result
 

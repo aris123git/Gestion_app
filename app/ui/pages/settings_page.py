@@ -604,20 +604,51 @@ class SettingsPage(QWidget):
 
         if select is None:
             select = self._printer_value()
+        select = (select or "").strip()
+        available = thermal_printer.list_printers()
+        invalid_cleared = False
+        # Ne corriger que si la liste détectée est fiable (non vide) et que
+        # le nom n'y figure pas — sinon on conserve le réglage qui marchait.
+        if (
+            select
+            and available
+            and not thermal_printer.is_device_path(select)
+            and select not in available
+        ):
+            settings_service.set_setting("printer_name", "")
+            select = ""
+            invalid_cleared = True
+        elif select and thermal_printer.is_device_path(select) and not Path(select).exists():
+            settings_service.set_setting("printer_name", "")
+            select = ""
+            invalid_cleared = True
+
         self.printer.blockSignals(True)
         self.printer.clear()
         self.printer.addItem(DEFAULT_PRINTER_LABEL, "")
-        for name in thermal_printer.list_printers():
+        for name in available:
             self.printer.addItem(name, name)
         if select:
             index = self.printer.findData(select)
             if index >= 0:
                 self.printer.setCurrentIndex(index)
-            else:
+            elif thermal_printer.is_device_path(select):
+                # Chemin périphérique saisi manuellement encore valide.
                 self.printer.setEditText(select)
+            else:
+                self.printer.setCurrentIndex(0)
         else:
             self.printer.setCurrentIndex(0)
         self.printer.blockSignals(False)
+        if invalid_cleared and not getattr(self, "_printer_invalid_warned", False):
+            self._printer_invalid_warned = True
+            warn(
+                self,
+                "L'imprimante enregistrée n'existe plus sur ce poste.\n"
+                "Sélection : « (Imprimante par défaut) ».\n"
+                "Choisissez une imprimante valide dans la liste, puis Appliquer.",
+                "Imprimante introuvable",
+            )
 
     def _printer_value(self) -> str:
         """Valeur d'imprimante à enregistrer ('' = imprimante par défaut)."""
