@@ -607,8 +607,18 @@ class SettingsPage(QWidget):
         select = (select or "").strip()
         available = thermal_printer.list_printers()
         invalid_cleared = False
-        # Nom enregistré mais plus présent → revenir au défaut système.
-        if select and not thermal_printer.printer_is_available(select, available):
+        # Ne corriger que si la liste détectée est fiable (non vide) et que
+        # le nom n'y figure pas — sinon on conserve le réglage qui marchait.
+        if (
+            select
+            and available
+            and not thermal_printer.is_device_path(select)
+            and select not in available
+        ):
+            settings_service.set_setting("printer_name", "")
+            select = ""
+            invalid_cleared = True
+        elif select and thermal_printer.is_device_path(select) and not Path(select).exists():
             settings_service.set_setting("printer_name", "")
             select = ""
             invalid_cleared = True

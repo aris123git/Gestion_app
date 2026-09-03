@@ -227,13 +227,21 @@ def is_device_path(name: str) -> bool:
 
 
 def printer_is_available(name: str, available: Optional[list[str]] = None) -> bool:
-    """Indique si l'imprimante nommée (ou le périphérique) est utilisable."""
+    """Indique si l'imprimante nommée (ou le périphérique) est utilisable.
+
+    Si la détection système renvoie une liste vide, on considère le nom
+    comme encore utilisable (évite de casser un réglage qui fonctionnait
+    quand ``lpstat`` / l'énumération Windows échoue temporairement).
+    """
     name = (name or "").strip()
     if not name:
         return True  # = imprimante par défaut du système
     if is_device_path(name):
         return Path(name).exists()
     known = available if available is not None else list_printers()
+    if not known:
+        # Liste indisponible ≠ imprimante absente : on conserve le réglage.
+        return True
     return name in known
 
 
@@ -242,12 +250,12 @@ def resolve_printer_name(
     *,
     clear_invalid: bool = True,
 ) -> tuple[str, str]:
-    """Résout une cible d'impression valide.
+    """Résout une cible d'impression, sans casser un réglage encore valide.
 
     Retourne ``(nom_resolu, avertissement)``.
     - ``nom_resolu`` vide = imprimante par défaut du système ;
-    - si le réglage pointe vers une imprimante absente, on bascule sur
-      le défaut et on efface le réglage invalide (si ``clear_invalid``).
+    - on ne bascule / n'efface que si la liste détectée est non vide et
+      que le nom n'y figure pas (ou chemin périphérique inexistant).
     """
     if preferred is None:
         preferred = settings_service.get_setting("printer_name", "")
@@ -256,27 +264,55 @@ def resolve_printer_name(
         return "", ""
 
     available = list_printers()
-    if printer_is_available(preferred, available):
+
+    # Chemin périphérique : seul le système de fichiers tranche.
+    if is_device_path(preferred):
+        if Path(preferred).exists():
+            return preferred, ""
+        # Chemin mort : on garde le nom si clear_invalid=False, sinon défaut.
+        if not clear_invalid:
+            return preferred, (
+                f"Périphérique « {preferred} » introuvable. "
+                "Vérifiez le câble / le chemin dans Paramètres."
+            )
+        _clear_printer_setting_if_matches(preferred)
+        warning = (
+            f"Périphérique « {preferred} » introuvable. "
+            "Passage sur l'imprimante par défaut du système."
+        )
+        logger.warning(warning)
+        return "", warning
+
+    # Nom CUPS/Windows : ne juger que si on a réellement une liste.
+    if not available:
+        return preferred, ""
+    if preferred in available:
         return preferred, ""
 
-    # Cible obsolète / débranchée / mal orthographiée.
-    if clear_invalid:
-        stored = settings_service.get_setting("printer_name", "").strip()
-        if stored == preferred:
-            try:
-                settings_service.set_setting("printer_name", "")
-            except Exception:
-                logger.debug(
-                    "Impossible d'effacer printer_name invalide.", exc_info=True
-                )
+    if not clear_invalid:
+        return preferred, (
+            f"Imprimante « {preferred} » absente de la liste détectée. "
+            "Le nom est conservé ; vérifiez Paramètres → Apparence & Ticket."
+        )
 
+    _clear_printer_setting_if_matches(preferred)
     warning = (
-        f"Imprimante « {preferred} » introuvable. "
+        f"Imprimante « {preferred} » introuvable sur ce poste. "
         "Passage sur l'imprimante par défaut du système. "
         "Choisissez une imprimante valide dans Paramètres → Apparence & Ticket."
     )
     logger.warning(warning)
     return "", warning
+
+
+def _clear_printer_setting_if_matches(preferred: str) -> None:
+    stored = settings_service.get_setting("printer_name", "").strip()
+    if stored != preferred:
+        return
+    try:
+        settings_service.set_setting("printer_name", "")
+    except Exception:
+        logger.debug("Impossible d'effacer printer_name invalide.", exc_info=True)
 
 
 # Largeur d'impression (points) selon le papier, pour redimensionner le logo.

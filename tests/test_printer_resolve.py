@@ -42,6 +42,18 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
         self.assertEqual(name, "")
         self.assertIn("introuvable", warning.lower())
 
+    def test_empty_detection_list_keeps_working_name(self) -> None:
+        """Si la détection échoue (liste vide), on ne casse pas le réglage."""
+        with mock.patch.object(
+            thermal_printer, "list_printers", return_value=[]
+        ), mock.patch.object(
+            thermal_printer.settings_service, "set_setting"
+        ) as set_setting:
+            name, warning = thermal_printer.resolve_printer_name("EPSON_TM_T20")
+            set_setting.assert_not_called()
+        self.assertEqual(name, "EPSON_TM_T20")
+        self.assertEqual(warning, "")
+
     def test_device_path_missing_falls_back(self) -> None:
         missing = "/dev/usb/lp_does_not_exist_xyz"
         self.assertFalse(Path(missing).exists())
@@ -54,7 +66,7 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
                 missing, clear_invalid=False
             )
             set_setting.assert_not_called()
-        self.assertEqual(name, "")
+        self.assertEqual(name, missing)
         self.assertIn("introuvable", warning.lower())
 
     def test_is_device_path(self) -> None:
@@ -68,6 +80,8 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
         self.assertTrue(thermal_printer.printer_is_available("", known))
         self.assertTrue(thermal_printer.printer_is_available("A", known))
         self.assertFalse(thermal_printer.printer_is_available("Z", known))
+        # Liste vide = détection en panne → on ne déclare pas « absent ».
+        self.assertTrue(thermal_printer.printer_is_available("Z", []))
 
     def test_reads_setting_when_preferred_none(self) -> None:
         with mock.patch.object(
