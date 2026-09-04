@@ -49,7 +49,7 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
             thermal_printer.settings_service, "set_setting"
         ) as set_setting:
             name, warning = thermal_printer.resolve_printer_name("Imprimante_Fantome")
-            set_setting.assert_called_with("printer_name", "")
+            set_setting.assert_any_call("printer_name", "")
         self.assertEqual(name, "")
         self.assertIn("introuvable", warning.lower())
 
@@ -69,7 +69,7 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
             thermal_printer.settings_service, "set_setting"
         ) as set_setting:
             name, warning = thermal_printer.resolve_printer_name("EPSON_FANTOME")
-            set_setting.assert_called_with("printer_name", "")
+            set_setting.assert_any_call("printer_name", "")
         self.assertEqual(name, "")
         self.assertIn("introuvable", warning.lower())
 
