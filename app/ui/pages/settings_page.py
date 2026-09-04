@@ -62,7 +62,7 @@ class SettingsPage(QWidget):
 
         tabs = QTabWidget()
         tabs.addTab(self._build_shop_tab(), "Commerce")
-        tabs.addTab(self._build_appearance_tab(), "Apparence & Ticket")
+        tabs.addTab(self._build_appearance_tab(), "Apparence du ticket")
         tabs.addTab(self._build_designs_tab(), "Designs des tickets")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")

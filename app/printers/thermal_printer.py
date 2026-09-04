@@ -292,14 +292,14 @@ def resolve_printer_name(
     if not clear_invalid:
         return preferred, (
             f"Imprimante « {preferred} » absente de la liste détectée. "
-            "Le nom est conservé ; vérifiez Paramètres → Apparence & Ticket."
+            "Le nom est conservé ; vérifiez Paramètres → Apparence du ticket."
         )
 
     _clear_printer_setting_if_matches(preferred)
     warning = (
         f"Imprimante « {preferred} » introuvable sur ce poste. "
         "Passage sur l'imprimante par défaut du système. "
-        "Choisissez une imprimante valide dans Paramètres → Apparence & Ticket."
+        "Choisissez une imprimante valide dans Paramètres → Apparence du ticket."
     )
     logger.warning(warning)
     return "", warning
@@ -427,7 +427,7 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
             Path(),
             "Aucune imprimante Windows configurée. "
             "Installez une imprimante ou choisissez-en une dans "
-            "Paramètres → Apparence & Ticket.",
+            "Paramètres → Apparence du ticket.",
         )
 
     # Pré-contrôle : ne pas alimenter la file si le périphérique est indisponible.
@@ -907,7 +907,7 @@ def _send_content(
     if not result.printed and not result.message:
         result.message = (
             "Aucune imprimante configurée. "
-            "Paramètres → Apparence & Ticket → Imprimante."
+            "Paramètres → Apparence du ticket → Imprimante."
         )
     return result
 
@@ -943,7 +943,7 @@ def print_encoding_test_page(printer_name: Optional[str] = None) -> PrintResult:
     """Page de test des accents français (avant une vraie facture).
 
     Permet de vérifier que le codepage du profil est correct : si les accents
-    sortent en chinois / symboles, changer le profil dans Apparence & Ticket.
+    sortent en chinois / symboles, changer le profil dans Apparence du ticket.
     """
     from app.printers.escpos_encoder import ACCENT_TEST_SAMPLE
     from app.printers.printer_profile import resolve_printer_profile
