@@ -226,12 +226,158 @@ def is_device_path(name: str) -> bool:
     return bool(name) and ("/" in name or name.startswith("\\"))
 
 
+def match_printer_in_list(name: str, available: list[str]) -> str:
+    """Retourne le nom canonique dans ``available`` (égalité exacte puis insensible à la casse)."""
+    name = (name or "").strip()
+    if not name or not available:
+        return ""
+    if name in available:
+        return name
+    lower = name.lower()
+    for candidate in available:
+        if candidate.lower() == lower:
+            return candidate
+    return ""
+
+
+def probe_printer_exists(name: str, timeout_s: float = 2.0) -> Optional[bool]:
+    """Sonde si une file / un périphérique existe vraiment.
+
+    Retourne :
+    - ``True`` : l'imprimante (ou le chemin) est joignable ;
+    - ``False`` : absente de façon certaine ;
+    - ``None`` : indéterminé (outil manquant, timeout, erreur floue).
+
+    Sur Windows, ``OpenPrinter`` est limité dans le temps pour éviter de
+    rester bloqué sur une imprimante réseau fantôme.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    if is_device_path(name):
+        return Path(name).exists()
+
+    if sys.platform.startswith("win"):  # pragma: no cover - dépend de Windows
+        return _probe_windows_printer(name, timeout_s=timeout_s)
+
+    # CUPS : lpstat -p NOM → code 0 si la file existe.
+    try:
+        proc = subprocess.run(
+            ["lpstat", "-p", name],
+            capture_output=True,
+            timeout=max(1.0, float(timeout_s)),
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        # Sans CUPS, une file nommée n'est pas utilisable → absente.
+        import shutil
+
+        if shutil.which("lp") is None:
+            return False
+        return None
+    except Exception:
+        return None
+    out = (proc.stdout or "") + (proc.stderr or "")
+    low = out.lower()
+    if proc.returncode == 0:
+        return True
+    if any(
+        token in low
+        for token in (
+            "unknown",
+            "non-existent",
+            "does not exist",
+            "inexistant",
+            "impossible de trouver",
+            "no such",
+        )
+    ):
+        return False
+    # lpstat absent de la PATH vs file inconnue : souvent returncode != 0 + message.
+    if "printer" in low and ("exist" in low or "trouv" in low):
+        return False
+    return False if proc.returncode != 0 else True
+
+
+def _probe_windows_printer(name: str, timeout_s: float = 2.0) -> Optional[bool]:
+    """OpenPrinter sous timeout (évite la recherche réseau interminable)."""
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import TimeoutError as FuturesTimeout
+    except Exception:
+        return _probe_windows_printer_blocking(name)
+
+    def _open() -> bool:
+        import win32print
+
+        handle = win32print.OpenPrinter(name)
+        win32print.ClosePrinter(handle)
+        return True
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_open)
+            try:
+                return bool(future.result(timeout=max(0.5, float(timeout_s))))
+            except FuturesTimeout:
+                logger.warning(
+                    "Timeout en ouvrant l'imprimante Windows « %s » (fantôme / réseau).",
+                    name,
+                )
+                return False
+    except Exception as exc:
+        # Noms typiques d'erreur : invalid printer name, introuvable…
+        msg = str(exc).lower()
+        if any(
+            token in msg
+            for token in (
+                "invalid printer",
+                "introuvable",
+                "not found",
+                "unknown printer",
+                "cannot find",
+                "impossible de trouver",
+                "0x00000709",  # ERROR_INVALID_PRINTER_NAME
+                "1801",
+            )
+        ):
+            return False
+        logger.debug("Sonde Windows indéterminée pour « %s » : %s", name, exc)
+        return None
+
+
+def _probe_windows_printer_blocking(name: str) -> Optional[bool]:
+    try:
+        import win32print
+
+        handle = win32print.OpenPrinter(name)
+        win32print.ClosePrinter(handle)
+        return True
+    except Exception as exc:
+        msg = str(exc).lower()
+        if any(
+            token in msg
+            for token in (
+                "invalid printer",
+                "introuvable",
+                "not found",
+                "unknown printer",
+                "cannot find",
+                "impossible de trouver",
+                "0x00000709",
+                "1801",
+            )
+        ):
+            return False
+        return None
+
+
 def printer_is_available(name: str, available: Optional[list[str]] = None) -> bool:
     """Indique si l'imprimante nommée (ou le périphérique) est utilisable.
 
-    Si la détection système renvoie une liste vide, on considère le nom
-    comme encore utilisable (évite de casser un réglage qui fonctionnait
-    quand ``lpstat`` / l'énumération Windows échoue temporairement).
+    Si la liste système est vide, on sonde le périphérique (Windows/CUPS)
+    au lieu d'assumer que le nom est encore valide.
     """
     name = (name or "").strip()
     if not name:
@@ -239,10 +385,13 @@ def printer_is_available(name: str, available: Optional[list[str]] = None) -> bo
     if is_device_path(name):
         return Path(name).exists()
     known = available if available is not None else list_printers()
-    if not known:
-        # Liste indisponible ≠ imprimante absente : on conserve le réglage.
-        return True
-    return name in known
+    if known:
+        return bool(match_printer_in_list(name, known))
+    probed = probe_printer_exists(name)
+    if probed is False:
+        return False
+    # Indéterminé : on ne déclare pas « absent » (réglage peut encore marcher).
+    return True
 
 
 def resolve_printer_name(
@@ -250,18 +399,19 @@ def resolve_printer_name(
     *,
     clear_invalid: bool = True,
 ) -> tuple[str, str]:
-    """Résout une cible d'impression, sans casser un réglage encore valide.
+    """Résout une cible d'impression, sans cibler une file fantôme.
 
     Retourne ``(nom_resolu, avertissement)``.
     - ``nom_resolu`` vide = imprimante par défaut du système ;
-    - on ne bascule / n'efface que si la liste détectée est non vide et
-      que le nom n'y figure pas (ou chemin périphérique inexistant).
+    - si la liste détectée prouve l'absence → bascule / efface ;
+    - si la liste est vide → sonde (OpenPrinter / lpstat) ; absente → bascule ;
+    - l'imprimante système par défaut est elle aussi vérifiée si on y bascule.
     """
     if preferred is None:
         preferred = settings_service.get_setting("printer_name", "")
     preferred = (preferred or "").strip()
     if not preferred:
-        return "", ""
+        return _resolve_system_default()
 
     available = list_printers()
 
@@ -269,39 +419,84 @@ def resolve_printer_name(
     if is_device_path(preferred):
         if Path(preferred).exists():
             return preferred, ""
-        # Chemin mort : on garde le nom si clear_invalid=False, sinon défaut.
         if not clear_invalid:
             return preferred, (
                 f"Périphérique « {preferred} » introuvable. "
                 "Vérifiez le câble / le chemin dans Paramètres."
             )
-        _clear_printer_setting_if_matches(preferred)
+        return _fallback_after_invalid(preferred, device=True)
+
+    # Nom CUPS/Windows présent dans la liste (casse normalisée).
+    if available:
+        matched = match_printer_in_list(preferred, available)
+        if matched:
+            return matched, ""
+        if not clear_invalid:
+            return preferred, (
+                f"Imprimante « {preferred} » absente de la liste détectée. "
+                "Le nom est conservé ; vérifiez Paramètres → Apparence du ticket."
+            )
+        return _fallback_after_invalid(preferred, device=False)
+
+    # Liste vide : ne pas faire confiance aveuglément — sonder.
+    probed = probe_printer_exists(preferred)
+    if probed is True:
+        return preferred, ""
+    if probed is None:
+        # Outil de détection HS : on conserve le nom (comportement historique),
+        # mais on prévient pour éviter la surprise « cherche une imprimante ».
+        return preferred, (
+            f"Impossible de vérifier l'imprimante « {preferred} » "
+            "(détection système indisponible). "
+            "Si l'impression échoue, choisissez une imprimante valide dans "
+            "Paramètres → Apparence du ticket."
+        )
+    # probed is False
+    if not clear_invalid:
+        return preferred, (
+            f"Imprimante « {preferred} » introuvable. "
+            "Le nom est conservé ; vérifiez Paramètres → Apparence du ticket."
+        )
+    return _fallback_after_invalid(preferred, device=False)
+
+
+def _resolve_system_default() -> tuple[str, str]:
+    """Valide l'imprimante par défaut OS ; échoue clairement si fantôme."""
+    system = (default_printer() or "").strip()
+    if not system:
+        return "", ""
+    available = list_printers()
+    if available and not match_printer_in_list(system, available):
         warning = (
-            f"Périphérique « {preferred} » introuvable. "
-            "Passage sur l'imprimante par défaut du système."
+            f"L'imprimante par défaut du système (« {system} ») est introuvable. "
+            "Choisissez une imprimante valide dans Paramètres → Apparence du ticket."
         )
         logger.warning(warning)
         return "", warning
-
-    # Nom CUPS/Windows : ne juger que si on a réellement une liste.
     if not available:
-        return preferred, ""
-    if preferred in available:
-        return preferred, ""
+        probed = probe_printer_exists(system)
+        if probed is False:
+            warning = (
+                f"L'imprimante par défaut du système (« {system} ») est introuvable. "
+                "Choisissez une imprimante valide dans Paramètres → Apparence du ticket."
+            )
+            logger.warning(warning)
+            return "", warning
+    return "", ""
 
-    if not clear_invalid:
-        return preferred, (
-            f"Imprimante « {preferred} » absente de la liste détectée. "
-            "Le nom est conservé ; vérifiez Paramètres → Apparence du ticket."
-        )
 
+def _fallback_after_invalid(preferred: str, *, device: bool) -> tuple[str, str]:
     _clear_printer_setting_if_matches(preferred)
-    warning = (
-        f"Imprimante « {preferred} » introuvable sur ce poste. "
+    kind = "Périphérique" if device else "Imprimante"
+    base = (
+        f"{kind} « {preferred} » introuvable sur ce poste. "
         "Passage sur l'imprimante par défaut du système. "
         "Choisissez une imprimante valide dans Paramètres → Apparence du ticket."
     )
-    logger.warning(warning)
+    logger.warning(base)
+    # Vérifier aussi le défaut système (sinon on « cherche » encore un fantôme).
+    _name, extra = _resolve_system_default()
+    warning = base if not extra else f"{base}\n{extra}"
     return "", warning
 
 
@@ -420,7 +615,7 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
     except Exception as exc:
         return PrintResult(False, Path(), f"Module d'impression Windows absent : {exc}")
 
-    target = printer_name or win32print.GetDefaultPrinter()
+    target = (printer_name or "").strip() or default_printer()
     if not target:
         return PrintResult(
             False,
@@ -430,9 +625,14 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
             "Paramètres → Apparence du ticket.",
         )
 
-    # Pré-contrôle : ne pas alimenter la file si le périphérique est indisponible.
+    # Pré-contrôle : ne pas alimenter la file si le périphérique est indisponible
+    # (y compris file fantôme / recherche réseau bloquée).
     preflight = _windows_printer_preflight(target)
     if preflight is not None:
+        if "introuvable" in (preflight.message or "").lower() or "ouvrir" in (
+            preflight.message or ""
+        ).lower():
+            _clear_printer_setting_if_matches(target)
         return preflight
 
     job_id = 0
@@ -537,6 +737,16 @@ def windows_job_status_reason(status: int) -> str:
 
 def _windows_printer_preflight(printer_name: str) -> Optional[PrintResult]:
     """Refuse l'impression si l'imprimante Windows est clairement indisponible."""
+    exists = probe_printer_exists(printer_name, timeout_s=2.0)
+    if exists is False:
+        return PrintResult(
+            False,
+            Path(),
+            f"Imprimante « {printer_name} » introuvable sur ce poste. "
+            "Aucun ticket n'a été mis en file d'attente. "
+            "Choisissez une imprimante valide dans Paramètres → Apparence du ticket.",
+        )
+
     try:
         import win32print
 
@@ -626,12 +836,21 @@ def purge_printer_queue(printer_name: Optional[str] = None) -> PrintResult:
     name, warning = resolve_printer_name(
         printer_name if printer_name is not None else None
     )
-    target = name or win32print.GetDefaultPrinter()
+    target = name or default_printer()
     if not target:
         msg = "Aucune imprimante à purger."
         if warning:
             msg = f"{warning}\n{msg}"
         return PrintResult(False, Path(), msg)
+    if (
+        warning
+        and "L'imprimante par défaut du système" in warning
+        and "introuvable" in warning
+    ):
+        return PrintResult(False, Path(), warning)
+    preflight = _windows_printer_preflight(target)
+    if preflight is not None:
+        return preflight
     try:
         handle = win32print.OpenPrinter(target)
         try:
@@ -853,6 +1072,15 @@ def _send_content(
         else settings_service.get_setting("printer_name", "")
     ).strip()
     printer_name, printer_warning = resolve_printer_name(printer_name)
+
+    # Défaut système fantôme : ne pas lancer une recherche Windows/CUPS inutile.
+    if (
+        not printer_name
+        and printer_warning
+        and "L'imprimante par défaut du système" in printer_warning
+        and "introuvable" in printer_warning
+    ):
+        return PrintResult(False, Path(), printer_warning)
 
     try:
         feed_lines = int(

@@ -292,6 +292,14 @@ def print_half_a4_invoice(
 
     printer_name, printer_warning = resolve_printer_name(printer_name)
 
+    if (
+        not printer_name
+        and printer_warning
+        and "L'imprimante par défaut du système" in printer_warning
+        and "introuvable" in printer_warning
+    ):
+        return PrintResult(False, pdf_path, printer_warning)
+
     if sys.platform.startswith("win"):
         result = _print_pdf_windows(pdf_path, printer_name)
     else:
@@ -318,7 +326,9 @@ def _print_pdf_windows(pdf_path: Path, printer_name: str) -> PrintResult:  # pra
             f"Ouvrez le fichier manuellement : {pdf_path}",
         )
 
-    target = printer_name or win32print.GetDefaultPrinter()
+    from app.printers import thermal_printer as tp
+
+    target = (printer_name or "").strip() or tp.default_printer()
     if not target:
         return PrintResult(
             False,
@@ -327,8 +337,6 @@ def _print_pdf_windows(pdf_path: Path, printer_name: str) -> PrintResult:  # pra
         )
 
     # Réutilise le pré-contrôle offline du module thermique.
-    from app.printers import thermal_printer as tp
-
     preflight = tp._windows_printer_preflight(target)
     if preflight is not None:
         preflight.file_path = pdf_path

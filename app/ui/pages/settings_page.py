@@ -731,21 +731,27 @@ class SettingsPage(QWidget):
         select = (select or "").strip()
         available = thermal_printer.list_printers()
         invalid_cleared = False
-        # Ne corriger que si la liste détectée est fiable (non vide) et que
-        # le nom n'y figure pas — sinon on conserve le réglage qui marchait.
-        if (
-            select
-            and available
-            and not thermal_printer.is_device_path(select)
-            and select not in available
-        ):
+        # Liste non vide : prouve l'absence. Liste vide : sonde OpenPrinter/lpstat.
+        if select and thermal_printer.is_device_path(select) and not Path(select).exists():
             settings_service.set_setting("printer_name", "")
             select = ""
             invalid_cleared = True
-        elif select and thermal_printer.is_device_path(select) and not Path(select).exists():
-            settings_service.set_setting("printer_name", "")
-            select = ""
-            invalid_cleared = True
+        elif select and not thermal_printer.is_device_path(select):
+            matched = thermal_printer.match_printer_in_list(select, available)
+            if available and not matched:
+                settings_service.set_setting("printer_name", "")
+                select = ""
+                invalid_cleared = True
+            elif not available:
+                probed = thermal_printer.probe_printer_exists(select)
+                if probed is False:
+                    settings_service.set_setting("printer_name", "")
+                    select = ""
+                    invalid_cleared = True
+                elif matched:
+                    select = matched
+            elif matched:
+                select = matched
 
         self.printer.blockSignals(True)
         self.printer.clear()
@@ -760,7 +766,8 @@ class SettingsPage(QWidget):
                 # Chemin périphérique saisi manuellement encore valide.
                 self.printer.setEditText(select)
             else:
-                self.printer.setCurrentIndex(0)
+                # Nom encore plausible (sonde indéterminée) : garder le texte.
+                self.printer.setEditText(select)
         else:
             self.printer.setCurrentIndex(0)
         self.printer.blockSignals(False)
