@@ -5,6 +5,10 @@ Chaque boutique peut :
 - ou le logo du type (poissonnerie, quincaillerie, etc.).
 
 Le logo n'est jamais un élément fixe du template : il reste optionnel.
+
+Les pictogrammes livrés dans ``app/assets/shop_logos/`` sont composés à partir
+d'icônes Lucide (ISC) : badge circulaire monochrome, traits renforcés pour
+lisibilité ESC/POS.
 """
 
 from __future__ import annotations
