@@ -131,8 +131,12 @@ def total_underlined(width: int, amount: str) -> list[str]:
     return [line[:width], underline[:width]]
 
 
-def frame_text(text: str, width: int, *, rounded: bool = True) -> list[str]:
-    """Cadre du montant en lettres (coins arrondis = modèle photo)."""
+def frame_text(text: str, width: int, *, rounded: bool = False) -> list[str]:
+    """Cadre du montant en lettres — coins droits (─│ continus en CP850).
+
+    ``rounded=True`` conserve ╭╮ pour l'aperçu écran ; à l'impression ESC/POS
+    ils sont mappés vers ┌┐ (même famille de traits continus).
+    """
     inner_w = max(4, width - 2)
     chunks: list[str] = []
     remaining = (text or "").strip() or "-"

@@ -44,9 +44,18 @@ class TicketDesignCard(QFrame):
 
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
-        self.preview.setFont(QFont("Courier New", 8))
+        # DejaVu : glyphes box-drawing pleine hauteur (│ continus entre lignes).
+        mono = QFont("DejaVu Sans Mono", 8)
+        if not mono.exactMatch():
+            mono = QFont("Courier New", 8)
+        mono.setStyleHint(QFont.StyleHint.Monospace)
+        mono.setFixedPitch(True)
+        self.preview.setFont(mono)
         self.preview.setFixedHeight(160)
         self.preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.preview.setStyleSheet(
+            "QPlainTextEdit { line-height: 1; background: #fff; color: #111; }"
+        )
         layout.addWidget(self.preview)
 
         self.radio = QRadioButton("Sélectionner")

@@ -413,10 +413,11 @@ class FactureTableauDesign(TicketDesign):
             lines.append(L("Client"))
         lines.append(L(""))
 
-        # 4) Tableau cadré (comme la photo) : │ Designation │ Qte │ Prix │ Montant │
+        # 4) Tableau cadré — TOUTES les lignes du cadre au même style ESC/POS.
+        # Si on alterne gras / normal, les │ ne se rejoignent plus à l'impression
+        # (fonte bold ≠ fonte normale) → traits verticaux discontinus.
         cols = table_column_widths(width)
         compact_amt = width <= 32
-        bold_prices = bool(getattr(opts, "bold_prices", True))
         bold_total = bool(getattr(opts, "bold_total", True))
 
         def cell_amt(value: float) -> str:
@@ -427,22 +428,29 @@ class FactureTableauDesign(TicketDesign):
                     return "0"
             return money(value, data.currency, with_currency=False)
 
-        lines.append(L(table_top(width, cols)))
-        lines.append(L(table_header_row(width, cols), bold=True))
-        lines.append(L(table_mid(width, cols)))
+        table_lines: list[str] = [table_top(width, cols), table_header_row(width, cols), table_mid(width, cols)]
         for item in data.items:
             des = (item.name or "").strip()
             q = format_quantity(item.quantity)
-            for piece in table_data_rows(
-                width, cols, des, q, cell_amt(item.unit_price), cell_amt(item.line_total)
-            ):
-                lines.append(L(piece, bold=bold_prices))
+            table_lines.extend(
+                table_data_rows(
+                    width,
+                    cols,
+                    des,
+                    q,
+                    cell_amt(item.unit_price),
+                    cell_amt(item.line_total),
+                )
+            )
         if opts.show_discount and data.has_discount:
-            for piece in table_data_rows(
-                width, cols, "Remise", "", "", cell_amt(data.discount)
-            ):
-                lines.append(L(piece, bold=bold_prices))
-        lines.append(L(table_bottom(width, cols)))
+            table_lines.extend(
+                table_data_rows(
+                    width, cols, "Remise", "", "", cell_amt(data.discount)
+                )
+            )
+        table_lines.append(table_bottom(width, cols))
+        for piece in table_lines:
+            lines.append(L(piece, bold=False))
 
         # 5) TOTAL hors cadre, montant souligné (pas de boîte).
         if opts.show_total:
@@ -453,13 +461,14 @@ class FactureTableauDesign(TicketDesign):
 
         lines.append(L(""))
 
-        # 6) Phrase libre + montant en lettres SEUL dans un cadre arrondi.
+        # 6) Phrase libre + montant en lettres SEUL dans un cadre.
+        # Cadre entier au même style (sinon │ discontinus). Coins droits = CP850.
         intro = "Arrêtée la présente facture à la somme de :"
         for piece in wrap_text(intro, width):
             lines.append(L(piece))
         words = amount_in_words(data.total, data.currency)
-        for framed in frame_text(words, width, rounded=True):
-            lines.append(L(framed, bold=bold_total))
+        for framed in frame_text(words, width, rounded=False):
+            lines.append(L(framed, bold=False))
 
         lines.append(L(""))
 

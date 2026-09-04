@@ -292,12 +292,25 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
             self.assertIn("┬", text)
             self.assertIn("│", text)
             self.assertIn("└", text)
-            # Montant en lettres : coins arrondis.
-            self.assertIn("╭", text)
-            self.assertIn("╰", text)
+            # Cadre montant en lettres (coins droits = traits continus CP850).
+            self.assertIn("┌", text)
             # TOTAL souligné (trait sous le montant, pas cadre total).
             self.assertIn("─", text)
             self.assertIn("mille", text.lower())
+            # Traits verticaux alignés sur toutes les lignes du tableau.
+            table_rows = [
+                ln for ln in text.splitlines() if ln.startswith("│") or ln.startswith("┌") or ln.startswith("├") or ln.startswith("└")
+            ]
+            # Exclure le cadre montant en lettres (une seule paire │ latéraux).
+            grid = [ln for ln in table_rows if ln.count("│") >= 4 or ln.count("┬") or ln.count("┼") or ln.count("┴")]
+            self.assertGreaterEqual(len(grid), 4)
+            positions = None
+            for ln in grid:
+                pos = tuple(i for i, c in enumerate(ln) if c in "│┌┐└┘├┤┬┴┼")
+                if positions is None:
+                    positions = pos
+                else:
+                    self.assertEqual(pos, positions, msg=repr(ln))
             width = 32 if paper == "58mm" else 48
             for line in text.splitlines():
                 self.assertLessEqual(len(line), width + 2, msg=repr(line))
@@ -325,17 +338,17 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
         )
         bold_texts = [s.text for s in styled if s.bold]
         self.assertTrue(any("TOTAL" in t for t in bold_texts))
-        self.assertTrue(any("Café" in t or "Croissant" in t for t in bold_texts))
-        # Désactivé : lignes articles non gras (hors en-tête).
-        opts2 = TicketOptions(bold_prices=False, bold_total=False, show_footer=False)
-        styled2 = render_ticket(
-            data, design_id="facture", options=opts2, paper="80mm"
-        )
+        # Lignes du tableau (avec │) : jamais en gras — sinon traits discontinus.
         item_lines = [
-            s for s in styled2 if "Café" in s.text or "Croissant" in s.text
+            s for s in styled if ("Café" in s.text or "Croissant" in s.text) and "│" in s.text
         ]
         self.assertTrue(item_lines)
         self.assertTrue(all(not s.bold for s in item_lines))
+        border_lines = [
+            s for s in styled if s.text.startswith(("┌", "├", "└")) and s.text.count("─") > 5
+        ]
+        self.assertTrue(border_lines)
+        self.assertTrue(all(not s.bold for s in border_lines))
 
     def test_kitchen_enable_disable_setting(self) -> None:
         from app.printers.ticket.options import (

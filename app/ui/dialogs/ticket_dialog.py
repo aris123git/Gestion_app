@@ -82,7 +82,15 @@ class TicketDialog(QDialog):
 
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
-        self.preview.setFont(QFont("Courier New", 10))
+        mono = QFont("DejaVu Sans Mono", 10)
+        if not mono.exactMatch():
+            mono = QFont("Courier New", 10)
+        mono.setStyleHint(QFont.StyleHint.Monospace)
+        mono.setFixedPitch(True)
+        self.preview.setFont(mono)
+        self.preview.setStyleSheet(
+            "QPlainTextEdit { line-height: 1; background: #ffffff; color: #111111; }"
+        )
         layout.addWidget(self.preview)
 
         self.status = QLabel(
