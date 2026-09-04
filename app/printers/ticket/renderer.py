@@ -14,10 +14,18 @@ WIDTH_CHARS = {"58mm": 32, "80mm": 48, "demi-A4": 72}
 
 
 def paper_width(paper: str) -> int:
+    """Largeur en caractères : profil imprimante si thermique, sinon table fixe."""
     from app.printers.half_a4_invoice import HALF_A4_WIDTH_CHARS, is_half_a4
 
     if is_half_a4(paper):
         return HALF_A4_WIDTH_CHARS
+    if paper in ("58mm", "80mm"):
+        try:
+            from app.printers.printer_profile import resolve_printer_profile
+
+            return resolve_printer_profile(paper=paper).characters_per_line
+        except Exception:
+            pass
     return WIDTH_CHARS.get(paper, 48)
 
 

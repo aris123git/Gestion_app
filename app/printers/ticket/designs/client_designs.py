@@ -438,7 +438,9 @@ class FactureTableauDesign(TicketDesign):
             lines.append(L(table_bottom(width, cols)))
 
         lines.extend(opts.gap())
-        lines.append(L("Arrêtée la présente facture à la somme de :"))
+        intro = "Arrêtée la présente facture à la somme de :"
+        for piece in wrap_text_local(intro, width):
+            lines.append(L(piece))
         words = amount_in_words(data.total, data.currency)
         for framed in frame_text(words, width, rounded=True):
             lines.append(L(framed, bold=bold_total))

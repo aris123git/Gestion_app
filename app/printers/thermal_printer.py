@@ -352,15 +352,23 @@ def _build_escpos_serveur_bytes(
 ) -> bytes:
     """ESC/POS pour designs cuisine / bon serveur (lignes stylées)."""
     _ = logo_path
+    from app.printers.printer_profile import resolve_printer_profile
     from app.printers.ticket.data import TicketData
     from app.printers.ticket.registry import resolve_kitchen_design_id
     from app.printers.ticket.renderer import render_ticket
     from app.printers.ticket.styled import lines_to_escpos_bytes
 
     shop = shop or settings_service.get_shop_info()
+    profile = resolve_printer_profile(paper=paper)
     data = TicketData.from_sale(sale, shop)
     kid = resolve_kitchen_design_id(design_id)
-    styled = render_ticket(data, design_id=kid, role="kitchen", paper=paper)
+    styled = render_ticket(
+        data,
+        design_id=kid,
+        role="kitchen",
+        paper=paper,
+        width=profile.characters_per_line,
+    )
     return lines_to_escpos_bytes(
         styled,
         feed_lines=feed_lines,
@@ -368,6 +376,7 @@ def _build_escpos_serveur_bytes(
         logo_path=None,
         paper=paper,
         include_logo=False,
+        profile=profile,
     )
 
 
@@ -377,50 +386,26 @@ def _build_escpos_bytes(
     cut_mode: str = DEFAULT_CUT_MODE,
     logo_path: Optional[str] = None,
     paper: str = "80mm",
+    profile=None,
 ) -> bytes:
     """Génère le flux ESC/POS : logo + texte + avance papier + coupe.
 
-    - ``logo_path`` : image du logo à imprimer en tête (facultatif) ;
-    - ``feed_lines`` : lignes vides ajoutées après le contenu pour faire sortir
-      entièrement le ticket au-delà du massicot / de la barre de découpe ;
-    - ``cut_mode`` : ``"full"``, ``"partial"`` ou ``"none"``.
+    Encode via le profil imprimante (jamais d'UTF-8 brut vers le thermique).
     """
-    feed_lines = max(0, int(feed_lines))
-    try:
-        from escpos.printer import Dummy
+    from app.printers.escpos_encoder import build_escpos_document
+    from app.printers.printer_profile import resolve_printer_profile
 
-        dummy = Dummy()
-        # Logo centré en haut du ticket (best-effort : ignoré si non imprimable).
-        logo = _load_logo_image(logo_path, paper)
-        if logo is not None:
-            try:
-                dummy.set(align="center")
-                dummy.image(logo)
-                dummy.set(align="left")
-            except Exception:
-                logger.debug(
-                    "Logo thermique ignoré par le générateur ESC/POS.",
-                    exc_info=True,
-                )
-        dummy.text(content)
-        if feed_lines:
-            dummy.text("\n" * feed_lines)
-        if cut_mode != "none":
-            escpos_mode = _CUT_MODES.get(cut_mode, "FULL")
-            try:
-                dummy.cut(mode=escpos_mode)
-            except Exception:
-                try:
-                    dummy.cut()
-                except Exception:
-                    logger.debug("Commande de coupe ESC/POS ignorée.", exc_info=True)
-        return dummy.output
-    except Exception:
-        data = content.encode("utf-8", errors="replace")
-        data += b"\n" * feed_lines
-        if cut_mode != "none":
-            data += b"\x1d\x56\x00"  # GS V 0 : coupe complète
-        return data
+    resolved = profile or resolve_printer_profile(paper=paper)
+    return build_escpos_document(
+        content,
+        resolved,
+        feed_lines=feed_lines,
+        cut_mode=cut_mode,
+        logo_path=logo_path,
+        paper=paper or resolved.paper_width,
+        include_logo=bool(logo_path),
+        styled=False,
+    )
 
 
 def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no cover
@@ -849,6 +834,7 @@ def _send_content(
     role: str = "client",
 ) -> PrintResult:
     """Envoie un contenu déjà formaté à l'imprimante selon les réglages courants."""
+    from app.printers.printer_profile import resolve_printer_profile
     from app.printers.ticket.data import TicketData
     from app.printers.ticket.registry import get_design, resolve_design_id
     from app.printers.ticket.renderer import render_ticket
@@ -876,10 +862,16 @@ def _send_content(
     if design.preferred_feed is not None:
         feed_lines = min(feed_lines, design.preferred_feed)
 
+    profile = resolve_printer_profile(paper=paper)
+
     if sale is not None:
         data = TicketData.from_sale(sale)
         styled = render_ticket(
-            data, design_id=resolved, role=role, paper=paper
+            data,
+            design_id=resolved,
+            role=role,
+            paper=paper,
+            width=profile.characters_per_line,
         )
         raw = lines_to_escpos_bytes(
             styled,
@@ -888,6 +880,7 @@ def _send_content(
             logo_path=logo_path if design.uses_logo else None,
             paper=paper,
             include_logo=bool(design.uses_logo and logo_path),
+            profile=profile,
         )
     else:
         raw = _build_escpos_bytes(
@@ -896,6 +889,7 @@ def _send_content(
             cut_mode=cut_mode,
             logo_path=logo_path,
             paper=paper,
+            profile=profile,
         )
 
     if sys.platform.startswith("win"):
@@ -920,24 +914,62 @@ def _send_content(
 
 def print_test_page(printer_name: Optional[str] = None) -> PrintResult:
     """Imprime une page de test (pour régler avance papier / coupe par modèle)."""
+    from app.printers.printer_profile import resolve_printer_profile
+
     shop = settings_service.get_shop_info()
-    paper = settings_service.get_setting("ticket_format", "80mm")
-    width = WIDTH_CHARS.get(paper, 48)
+    profile = resolve_printer_profile()
+    paper = profile.paper_width
+    width = profile.characters_per_line
 
     lines = [
         _center(shop.name or "Gestion Commerciale", width),
         _line("=", width),
         _center("PAGE DE TEST", width),
-        _center(f"Format {paper}", width),
+        _center(f"Format {paper} — {width} car.", width),
+        _center(f"{profile.escpos_codepage} / {profile.encoding}", width),
         _line("-", width),
         "Si vous lisez ces lignes entièrement",
         "et que le papier est coupé,",
-        "l'imprimante est bien configurée.",
+        "l'imprimante est bien configuree.",
         _line("-", width),
         _center(datetime.now().strftime("%d/%m/%Y %H:%M"), width),
     ]
     return _send_content(
         "\n".join(lines), printer_name, logo_path=shop.logo_path, paper=paper
+    )
+
+
+def print_encoding_test_page(printer_name: Optional[str] = None) -> PrintResult:
+    """Page de test des accents français (avant une vraie facture).
+
+    Permet de vérifier que le codepage du profil est correct : si les accents
+    sortent en chinois / symboles, changer le profil dans Apparence & Ticket.
+    """
+    from app.printers.escpos_encoder import ACCENT_TEST_SAMPLE
+    from app.printers.printer_profile import resolve_printer_profile
+
+    shop = settings_service.get_shop_info()
+    profile = resolve_printer_profile()
+    paper = profile.paper_width
+    width = profile.characters_per_line
+    sep = _line("-", width)
+    lines = [
+        _center(shop.name or "Gestion Commerciale", width),
+        _line("=", width),
+        _center("TEST ACCENTS FR", width),
+        _center(profile.label[:width], width),
+        f"Codepage: {profile.escpos_codepage}",
+        f"Codec: {profile.encoding}  |  {paper} / {width}c",
+        sep,
+        ACCENT_TEST_SAMPLE.rstrip("\n"),
+        sep,
+        "Si accents OK → profil correct.",
+        "Si chinois / symboles → changer profil.",
+        sep,
+        _center(datetime.now().strftime("%d/%m/%Y %H:%M"), width),
+    ]
+    return _send_content(
+        "\n".join(lines), printer_name, logo_path=None, paper=paper
     )
 
 

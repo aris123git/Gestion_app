@@ -37,55 +37,24 @@ def lines_to_escpos_bytes(
     logo_path: Optional[str] = None,
     paper: str = "80mm",
     include_logo: bool = True,
+    profile=None,
 ) -> bytes:
-    """Construit un flux ESC/POS à partir de lignes stylées."""
-    feed_lines = max(0, int(feed_lines))
-    cut_map = {"full": "FULL", "partial": "PART"}
-    try:
-        from escpos.printer import Dummy
+    """Construit un flux ESC/POS à partir de lignes stylées.
 
-        dummy = Dummy()
-        if include_logo and logo_path:
-            try:
-                from app.printers.thermal_printer import _load_logo_image
+    Utilise le profil imprimante (codepage + largeur) via ``escpos_encoder``
+    pour éviter l'UTF-8 brut et les glyphes asiatiques incorrects.
+    """
+    from app.printers.escpos_encoder import build_escpos_document
+    from app.printers.printer_profile import resolve_printer_profile
 
-                logo = _load_logo_image(logo_path, paper)
-                if logo is not None:
-                    dummy.set(align="center")
-                    dummy.image(logo)
-                    dummy.set(align="left")
-            except Exception:
-                pass
-
-        for line in lines:
-            align = {"left": "left", "center": "center", "right": "right"}.get(
-                line.align, "left"
-            )
-            w = 2 if line.double_width else 1
-            h = 2 if line.double_height else 1
-            dummy.set(align=align, bold=bool(line.bold), width=w, height=h)
-            text = line.text or ""
-            if not text.endswith("\n"):
-                text = text + "\n"
-            dummy.text(text)
-
-        dummy.set(align="left", bold=False, width=1, height=1)
-        if feed_lines:
-            dummy.text("\n" * feed_lines)
-        if cut_mode != "none":
-            mode = cut_map.get(cut_mode, "FULL")
-            try:
-                dummy.cut(mode=mode)
-            except Exception:
-                try:
-                    dummy.cut()
-                except Exception:
-                    pass
-        return dummy.output
-    except Exception:
-        text = lines_to_text(lines, 48)
-        data = text.encode("utf-8", errors="replace")
-        data += b"\n" * feed_lines
-        if cut_mode != "none":
-            data += b"\x1d\x56\x00"
-        return data
+    resolved = profile or resolve_printer_profile(paper=paper)
+    return build_escpos_document(
+        list(lines),
+        resolved,
+        feed_lines=feed_lines,
+        cut_mode=cut_mode,
+        logo_path=logo_path,
+        paper=paper or resolved.paper_width,
+        include_logo=include_logo,
+        styled=True,
+    )

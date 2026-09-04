@@ -167,6 +167,19 @@ class SettingsPage(QWidget):
         self.ticket_format.addItem("Ticket 80 mm", "80mm")
         self.ticket_format.addItem("Ticket 58 mm", "58mm")
         self.ticket_format.addItem("Facture papier (demi-A4)", "demi-A4")
+        # Profil ESC/POS : largeur + codepage (accents FR).
+        from app.printers.printer_profile import list_profiles
+
+        self.printer_profile = QComboBox()
+        self.printer_profile.setMinimumWidth(320)
+        for profile in list_profiles():
+            self.printer_profile.addItem(profile.label, profile.id)
+        self.printer_profile.setToolTip(
+            "Profil de l'imprimante thermique : largeur (58/80 mm) et codepage "
+            "(CP850 recommandé pour le français). Si les accents sortent en "
+            "chinois ou symboles, changez de profil puis « Test accents FR »."
+        )
+        self.printer_profile.currentIndexChanged.connect(self._on_printer_profile_changed)
         self.ticket_format.setToolTip(
             "Par défaut : ticket thermique. « Facture papier » = PDF 210×148,5 mm "
             "(A4 coupé en deux) pour imprimante bureau."
@@ -221,6 +234,7 @@ class SettingsPage(QWidget):
 
         form.addRow("Thème", self.theme)
         form.addRow("Format du ticket", self.ticket_format)
+        form.addRow("Profil imprimante", self.printer_profile)
         form.addRow("Lecture rapide caisse", self.pos_large_text)
         form.addRow("Taille du texte", self.pos_text_size)
         form.addRow("Imprimante", printer_row)
@@ -232,7 +246,9 @@ class SettingsPage(QWidget):
 
         designs_hint = QLabel(
             "Les designs visuels (Classique, Moderne, Bon serveur…) se "
-            "choisissent dans l'onglet <b>Designs des tickets</b>."
+            "choisissent dans l'onglet <b>Designs des tickets</b>. "
+            "Le <b>profil imprimante</b> fixe le codepage ESC/POS "
+            "(accents français) et la largeur en caractères."
         )
         designs_hint.setWordWrap(True)
         designs_hint.setStyleSheet("color: #64748b;")
@@ -244,6 +260,12 @@ class SettingsPage(QWidget):
         save.clicked.connect(self._save_appearance)
         test_print = QPushButton("Imprimer une page de test")
         test_print.clicked.connect(self._print_test_page)
+        accent_test = QPushButton("Test accents FR")
+        accent_test.setToolTip(
+            "Imprime é è ê à â ù û î ï ô ö ç œ É À avec le codepage du profil. "
+            "À faire avant une vraie facture."
+        )
+        accent_test.clicked.connect(self._print_encoding_test_page)
         purge = QPushButton("Vider la file d'attente")
         purge.setToolTip(
             "Annule les tickets en attente Windows (utile si plusieurs tickets "
@@ -252,6 +274,7 @@ class SettingsPage(QWidget):
         purge.clicked.connect(self._purge_printer_queue)
         actions.addWidget(save)
         actions.addWidget(test_print)
+        actions.addWidget(accent_test)
         actions.addWidget(purge)
         actions.addStretch()
         outer.addLayout(actions)
@@ -598,6 +621,22 @@ class SettingsPage(QWidget):
         else:
             warn(self, result.message, "File d'attente")
 
+    def _on_printer_profile_changed(self, _index: int = 0) -> None:
+        """Aligne le format papier 58/80 mm sur le profil choisi (pas demi-A4)."""
+        from app.printers.printer_profile import get_profile
+
+        pid = self.printer_profile.currentData()
+        if not pid:
+            return
+        profile = get_profile(pid)
+        current_fmt = self.ticket_format.currentData()
+        if current_fmt in ("58mm", "80mm") and current_fmt != profile.paper_width:
+            idx = self.ticket_format.findData(profile.paper_width)
+            if idx >= 0:
+                self.ticket_format.blockSignals(True)
+                self.ticket_format.setCurrentIndex(idx)
+                self.ticket_format.blockSignals(False)
+
     def _print_test_page(self) -> None:
         # Applique d'abord les réglages saisis pour tester la configuration réelle.
         self._save_appearance(silent=True)
@@ -612,6 +651,29 @@ class SettingsPage(QWidget):
                 f"Impression de test impossible.\n{result.message}\n\n"
                 "Vérifiez le nom de l'imprimante et les réglages ci-dessus.",
                 "Test d'impression",
+            )
+
+    def _print_encoding_test_page(self) -> None:
+        """Test des accents français avec le codepage du profil actif."""
+        self._save_appearance(silent=True)
+        from app.printers import thermal_printer
+
+        result = thermal_printer.print_encoding_test_page()
+        if result.printed:
+            info(
+                self,
+                f"Test accents envoyé.\n{result.message}\n\n"
+                "Vérifiez é è à ç œ sur le ticket. "
+                "Si caractères chinois ou symboles : changez le profil "
+                "(CP850 / CP858 / CP1252) puis réessayez.",
+                "Test accents FR",
+            )
+        else:
+            warn(
+                self,
+                f"Test accents impossible.\n{result.message}\n\n"
+                "Vérifiez l'imprimante et le profil ESC/POS.",
+                "Test accents FR",
             )
 
     def _reload_printers(self, select=None) -> None:
@@ -672,9 +734,14 @@ class SettingsPage(QWidget):
         return "" if text == DEFAULT_PRINTER_LABEL else text
 
     def _save_appearance(self, silent: bool = False) -> None:
+        from app.printers.printer_profile import save_printer_profile_id
+
         dark = self.theme.currentText() == "Sombre"
         self.state.set_dark(dark)
         settings_service.set_setting("ticket_format", self.ticket_format.currentData())
+        pid = self.printer_profile.currentData()
+        if pid:
+            save_printer_profile_id(pid)
         settings_service.set_setting(
             "pos_catalog_large_text",
             "1" if self.pos_large_text.isChecked() else "0",
@@ -1037,6 +1104,24 @@ class SettingsPage(QWidget):
             fmt_index = self.ticket_format.findText(fmt)
         if fmt_index >= 0:
             self.ticket_format.setCurrentIndex(fmt_index)
+        from app.printers.printer_profile import (
+            DEFAULT_PROFILE_ID_58,
+            DEFAULT_PROFILE_ID_80,
+            SETTING_PRINTER_PROFILE,
+        )
+
+        pid = settings_service.get_setting(SETTING_PRINTER_PROFILE, "")
+        if not pid:
+            pid = (
+                DEFAULT_PROFILE_ID_58
+                if fmt == "58mm"
+                else DEFAULT_PROFILE_ID_80
+            )
+        p_index = self.printer_profile.findData(pid)
+        if p_index >= 0:
+            self.printer_profile.blockSignals(True)
+            self.printer_profile.setCurrentIndex(p_index)
+            self.printer_profile.blockSignals(False)
         large = settings_service.get_setting("pos_catalog_large_text", "0") == "1"
         self.pos_large_text.setChecked(large)
         self.pos_text_size.setEnabled(large)
