@@ -91,9 +91,14 @@ class SetupWizard(QDialog):
         self.logo_label.setStyleSheet("color: #94a3b8;")
         logo_button = QPushButton("Choisir un logo…")
         logo_button.clicked.connect(self._pick_logo)
+        logo_type_btn = QPushButton("Logo du type")
+        logo_type_btn.setToolTip(
+            "Pictogramme fourni selon le type (poissonnerie, pharmacie…)."
+        )
+        logo_type_btn.clicked.connect(self._apply_type_logo)
         logo_row.addWidget(self.logo_label, 1)
         logo_row.addWidget(logo_button)
-
+        logo_row.addWidget(logo_type_btn)
         form.addRow("Nom du commerce *", self.name)
         form.addRow("Adresse", self.address)
         form.addRow("Téléphone", self.phone)
@@ -122,6 +127,21 @@ class SetupWizard(QDialog):
             self._logo_path = path
             self.logo_label.setText(Path(path).name)
             self.logo_label.setStyleSheet("color: #16a34a;")
+
+    def _apply_type_logo(self) -> None:
+        from app.printers.shop_logos import default_logo_path
+
+        path = default_logo_path(self.shop_type.currentText())
+        if path is None:
+            QMessageBox.warning(
+                self,
+                "Logo",
+                f"Aucun logo fourni pour « {self.shop_type.currentText()} ».",
+            )
+            return
+        self._logo_path = str(path)
+        self.logo_label.setText(f"Logo type : {self.shop_type.currentText()}")
+        self.logo_label.setStyleSheet("color: #16a34a;")
 
     def _save(self) -> None:
         if not self.name.text().strip():

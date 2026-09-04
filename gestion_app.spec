@@ -26,7 +26,9 @@ a = Analysis(
     ["run.py"],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ("app/assets/shop_logos", "app/assets/shop_logos"),
+    ],
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

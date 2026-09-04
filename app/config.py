@@ -30,7 +30,15 @@ def _default_data_dir() -> Path:
 # --- Chemins ---------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
-ASSETS_DIR = BASE_DIR / "assets"
+
+def _assets_dir() -> Path:
+    """Ressources embarquées (logos types…) — compatible PyInstaller."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "app" / "assets"
+    return BASE_DIR / "assets"
+
+
+ASSETS_DIR = _assets_dir()
 
 DATA_DIR = _default_data_dir()
 BACKUP_DIR = DATA_DIR / "backups"

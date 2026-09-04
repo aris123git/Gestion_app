@@ -733,7 +733,14 @@ def print_ticket(
     from app.printers.ticket.options import load_ticket_options
 
     opts = load_ticket_options()
-    use_logo = bool(design.uses_logo and opts.show_logo and shop.logo_path)
+    from app.printers.shop_logos import resolve_logo_path
+
+    logo_for_print = ""
+    if design.uses_logo and opts.show_logo:
+        logo_for_print = resolve_logo_path(
+            logo_path=str(getattr(shop, "logo_path", "") or ""),
+            shop_type=str(getattr(shop, "shop_type", "") or ""),
+        )
     if design.category == "kitchen":
         result = _send_content(
             "",
@@ -752,7 +759,7 @@ def print_ticket(
         result = _send_content(
             content,
             printer_name,
-            logo_path=shop.logo_path if use_logo else None,
+            logo_path=logo_for_print or None,
             paper=paper,
             sale=sale,
             design_id=resolved,
@@ -915,11 +922,16 @@ def _send_content(
 def print_test_page(printer_name: Optional[str] = None) -> PrintResult:
     """Imprime une page de test (pour régler avance papier / coupe par modèle)."""
     from app.printers.printer_profile import resolve_printer_profile
+    from app.printers.shop_logos import resolve_logo_path
 
     shop = settings_service.get_shop_info()
     profile = resolve_printer_profile()
     paper = profile.paper_width
     width = profile.characters_per_line
+    logo = resolve_logo_path(
+        logo_path=str(getattr(shop, "logo_path", "") or ""),
+        shop_type=str(getattr(shop, "shop_type", "") or ""),
+    )
 
     lines = [
         _center(shop.name or "Gestion Commerciale", width),
@@ -935,7 +947,7 @@ def print_test_page(printer_name: Optional[str] = None) -> PrintResult:
         _center(datetime.now().strftime("%d/%m/%Y %H:%M"), width),
     ]
     return _send_content(
-        "\n".join(lines), printer_name, logo_path=shop.logo_path, paper=paper
+        "\n".join(lines), printer_name, logo_path=logo or None, paper=paper
     )
 
 

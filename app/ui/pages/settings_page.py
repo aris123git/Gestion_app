@@ -99,8 +99,18 @@ class SettingsPage(QWidget):
         self.logo_label.setReadOnly(True)
         logo_button = QPushButton("Choisir…")
         logo_button.clicked.connect(self._pick_logo)
-        logo_row.addWidget(self.logo_label)
+        logo_type_btn = QPushButton("Logo du type")
+        logo_type_btn.setToolTip(
+            "Applique le logo fourni pour le type de commerce "
+            "(poissonnerie, quincaillerie, pharmacie…)."
+        )
+        logo_type_btn.clicked.connect(self._apply_type_logo)
+        logo_clear = QPushButton("Effacer")
+        logo_clear.clicked.connect(self._clear_logo)
+        logo_row.addWidget(self.logo_label, 1)
         logo_row.addWidget(logo_button)
+        logo_row.addWidget(logo_type_btn)
+        logo_row.addWidget(logo_clear)
 
         form.addRow("Nom du commerce", self.name)
         form.addRow("Adresse", self.address)
@@ -127,6 +137,32 @@ class SettingsPage(QWidget):
         if path:
             self._logo_path = path
             self.logo_label.setText(path)
+
+    def _apply_type_logo(self) -> None:
+        """Associe le logo livré pour le type de commerce sélectionné."""
+        from app.printers.shop_logos import default_logo_path
+
+        shop_type = self.shop_type.currentText()
+        path = default_logo_path(shop_type)
+        if path is None:
+            warn(
+                self,
+                f"Aucun logo fourni pour « {shop_type} ».",
+                "Logo du type",
+            )
+            return
+        self._logo_path = str(path)
+        self.logo_label.setText(str(path))
+        info(
+            self,
+            f"Logo « {shop_type} » sélectionné.\n"
+            "Cliquez sur Enregistrer les informations pour confirmer.",
+            "Logo du type",
+        )
+
+    def _clear_logo(self) -> None:
+        self._logo_path = ""
+        self.logo_label.clear()
 
     def _save_shop(self) -> None:
         logo_stored = self.logo_label.text()
@@ -382,8 +418,10 @@ class SettingsPage(QWidget):
         self.opt_show_address = QCheckBox("Adresse")
         self.opt_show_logo = QCheckBox("Logo (si disponible)")
         self.opt_show_logo.setToolTip(
-            "Affiche le logo du commerce en tête du ticket (Commerce → Logo). "
-            "Optionnel et personnalisable : poissonnerie, quincaillerie, boutique…"
+            "Affiche le logo en tête du ticket. "
+            "Personnalisé (Commerce → Logo) ou, à défaut, logo du type "
+            "(poissonnerie, quincaillerie, pharmacie…). "
+            "Bouton « Logo du type » pour appliquer le pictogramme livré."
         )
         self.opt_show_number = QCheckBox("N° ticket")
         self.opt_show_date = QCheckBox("Date")
