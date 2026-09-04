@@ -270,27 +270,55 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
 
     def test_facture_tableau_structure(self) -> None:
         data = sample_ticket_data()
+        data.shop_email = "contact@cafe.port"
         for paper in ("58mm", "80mm"):
             text = render_ticket_text_from_data(
                 data, design_id="facture", paper=paper
             )
-            self.assertTrue("Designation" in text or "Article" in text)
-            self.assertTrue("Qte" in text or "Qt" in text)
-            self.assertIn("Prix", text)
-            self.assertTrue("Montant" in text or "Total" in text)
-            self.assertIn("TOTAL", text)
+            # Structure modèle exact (ligne à ligne).
+            self.assertIn("COMPTANT", text)
             self.assertIn("N° Facture", text)
+            self.assertIn("Client", text)
+            self.assertTrue("Désignation" in text or "Article" in text)
+            self.assertIn("Qte", text)
+            self.assertIn("Prix", text)
+            self.assertIn("Montant", text)
+            self.assertIn("TOTAL", text)
             self.assertIn("Arrêtée la présente facture", text)
-            # Traits continus / coins arrondis.
-            self.assertTrue("┌" in text or "╭" in text)
+            self.assertIn("Tel :", text)
+            self.assertIn("Email :", text)
+            # Tableau ouvert : pas de cadre autour des cellules.
+            self.assertNotIn("┬", text)
+            self.assertNotIn("┼", text)
+            # Seul le montant en lettres est encadré (coins droits).
+            self.assertIn("┌", text)
+            self.assertIn("└", text)
             self.assertIn("│", text)
-            self.assertIn("╭", text)
-            self.assertIn("╰", text)
-            # Montant en lettres (1300).
+            self.assertNotIn("╭", text)
+            self.assertNotIn("╰", text)
+            # N° Facture à gauche (pas centré au milieu d'espaces excessifs).
+            for line in text.splitlines():
+                if line.startswith("N° Facture"):
+                    self.assertFalse(line.startswith(" "), msg=repr(line))
+                    break
+            else:
+                self.fail("ligne N° Facture absente")
             self.assertIn("mille", text.lower())
             width = 32 if paper == "58mm" else 48
             for line in text.splitlines():
                 self.assertLessEqual(len(line), width + 2, msg=repr(line))
+
+    def test_facture_header_name_left_address_right(self) -> None:
+        data = sample_ticket_data()
+        data.shop_name = "HARD SARL"
+        data.shop_address = "Avenue de la République"
+        data.shop_phone = "33 800 00 00"
+        text = render_ticket_text_from_data(data, design_id="facture", paper="80mm")
+        first = text.splitlines()[0]
+        self.assertTrue(first.startswith("HARD SARL") or "HARD SARL" in first[:20])
+        self.assertIn("Avenue", first or text.splitlines()[1])
+        # Adresse pas uniquement sous le nom en pleine largeur gauche.
+        self.assertIn("Tel :", text)
 
     def test_facture_bold_amount_lines(self) -> None:
         from app.printers.ticket.renderer import render_ticket

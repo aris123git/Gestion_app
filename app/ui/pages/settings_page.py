@@ -377,6 +377,10 @@ class SettingsPage(QWidget):
         self.opt_show_phone = QCheckBox("Téléphone")
         self.opt_show_address = QCheckBox("Adresse")
         self.opt_show_logo = QCheckBox("Logo (si disponible)")
+        self.opt_show_logo.setToolTip(
+            "Affiche le logo du commerce en tête du ticket (Commerce → Logo). "
+            "Optionnel et personnalisable : poissonnerie, quincaillerie, boutique…"
+        )
         self.opt_show_number = QCheckBox("N° ticket")
         self.opt_show_date = QCheckBox("Date")
         self.opt_show_time = QCheckBox("Heure")

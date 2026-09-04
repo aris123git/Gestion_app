@@ -47,3 +47,27 @@ def fit_left_right(left: str, right: str, width: int) -> list[str]:
     if right:
         out.append(row("", right, width))
     return out
+
+
+def name_right_block(
+    name: str,
+    right_lines: list[str],
+    width: int,
+) -> list[str]:
+    """Nom à gauche (1re ligne), bloc adresse/tél empilé à droite.
+
+    Correspond au modèle :
+        [NOM]                    [Adresse 1]
+                                 [Adresse 2]
+                                 Tel : …
+    """
+    name = (name or "").strip()
+    rights = [(r or "").strip() for r in right_lines if (r or "").strip()]
+    if not rights:
+        return wrap_text(name, width) if name else []
+    out: list[str] = []
+    # Première ligne droite avec le nom.
+    out.extend(fit_left_right(name, rights[0], width))
+    for extra in rights[1:]:
+        out.append(row("", extra, width))
+    return out
