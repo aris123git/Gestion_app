@@ -1,149 +1,43 @@
-"""Helpers de tableau pour tickets thermiques (facture modèle exact).
+"""Helpers de tableau facture — modèle photo HARD SARL.
 
-Deux styles :
-- ouvert (lignes horizontales sous en-tête / sous articles) — modèle facture ;
-- encadré (box-drawing) — cadre du montant en lettres uniquement.
+Tableau encadré avec séparateurs verticaux (Designation | Qte | Prix | Montant),
+TOTAL hors cadre avec soulignement du montant uniquement,
+cadre arrondi pour le montant en lettres.
 """
 
 from __future__ import annotations
 
-# Traits continus (cadre montant en lettres).
 H, V = "─", "│"
 TL, TR, BL, BR = "┌", "┐", "└", "┘"
 T, B, LJ, RJ, X = "┬", "┴", "├", "┤", "┼"
-
-# Coins arrondis (legacy / optionnel).
 RTL, RTR, RBL, RBR = "╭", "╮", "╰", "╯"
 
 
 def table_column_widths(width: int) -> tuple[int, int, int, int]:
-    """Largeurs Designation / Qte / Prix / Montant (espaces inclus hors gaps)."""
-    # 3 séparateurs d'1 espace min entre 4 colonnes.
-    gaps = 3
-    usable = max(16, width - gaps)
+    """Largeurs internes Designation / Qte / Prix / Montant (hors │)."""
+    # 5 traits verticaux → width - 5 = somme des colonnes.
+    usable = max(14, width - 5)
     if width <= 32:
         qte, prix, montant = 3, 6, 7
     else:
-        qte, prix, montant = 4, 8, 10
-    des = max(6, usable - qte - prix - montant)
-    while des + qte + prix + montant + gaps > width and des > 6:
+        qte, prix, montant = 4, 8, 9
+    des = max(5, usable - qte - prix - montant)
+    while des + qte + prix + montant + 5 > width and des > 5:
         des -= 1
-    while des + qte + prix + montant + gaps > width and montant > 5:
+    while des + qte + prix + montant + 5 > width and montant > 5:
         montant -= 1
+    while des + qte + prix + montant + 5 > width and prix > 4:
+        prix -= 1
     return des, qte, prix, montant
 
 
-def _cell(text: str, width: int, align: str = "left") -> str:
-    text = (text or "")[:width]
+def _cell(text: str, w: int, align: str = "left") -> str:
+    text = (text or "")[:w]
     if align == "right":
-        return text.rjust(width)
+        return text.rjust(w)
     if align == "center":
-        return text.center(width)
-    return text.ljust(width)
-
-
-def _compose_open(
-    cols: tuple[int, int, int, int],
-    designation: str,
-    qty: str,
-    price: str,
-    amount: str,
-    *,
-    width: int,
-) -> str:
-    """Ligne ouverte : Designation (gauche) + Qte/Prix/Montant (droite)."""
-    d, q, p, m = cols
-    gap = " "
-    body = (
-        _cell(designation, d)
-        + gap
-        + _cell(qty, q, "right")
-        + gap
-        + _cell(price, p, "right")
-        + gap
-        + _cell(amount, m, "right")
-    )
-    return body[:width].ljust(min(width, len(body)))[:width]
-
-
-def open_header_row(width: int, cols: tuple[int, int, int, int]) -> str:
-    if width <= 32:
-        labels = ("Article", "Qte", "Prix", "Montant")
-    else:
-        labels = ("Désignation", "Qte", "Prix", "Montant")
-    return _compose_open(cols, labels[0], labels[1], labels[2], labels[3], width=width)
-
-
-def open_data_row(
-    width: int,
-    cols: tuple[int, int, int, int],
-    designation: str,
-    qty: str,
-    price: str,
-    amount: str,
-) -> str:
-    return _compose_open(cols, designation, qty, price, amount, width=width)
-
-
-def open_data_rows(
-    width: int,
-    cols: tuple[int, int, int, int],
-    designation: str,
-    qty: str,
-    price: str,
-    amount: str,
-) -> list[str]:
-    """Lignes article : désignation longue → suite sans casser les colonnes."""
-    d = cols[0]
-    name = (designation or "").strip()
-    if len(name) <= d:
-        return [open_data_row(width, cols, name, qty, price, amount)]
-    rows = [open_data_row(width, cols, name[:d], qty, price, amount)]
-    rest = name[d:]
-    while rest:
-        rows.append(open_data_row(width, cols, rest[:d], "", "", ""))
-        rest = rest[d:]
-    return rows
-
-
-def open_total_row(width: int, cols: tuple[int, int, int, int], amount: str) -> str:
-    """TOTAL à gauche, montant à droite (pas de cadre)."""
-    from app.printers.ticket.layout import row
-
-    return row("TOTAL", amount, width)
-
-
-def hline(width: int, char: str = "-") -> str:
-    return (char * width)[:width]
-
-
-# --- Cadre montant en lettres -------------------------------------------------
-
-
-def frame_text(text: str, width: int, *, rounded: bool = False) -> list[str]:
-    """Encadre un texte (montant en lettres). Coins droits par défaut (modèle)."""
-    inner_w = max(4, width - 2)
-    chunks: list[str] = []
-    remaining = (text or "").strip()
-    if not remaining:
-        remaining = "-"
-    while remaining:
-        chunks.append(remaining[:inner_w])
-        remaining = remaining[inner_w:]
-    if rounded:
-        top = RTL + (H * inner_w) + RTR
-        bot = RBL + (H * inner_w) + RBR
-    else:
-        top = TL + (H * inner_w) + TR
-        bot = BL + (H * inner_w) + BR
-    lines = [top]
-    for chunk in chunks:
-        lines.append(V + chunk.ljust(inner_w)[:inner_w] + V)
-    lines.append(bot)
-    return [ln[:width] for ln in lines]
-
-
-# --- Anciens helpers encadrés (rétrocompat tests / autres) --------------------
+        return text.center(w)
+    return text.ljust(w)
 
 
 def _rule(cols: tuple[int, int, int, int], left: str, mid: str, right: str) -> str:
@@ -163,12 +57,24 @@ def table_bottom(width: int, cols: tuple[int, int, int, int]) -> str:
     return _rule(cols, BL, B, BR)[:width]
 
 
-def table_rule(width: int, cols: tuple[int, int, int, int]) -> str:
-    return table_mid(width, cols)
-
-
 def table_header_row(width: int, cols: tuple[int, int, int, int]) -> str:
-    return open_header_row(width, cols)
+    d, q, p, m = cols
+    # Libellés du modèle photo (sans accent sur Designation).
+    if width <= 32:
+        labels = ("Article", "Qte", "Prix", "Montant")
+    else:
+        labels = ("Designation", "Qte", "Prix", "Montant")
+    return (
+        V
+        + _cell(labels[0], d)
+        + V
+        + _cell(labels[1], q, "right")
+        + V
+        + _cell(labels[2], p, "right")
+        + V
+        + _cell(labels[3], m, "right")
+        + V
+    )[:width]
 
 
 def table_data_row(
@@ -179,20 +85,109 @@ def table_data_row(
     price: str,
     amount: str,
 ) -> str:
-    return open_data_row(width, cols, designation, qty, price, amount)
+    d, q, p, m = cols
+    return (
+        V
+        + _cell(designation, d)
+        + V
+        + _cell(qty, q, "right")
+        + V
+        + _cell(price, p, "right")
+        + V
+        + _cell(amount, m, "right")
+        + V
+    )[:width]
 
 
-def table_total_row(width: int, cols: tuple[int, int, int, int], amount: str) -> str:
+def table_data_rows(
+    width: int,
+    cols: tuple[int, int, int, int],
+    designation: str,
+    qty: str,
+    price: str,
+    amount: str,
+) -> list[str]:
+    """Désignation longue : suite sur lignes suivantes (colonnes numériques vides)."""
+    d = cols[0]
+    name = (designation or "").strip()
+    if len(name) <= d:
+        return [table_data_row(width, cols, name, qty, price, amount)]
+    rows = [table_data_row(width, cols, name[:d], qty, price, amount)]
+    rest = name[d:]
+    while rest:
+        rows.append(table_data_row(width, cols, rest[:d], "", "", ""))
+        rest = rest[d:]
+    return rows
+
+
+def total_underlined(width: int, amount: str) -> list[str]:
+    """TOTAL + montant à droite, soulignement sous le montant uniquement."""
+    from app.printers.ticket.layout import row
+
+    amount = (amount or "").strip()
+    line = row("TOTAL", amount, width)
+    # Souligner uniquement la zone du montant (à droite).
+    underline = (" " * (width - len(amount))) + ("─" * len(amount))
+    return [line[:width], underline[:width]]
+
+
+def frame_text(text: str, width: int, *, rounded: bool = True) -> list[str]:
+    """Cadre du montant en lettres (coins arrondis = modèle photo)."""
+    inner_w = max(4, width - 2)
+    chunks: list[str] = []
+    remaining = (text or "").strip() or "-"
+    while remaining:
+        chunks.append(remaining[:inner_w])
+        remaining = remaining[inner_w:]
+    if rounded:
+        top, bot = RTL + (H * inner_w) + RTR, RBL + (H * inner_w) + RBR
+    else:
+        top, bot = TL + (H * inner_w) + TR, BL + (H * inner_w) + BR
+    out = [top]
+    for chunk in chunks:
+        out.append(V + chunk.ljust(inner_w)[:inner_w] + V)
+    out.append(bot)
+    return [ln[:width] for ln in out]
+
+
+# Alias rétrocompat
+def hline(width: int, char: str = "-") -> str:
+    return (char * width)[:width]
+
+
+def open_header_row(width: int, cols: tuple[int, int, int, int]) -> str:
+    return table_header_row(width, cols)
+
+
+def open_data_row(width, cols, designation, qty, price, amount) -> str:
+    return table_data_row(width, cols, designation, qty, price, amount)
+
+
+def open_data_rows(width, cols, designation, qty, price, amount) -> list[str]:
+    return table_data_rows(width, cols, designation, qty, price, amount)
+
+
+def open_total_row(width, cols, amount) -> str:
+    from app.printers.ticket.layout import row
+
+    return row("TOTAL", amount, width)
+
+
+def table_total_row(width, cols, amount) -> str:
     return open_total_row(width, cols, amount)
 
 
-def table_total_top(width: int, cols: tuple[int, int, int, int]) -> str:
-    return hline(width)
+def table_total_top(width, cols) -> str:
+    return table_mid(width, cols)
 
 
-def table_total_bottom(width: int, cols: tuple[int, int, int, int]) -> str:
-    return hline(width)
+def table_total_bottom(width, cols) -> str:
+    return table_bottom(width, cols)
 
 
-def table_total_rule(width: int, cols: tuple[int, int, int, int]) -> str:
-    return hline(width)
+def table_total_rule(width, cols) -> str:
+    return table_bottom(width, cols)
+
+
+def table_rule(width, cols) -> str:
+    return table_mid(width, cols)

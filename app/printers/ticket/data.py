@@ -42,6 +42,7 @@ class TicketData:
     shop_address: str = ""
     shop_phone: str = ""
     shop_email: str = ""
+    shop_fax: str = ""
     currency: str = "FCFA"
     logo_path: str = ""
     footer: str = "Merci de votre visite"
@@ -107,6 +108,11 @@ class TicketData:
             shop_address=str(getattr(shop, "address", None) or ""),
             shop_phone=str(getattr(shop, "phone", None) or ""),
             shop_email=str(getattr(shop, "email", None) or ""),
+            shop_fax=str(
+                getattr(shop, "fax", None)
+                or settings_service.get_setting("shop_fax", "")
+                or ""
+            ),
             currency=str(getattr(shop, "currency", None) or "FCFA"),
             logo_path=str(getattr(shop, "logo_path", None) or ""),
             footer=str(

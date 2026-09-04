@@ -22,11 +22,13 @@ from app.printers.ticket.options import TicketOptions
 from app.printers.ticket.styled import StyledLine
 from app.printers.ticket.table_ascii import (
     frame_text,
-    hline,
-    open_data_rows,
-    open_header_row,
-    open_total_row,
+    table_bottom,
     table_column_widths,
+    table_data_rows,
+    table_header_row,
+    table_mid,
+    table_top,
+    total_underlined,
 )
 from app.utils.amount_words import amount_in_words
 from app.utils.helpers import format_quantity
@@ -329,18 +331,17 @@ class TerminalDesign(TicketDesign):
 
 
 class FactureTableauDesign(TicketDesign):
-    """Facture modèle exact (structure ligne à ligne).
+    """Facture modèle photo (HARD SARL) — structure ligne à ligne.
 
-    Logo facultatif : personnalisable par boutique (poissonnerie, quincaillerie…)
-    via Commerce → Logo + option « Afficher le logo » des designs. Ce n'est pas
-    un élément fixe du template.
+    Logo facultatif : personnalisable (poissonnerie, quincaillerie, boutique…)
+    via Commerce → Logo + option Designs. Pas un élément fixe du template.
     """
 
     id = "facture"
     label = "Facture tableau"
     description = (
-        "Modèle facture exact : nom à gauche, adresse à droite, "
-        "tableau ouvert, total souligné, montant en lettres encadré. "
+        "Modèle facture photo : nom à gauche, adresse/tél/fax à droite, "
+        "tableau cadré, TOTAL souligné, montant en lettres encadré. "
         "Logo optionnel (personnalisable)."
     )
     uses_logo = True
@@ -350,30 +351,38 @@ class FactureTableauDesign(TicketDesign):
         name = (data.shop_name or "Commerce").strip().upper()
         phone = (data.shop_phone or "").strip()
         email = (getattr(data, "shop_email", None) or "").strip()
+        fax = (getattr(data, "shop_fax", None) or "").strip()
         address = (data.shop_address or "").strip()
 
-        # 1) En-tête : NOM à gauche, bloc adresse/tél/email|fax à droite.
+        # 1) NOM (gras) à gauche — bloc adresse / Tel / Fax à droite (même hauteur).
         right_block: list[str] = []
         if opts.show_address and address:
-            right_w = max(12, min(width // 2 + 4, width - 8))
+            right_w = max(12, min(width // 2 + 6, width - max(8, len(name[:12]) + 1)))
             for para in address.replace("\r\n", "\n").split("\n"):
                 para = para.strip()
                 if para:
                     right_block.extend(wrap_text(para, right_w))
         if opts.show_phone and phone:
             right_block.append(f"Tel : {phone}")
-        if email:
-            # Pas de champ fax dédié : email boutique si renseigné.
+        if fax:
+            right_block.append(f"Fax : {fax}")
+        elif email:
+            # Fax boutique non renseigné : email si disponible.
             right_block.append(f"Email : {email}")
         if opts.show_shop_name or right_block:
             left_name = name if opts.show_shop_name else ""
             header_rows = name_right_block(left_name, right_block, width)
             for i, piece in enumerate(header_rows):
-                # Gras sur la 1re ligne (porte le nom boutique).
-                lines.append(L(piece, bold=(i == 0 and bool(left_name))))
+                lines.append(
+                    L(
+                        piece,
+                        bold=(i == 0 and bool(left_name)),
+                        double_height=(i == 0 and bool(left_name) and width >= 40),
+                    )
+                )
         lines.append(L(""))
 
-        # 2) COMPTANT + N° Facture/ — alignés à GAUCHE, l'un sous l'autre.
+        # 2) COMPTANT puis N° Facture/ — gauche, l'un sous l'autre.
         pay_label = ""
         if opts.show_payment and data.payments:
             raw = (data.payments[0].method or "").strip()
@@ -395,9 +404,8 @@ class FactureTableauDesign(TicketDesign):
                 else num
             )
             lines.append(L(f"N° Facture/ {spaced}", bold=True))
-        lines.append(L(""))
 
-        # 3) Client
+        # 3) Client (ligne suivante, pas de ligne vide superflue avant).
         client = (data.client_name or "").strip()
         if data.client_id or client:
             lines.append(L(f"Client  {client}"))
@@ -405,7 +413,7 @@ class FactureTableauDesign(TicketDesign):
             lines.append(L("Client"))
         lines.append(L(""))
 
-        # 4) Tableau ouvert : en-tête, ligne -, articles, ligne -, TOTAL souligné.
+        # 4) Tableau cadré (comme la photo) : │ Designation │ Qte │ Prix │ Montant │
         cols = table_column_widths(width)
         compact_amt = width <= 32
         bold_prices = bool(getattr(opts, "bold_prices", True))
@@ -419,42 +427,43 @@ class FactureTableauDesign(TicketDesign):
                     return "0"
             return money(value, data.currency, with_currency=False)
 
-        lines.append(L(open_header_row(width, cols), bold=True))
-        lines.append(L(hline(width)))
+        lines.append(L(table_top(width, cols)))
+        lines.append(L(table_header_row(width, cols), bold=True))
+        lines.append(L(table_mid(width, cols)))
         for item in data.items:
             des = (item.name or "").strip()
             q = format_quantity(item.quantity)
-            prix = cell_amt(item.unit_price)
-            mont = cell_amt(item.line_total)
-            for piece in open_data_rows(width, cols, des, q, prix, mont):
+            for piece in table_data_rows(
+                width, cols, des, q, cell_amt(item.unit_price), cell_amt(item.line_total)
+            ):
                 lines.append(L(piece, bold=bold_prices))
         if opts.show_discount and data.has_discount:
-            for piece in open_data_rows(
+            for piece in table_data_rows(
                 width, cols, "Remise", "", "", cell_amt(data.discount)
             ):
                 lines.append(L(piece, bold=bold_prices))
-        lines.append(L(hline(width)))
+        lines.append(L(table_bottom(width, cols)))
 
+        # 5) TOTAL hors cadre, montant souligné (pas de boîte).
         if opts.show_total:
-            lines.append(
-                L(open_total_row(width, cols, cell_amt(data.total)), bold=bold_total)
-            )
-            # TOTAL souligné (pas encadré).
-            lines.append(L(hline(width)))
+            lines.append(L(""))
+            for piece in total_underlined(width, cell_amt(data.total)):
+                is_rule = piece.strip().startswith("─")
+                lines.append(L(piece, bold=(bold_total and not is_rule)))
 
         lines.append(L(""))
 
-        # 5) Phrase libre + montant en lettres SEUL dans un cadre.
+        # 6) Phrase libre + montant en lettres SEUL dans un cadre arrondi.
         intro = "Arrêtée la présente facture à la somme de :"
         for piece in wrap_text(intro, width):
             lines.append(L(piece))
         words = amount_in_words(data.total, data.currency)
-        for framed in frame_text(words, width, rounded=False):
+        for framed in frame_text(words, width, rounded=True):
             lines.append(L(framed, bold=bold_total))
 
         lines.append(L(""))
 
-        # 6) Caissier / date / heure
+        # 7) Caissier / date / heure (une ligne).
         footer_bits = []
         if m["cashier"]:
             footer_bits.append(m["cashier"].upper())
@@ -469,20 +478,20 @@ class FactureTableauDesign(TicketDesign):
             if len(footer_bits) >= 3:
                 left, mid, right = footer_bits[0], footer_bits[1], footer_bits[2]
                 mid_start = (width - len(mid)) // 2
-                line = [" "] * width
+                buf = [" "] * width
                 for i, ch in enumerate(left[: max(1, width // 3)]):
                     if i < width:
-                        line[i] = ch
+                        buf[i] = ch
                 for i, ch in enumerate(mid):
                     pos = mid_start + i
                     if 0 <= pos < width:
-                        line[pos] = ch
+                        buf[pos] = ch
                 right_start = max(0, width - len(right))
                 for i, ch in enumerate(right):
                     pos = right_start + i
                     if 0 <= pos < width:
-                        line[pos] = ch
-                lines.append(L("".join(line)))
+                        buf[pos] = ch
+                lines.append(L("".join(buf)))
             else:
                 lines.append(L("  ".join(footer_bits)[:width]))
 

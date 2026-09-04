@@ -271,38 +271,32 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
     def test_facture_tableau_structure(self) -> None:
         data = sample_ticket_data()
         data.shop_email = "contact@cafe.port"
+        data.shop_fax = "50 30 13 78"
         for paper in ("58mm", "80mm"):
             text = render_ticket_text_from_data(
                 data, design_id="facture", paper=paper
             )
-            # Structure modèle exact (ligne à ligne).
             self.assertIn("COMPTANT", text)
             self.assertIn("N° Facture", text)
             self.assertIn("Client", text)
-            self.assertTrue("Désignation" in text or "Article" in text)
+            self.assertTrue("Designation" in text or "Article" in text)
             self.assertIn("Qte", text)
             self.assertIn("Prix", text)
             self.assertIn("Montant", text)
             self.assertIn("TOTAL", text)
             self.assertIn("Arrêtée la présente facture", text)
             self.assertIn("Tel :", text)
-            self.assertIn("Email :", text)
-            # Tableau ouvert : pas de cadre autour des cellules.
-            self.assertNotIn("┬", text)
-            self.assertNotIn("┼", text)
-            # Seul le montant en lettres est encadré (coins droits).
+            self.assertIn("Fax :", text)
+            # Tableau cadré avec colonnes (photo).
             self.assertIn("┌", text)
-            self.assertIn("└", text)
+            self.assertIn("┬", text)
             self.assertIn("│", text)
-            self.assertNotIn("╭", text)
-            self.assertNotIn("╰", text)
-            # N° Facture à gauche (pas centré au milieu d'espaces excessifs).
-            for line in text.splitlines():
-                if line.startswith("N° Facture"):
-                    self.assertFalse(line.startswith(" "), msg=repr(line))
-                    break
-            else:
-                self.fail("ligne N° Facture absente")
+            self.assertIn("└", text)
+            # Montant en lettres : coins arrondis.
+            self.assertIn("╭", text)
+            self.assertIn("╰", text)
+            # TOTAL souligné (trait sous le montant, pas cadre total).
+            self.assertIn("─", text)
             self.assertIn("mille", text.lower())
             width = 32 if paper == "58mm" else 48
             for line in text.splitlines():

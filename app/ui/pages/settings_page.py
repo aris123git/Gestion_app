@@ -82,6 +82,8 @@ class SettingsPage(QWidget):
         self.address = QLineEdit()
         self.phone = QLineEdit()
         self.email = QLineEdit()
+        self.fax = QLineEdit()
+        self.fax.setPlaceholderText("Affiché sur le ticket facture (optionnel)")
         self.currency = QComboBox()
         self.currency.setEditable(True)
         self.currency.addItems(CURRENCIES)
@@ -103,6 +105,7 @@ class SettingsPage(QWidget):
         form.addRow("Nom du commerce", self.name)
         form.addRow("Adresse", self.address)
         form.addRow("Téléphone", self.phone)
+        form.addRow("Fax", self.fax)
         form.addRow("Email", self.email)
         form.addRow("Devise", self.currency)
         form.addRow("Type de commerce", self.shop_type)
@@ -146,6 +149,7 @@ class SettingsPage(QWidget):
             logo_path=logo_stored,
             is_configured=True,
         )
+        settings_service.set_setting("shop_fax", self.fax.text().strip())
         audit_service.log_action(
             "Paramètres commerce", "ShopInfo", "",
             self.state.user_id, getattr(self.state.current_user, "username", ""),
@@ -1093,6 +1097,7 @@ class SettingsPage(QWidget):
         self.address.setText(shop.address)
         self.phone.setText(shop.phone)
         self.email.setText(shop.email)
+        self.fax.setText(settings_service.get_setting("shop_fax", ""))
         self.currency.setCurrentText(shop.currency)
         idx = self.shop_type.findText(shop.shop_type)
         if idx >= 0:
