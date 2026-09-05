@@ -41,7 +41,7 @@ class TicketDialogDefaultPrintTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
         set_printers(thermal_name="THERMAL_X", invoice_name="INK_Y")
-        self.sale = SimpleNamespace(ticket_number="T-UT-1", id=1)
+        self.sale = SimpleNamespace(ticket_number="T-UT-1", id=1, items=[])
 
     def _dialog(self) -> TicketDialog:
         with patch(
@@ -59,13 +59,17 @@ class TicketDialogDefaultPrintTestCase(unittest.TestCase):
 
     def test_can_switch_to_ink_when_thermal_default(self) -> None:
         set_default_print_preference("thermique", "80mm")
-        dlg = self._dialog()
-        for i in range(dlg.destination.count()):
-            if dlg.destination.itemData(i) == PAPER_HALF_A4:
-                dlg.destination.setCurrentIndex(i)
-                break
-        self.assertEqual(dlg._paper_value(), PAPER_HALF_A4)
-        self.assertIn("encre", dlg.print_button.text().lower())
+        with patch(
+            "app.ui.dialogs.ticket_dialog.thermal_printer.render_ticket_text",
+            return_value="APERCU",
+        ):
+            dlg = TicketDialog(self.sale, auto_print=False)
+            for i in range(dlg.destination.count()):
+                if dlg.destination.itemData(i) == PAPER_HALF_A4:
+                    dlg.destination.setCurrentIndex(i)
+                    break
+            self.assertEqual(dlg._paper_value(), PAPER_HALF_A4)
+            self.assertIn("encre", dlg.print_button.text().lower())
 
     def test_print_starts_on_ink_default(self) -> None:
         set_default_print_preference("encre")
