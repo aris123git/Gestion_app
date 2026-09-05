@@ -259,6 +259,28 @@ class ListPrintersDetailedTestCase(unittest.TestCase):
         self.assertFalse(found["POS-80C"])
         self.assertTrue(found["PDF"])
 
+    def test_dedupe_similar_pos_names(self) -> None:
+        names = ["POS 80C", "POS-80C", "POS80C (copie 1)", "HP DeskJet"]
+        out = thermal_printer.dedupe_printer_names(names)
+        keys = {thermal_printer.normalize_printer_key(n) for n in out}
+        self.assertEqual(len(keys), 2)
+        self.assertTrue(any("pos" in n.lower() for n in out))
+        self.assertNotIn("POS80C (copie 1)", out)
+
+    def test_ticket_combo_hides_virtual_and_prefers_thermal(self) -> None:
+        names = [
+            "Microsoft Print to PDF",
+            "Fax",
+            "POS-80C",
+            "HP DeskJet 2700",
+            "OneNote",
+        ]
+        ticket = thermal_printer.printers_for_ticket_combo(names)
+        invoice = thermal_printer.printers_for_invoice_combo(names)
+        self.assertEqual(ticket, ["POS-80C"])
+        self.assertEqual(invoice, ["HP DeskJet 2700"])
+        self.assertNotIn("Microsoft Print to PDF", ticket)
+        self.assertNotIn("Fax", invoice)
 
 if __name__ == "__main__":
     unittest.main()

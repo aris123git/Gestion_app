@@ -102,6 +102,31 @@ class SettingsPrinterSanitizeTestCase(unittest.TestCase):
         self.assertEqual(combo.currentData(), "POS-80C")
         del app
 
+    def test_fill_combo_ticket_list_is_short(self) -> None:
+        """Le combo ticket ne reçoit que la liste déjà filtrée (thermiques)."""
+        from PySide6.QtWidgets import QApplication, QComboBox
+
+        app = QApplication.instance() or QApplication([])
+        holder = type("H", (), {})()
+        holder._fill_printer_combo = MethodType(
+            SettingsPage._fill_printer_combo, holder
+        )
+        combo = QComboBox()
+        combo.setEditable(True)
+        ticket = thermal_printer.printers_for_ticket_combo(
+            [
+                "Microsoft Print to PDF",
+                "Fax",
+                "POS-80C",
+                "POS 80C",
+                "HP DeskJet",
+            ]
+        )
+        holder._fill_printer_combo(combo, "POS-80C", ticket, offline_names=set())
+        labels = [combo.itemText(i) for i in range(1, combo.count())]
+        self.assertEqual(labels, ["POS-80C"])
+        del app
+
     def test_fill_combo_does_not_reinject_db_ghost(self) -> None:
         from PySide6.QtWidgets import QApplication, QComboBox
 

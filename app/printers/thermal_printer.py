@@ -389,6 +389,9 @@ _VIRTUAL_PRINTER_HINTS = (
     "pdf creator",
     "bullzip",
     "cutepdf",
+    "print to pdf",
+    "document writer",
+    "root printer",  # CUPS placeholder
 )
 
 
@@ -398,6 +401,64 @@ def is_virtual_printer(name: str) -> bool:
     if not low:
         return False
     return any(hint in low for hint in _VIRTUAL_PRINTER_HINTS)
+
+
+def dedupe_printer_names(names: list[str]) -> list[str]:
+    """Une seule entrée par file réelle (POS 80C ≈ POS-80C ≈ POS80C).
+
+    Préfère le nom sans suffixe « copie », puis le plus court.
+    """
+    best: dict[str, str] = {}
+    for name in names or []:
+        raw = (name or "").strip()
+        if not raw:
+            continue
+        key = normalize_printer_key(raw)
+        if not key:
+            continue
+        prev = best.get(key)
+        if prev is None:
+            best[key] = raw
+            continue
+        prev_low = prev.lower()
+        new_low = raw.lower()
+        prev_copy = "copie" in prev_low or "copy" in prev_low
+        new_copy = "copie" in new_low or "copy" in new_low
+        if prev_copy and not new_copy:
+            best[key] = raw
+        elif new_copy and not prev_copy:
+            continue
+        elif len(raw) < len(prev):
+            best[key] = raw
+    out = list(best.values())
+    out.sort(key=lambda n: (0 if is_likely_thermal_printer(n) else 1, n.lower()))
+    return out
+
+
+def printers_for_ticket_combo(names: list[str]) -> list[str]:
+    """Noms à proposer pour l'imprimante **ticket** (thermique).
+
+    Exclut PDF/Fax/XPS. S'il existe au moins une thermique (POS, Epson TM…),
+    seules celles-ci sont proposées — évite une longue liste Windows inutile.
+    """
+    physical = dedupe_printer_names(
+        [n for n in names or [] if not is_virtual_printer(n)]
+    )
+    thermals = [n for n in physical if is_likely_thermal_printer(n)]
+    return thermals if thermals else physical
+
+
+def printers_for_invoice_combo(names: list[str]) -> list[str]:
+    """Noms à proposer pour l'imprimante **facture** (encre / laser).
+
+    Exclut PDF/Fax/XPS. S'il existe des imprimantes non-thermiques, on les
+    propose en priorité (sinon repli sur les physiques détectées).
+    """
+    physical = dedupe_printer_names(
+        [n for n in names or [] if not is_virtual_printer(n)]
+    )
+    ink = [n for n in physical if not is_likely_thermal_printer(n)]
+    return ink if ink else physical
 
 
 def is_likely_thermal_printer(name: str) -> bool:
