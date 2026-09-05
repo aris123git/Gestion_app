@@ -30,7 +30,13 @@ from PySide6.QtWidgets import (
 )
 
 from app import config
-from app.services import audit_service, backup_service, permissions as perms, settings_service
+from app.services import (
+    audit_service,
+    backup_service,
+    permissions as perms,
+    portal_service,
+    settings_service,
+)
 from app.ui.setup_wizard import CURRENCIES, SHOP_TYPES
 from app.ui.state import AppState
 from app.ui.widgets.helpers import (
@@ -66,6 +72,7 @@ class SettingsPage(QWidget):
         tabs.addTab(self._build_designs_tab(), "Designs des tickets")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
+        tabs.addTab(self._build_portal_tab(), "Portail web")
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
         tabs.currentChanged.connect(self._on_tab)
         layout.addWidget(tabs)
@@ -1379,6 +1386,228 @@ class SettingsPage(QWidget):
         else:
             self.last_backup_label.setText("Aucune sauvegarde pour le moment.")
 
+    # --- Onglet portail web -----------------------------------------------
+    def _build_portal_tab(self) -> QWidget:
+        wrap = QWidget()
+        layout = QVBoxLayout(wrap)
+        layout.setSpacing(12)
+
+        intro = QLabel(
+            "Associez ce logiciel à un site web pour consulter les indicateurs "
+            "de l'entreprise (CA, dettes, trésorerie…) en lecture seule.\n"
+            "Identifiants machine : identifiant entreprise + clé API. "
+            "Sur le site, connectez-vous avec les mêmes identifiants."
+        )
+        intro.setWordWrap(True)
+        intro.setStyleSheet("color: #64748b;")
+        layout.addWidget(intro)
+
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        form.setSpacing(10)
+
+        self.portal_enabled = QCheckBox("Activer l'association au portail web")
+        self.portal_url = QLineEdit()
+        self.portal_url.setPlaceholderText(portal_service.DEFAULT_PORTAL_URL)
+        self.portal_enterprise_id = QLineEdit()
+        self.portal_enterprise_id.setPlaceholderText("ENT-XXXXXXXX")
+        self.portal_api_key = QLineEdit()
+        self.portal_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.portal_api_key.setPlaceholderText("Clé API secrète")
+        self.portal_show_key = QCheckBox("Afficher la clé API")
+        self.portal_show_key.toggled.connect(
+            lambda checked: self.portal_api_key.setEchoMode(
+                QLineEdit.EchoMode.Normal
+                if checked
+                else QLineEdit.EchoMode.Password
+            )
+        )
+        self.portal_owner_email = QLineEdit()
+        self.portal_owner_email.setPlaceholderText("email@entreprise.com (optionnel)")
+        self.portal_status = QLabel("")
+        self.portal_status.setWordWrap(True)
+        self.portal_status.setStyleSheet("color: #64748b; font-size: 12px;")
+
+        form.addRow(self.portal_enabled)
+        form.addRow("URL du site", self.portal_url)
+        form.addRow("Identifiant entreprise", self.portal_enterprise_id)
+        form.addRow("Clé API", self.portal_api_key)
+        form.addRow("", self.portal_show_key)
+        form.addRow("E-mail gérant", self.portal_owner_email)
+        form.addRow(self.portal_status)
+        layout.addWidget(make_card(form_widget))
+
+        actions = QHBoxLayout()
+        save_btn = QPushButton("Enregistrer")
+        save_btn.setObjectName("Primary")
+        save_btn.clicked.connect(self._save_portal_settings)
+        gen_btn = QPushButton("Générer identifiants")
+        gen_btn.clicked.connect(self._generate_portal_credentials)
+        regen_btn = QPushButton("Nouvelle clé API")
+        regen_btn.clicked.connect(self._regenerate_portal_api_key)
+        test_btn = QPushButton("Tester la connexion")
+        test_btn.clicked.connect(self._test_portal_connection)
+        assoc_btn = QPushButton("Associer")
+        assoc_btn.setObjectName("Primary")
+        assoc_btn.clicked.connect(self._associate_portal)
+        sync_btn = QPushButton("Synchroniser maintenant")
+        sync_btn.clicked.connect(self._sync_portal_now)
+        open_btn = QPushButton("Ouvrir le portail")
+        open_btn.clicked.connect(self._open_portal_in_browser)
+        actions.addWidget(save_btn)
+        actions.addWidget(gen_btn)
+        actions.addWidget(regen_btn)
+        actions.addWidget(test_btn)
+        actions.addWidget(assoc_btn)
+        actions.addWidget(sync_btn)
+        actions.addWidget(open_btn)
+        actions.addStretch()
+        layout.addLayout(actions)
+
+        hint = QLabel(
+            "Démarrer le portail local (sur le serveur / ce PC) :\n"
+            "  python -m portal\n"
+            "Puis associez et synchronisez. L'URL par défaut est "
+            f"{portal_service.DEFAULT_PORTAL_URL}"
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        layout.addWidget(hint)
+        layout.addStretch()
+        return wrap
+
+    def _load_portal_ui(self) -> None:
+        portal_service.ensure_credentials()
+        self.portal_enabled.setChecked(portal_service.is_enabled())
+        self.portal_url.setText(portal_service.get_portal_url())
+        self.portal_enterprise_id.setText(portal_service.get_enterprise_id())
+        self.portal_api_key.setText(portal_service.get_api_key())
+        self.portal_owner_email.setText(portal_service.get_owner_email())
+        self.portal_status.setText(portal_service.status_summary())
+
+    def _save_portal_settings(self) -> None:
+        portal_service.save_portal_settings(
+            enabled=self.portal_enabled.isChecked(),
+            url=self.portal_url.text().strip(),
+            owner_email=self.portal_owner_email.text().strip(),
+            enterprise_id=self.portal_enterprise_id.text().strip() or None,
+        )
+        # Conserve la clé saisie (si l'utilisateur l'a collée).
+        key = self.portal_api_key.text().strip()
+        if key:
+            settings_service.set_setting(portal_service.SETTING_API_KEY, key)
+        self._load_portal_ui()
+        audit_service.log_action(
+            getattr(self.state.current_user, "username", "") or "system",
+            "Portail",
+            "Réglages portail enregistrés",
+        )
+        info(self, "Réglages du portail enregistrés.")
+
+    def _generate_portal_credentials(self) -> None:
+        has_existing = bool(
+            portal_service.get_enterprise_id() and portal_service.get_api_key()
+        )
+        if has_existing:
+            if not confirm(
+                self,
+                "Des identifiants existent déjà. Générer un nouvel "
+                "identifiant entreprise et une nouvelle clé ?",
+                "Identifiants portail",
+            ):
+                self._load_portal_ui()
+                return
+            settings_service.set_setting(portal_service.SETTING_ENTERPRISE_ID, "")
+            settings_service.set_setting(portal_service.SETTING_API_KEY, "")
+            settings_service.set_setting(portal_service.SETTING_ASSOCIATED, "0")
+        eid, key = portal_service.ensure_credentials()
+        self.portal_enterprise_id.setText(eid)
+        self.portal_api_key.setText(key)
+        self.portal_status.setText(portal_service.status_summary())
+        info(
+            self,
+            f"Identifiants créés.\n\nEntreprise : {eid}\n"
+            "Conservez la clé API : elle sert aussi à se connecter au site.",
+        )
+
+    def _regenerate_portal_api_key(self) -> None:
+        if not confirm(
+            self,
+            "Générer une nouvelle clé API ? L'ancienne ne fonctionnera plus "
+            "sur le portail jusqu'à une nouvelle association.",
+            "Nouvelle clé API",
+        ):
+            return
+        key = portal_service.regenerate_api_key()
+        self.portal_api_key.setText(key)
+        self.portal_status.setText(portal_service.status_summary())
+        info(self, "Nouvelle clé API générée. Ré-associez le logiciel au portail.")
+
+    def _test_portal_connection(self) -> None:
+        self._save_portal_settings_silent()
+        result = portal_service.test_connection()
+        self.portal_status.setText(portal_service.status_summary())
+        if result.ok:
+            info(self, result.message or "Portail joignable.")
+        else:
+            error(self, result.message, "Portail web")
+
+    def _associate_portal(self) -> None:
+        self._save_portal_settings_silent()
+        if not self.portal_enabled.isChecked():
+            warn(self, "Cochez « Activer l'association » puis Enregistrer.")
+            return
+        result = portal_service.associate()
+        self.portal_status.setText(portal_service.status_summary())
+        if result.ok:
+            audit_service.log_action(
+                getattr(self.state.current_user, "username", "") or "system",
+                "Portail",
+                f"Association {portal_service.get_enterprise_id()}",
+            )
+            info(self, result.message)
+        else:
+            error(self, result.message, "Association portail")
+
+    def _sync_portal_now(self) -> None:
+        self._save_portal_settings_silent()
+        result = portal_service.sync_now()
+        self.portal_status.setText(portal_service.status_summary())
+        if result.ok:
+            audit_service.log_action(
+                getattr(self.state.current_user, "username", "") or "system",
+                "Portail",
+                "Synchronisation indicateurs",
+            )
+            info(self, result.message)
+        else:
+            error(self, result.message, "Synchronisation portail")
+
+    def _save_portal_settings_silent(self) -> None:
+        portal_service.save_portal_settings(
+            enabled=self.portal_enabled.isChecked(),
+            url=self.portal_url.text().strip(),
+            owner_email=self.portal_owner_email.text().strip(),
+            enterprise_id=self.portal_enterprise_id.text().strip() or None,
+        )
+        key = self.portal_api_key.text().strip()
+        if key:
+            settings_service.set_setting(portal_service.SETTING_API_KEY, key)
+
+    def _open_portal_in_browser(self) -> None:
+        import webbrowser
+
+        url = (self.portal_url.text().strip() or portal_service.get_portal_url()).rstrip(
+            "/"
+        )
+        eid = self.portal_enterprise_id.text().strip() or portal_service.get_enterprise_id()
+        target = f"{url}/login"
+        if eid:
+            from urllib.parse import quote
+
+            target = f"{url}/login?enterprise_id={quote(eid)}"
+        webbrowser.open(target)
+
     # --- Onglet journal ----------------------------------------------------
     def _build_audit_tab(self) -> QWidget:
         wrap = QWidget()
@@ -1400,13 +1629,16 @@ class SettingsPage(QWidget):
             self.audit_table.setItem(row, 3, QTableWidgetItem(log.details))
 
     def _on_tab(self, index: int) -> None:
-        # 0 Commerce, 1 Apparence, 2 Designs, 3 Contrôles, 4 Sauvegarde, 5 Audit
+        # 0 Commerce, 1 Apparence, 2 Designs, 3 Contrôles, 4 Sauvegarde,
+        # 5 Portail web, 6 Audit
         if index == 2:
             self._load_designs_ui()
         elif index == 4:
             self._load_auto_options()
             self._reload_backups()
         elif index == 5:
+            self._load_portal_ui()
+        elif index == 6:
             self._reload_audit()
 
     # --- Rafraîchissement --------------------------------------------------
