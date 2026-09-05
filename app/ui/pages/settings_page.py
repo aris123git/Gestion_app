@@ -203,10 +203,25 @@ class SettingsPage(QWidget):
 
         self.theme = QComboBox()
         self.theme.addItems(["Clair", "Sombre"])
-        self.ticket_format = QComboBox()
-        self.ticket_format.addItem("Ticket 80 mm", "80mm")
-        self.ticket_format.addItem("Ticket 58 mm", "58mm")
-        self.ticket_format.addItem("Facture papier (demi-A4)", "demi-A4")
+        # Type d'imprimante par défaut (pré-sélection après encaissement).
+        self.default_printer_kind = QComboBox()
+        self.default_printer_kind.addItem("Thermique (ticket 58/80 mm)", "thermique")
+        self.default_printer_kind.addItem("Encre / laser (facture demi-A4)", "encre")
+        self.default_printer_kind.setToolTip(
+            "Choix proposé par défaut après chaque vente. "
+            "Le caissier peut toujours changer ticket ↔ facture à l'encaissement."
+        )
+        self.default_printer_kind.currentIndexChanged.connect(
+            self._on_default_printer_kind_changed
+        )
+        self.thermal_width = QComboBox()
+        self.thermal_width.addItem("Ticket 80 mm", "80mm")
+        self.thermal_width.addItem("Ticket 58 mm", "58mm")
+        self.thermal_width.setToolTip(
+            "Largeur du ticket thermique lorsque le type par défaut est Thermique."
+        )
+        # Compat : ancien attribut utilisé par le profil ESC/POS.
+        self.ticket_format = self.thermal_width
         # Profil ESC/POS : largeur + codepage (accents FR).
         from app.printers.printer_profile import list_profiles
 
@@ -220,10 +235,6 @@ class SettingsPage(QWidget):
             "chinois ou symboles, changez de profil puis « Test accents FR »."
         )
         self.printer_profile.currentIndexChanged.connect(self._on_printer_profile_changed)
-        self.ticket_format.setToolTip(
-            "Préférence affichée après encaissement. Le caissier peut toujours "
-            "choisir ticket 58/80 mm ou facture encre à chaque vente."
-        )
 
         # Affichage caisse : texte agrandi pour serveur / précipitation.
         self.pos_large_text = QCheckBox(
@@ -278,8 +289,9 @@ class SettingsPage(QWidget):
         )
 
         form.addRow("Thème", self.theme)
-        form.addRow("Format préféré", self.ticket_format)
-        form.addRow("Profil imprimante", self.printer_profile)
+        form.addRow("Type d'imprimante par défaut", self.default_printer_kind)
+        form.addRow("Largeur ticket thermique", self.thermal_width)
+        form.addRow("Profil imprimante thermique", self.printer_profile)
         form.addRow("Lecture rapide caisse", self.pos_large_text)
         form.addRow("Taille du texte", self.pos_text_size)
         form.addRow("Imprimante ticket (thermique 58/80)", printer_row)
@@ -673,21 +685,29 @@ class SettingsPage(QWidget):
         else:
             warn(self, result.message, "File d'attente")
 
+    def _on_default_printer_kind_changed(self, _index: int = 0) -> None:
+        """Active la largeur thermique seulement si le défaut est Thermique."""
+        is_thermal = self.default_printer_kind.currentData() == "thermique"
+        self.thermal_width.setEnabled(is_thermal)
+        self.printer_profile.setEnabled(is_thermal)
+
     def _on_printer_profile_changed(self, _index: int = 0) -> None:
-        """Aligne le format papier 58/80 mm sur le profil choisi (pas demi-A4)."""
+        """Aligne la largeur 58/80 mm sur le profil (si défaut = thermique)."""
         from app.printers.printer_profile import get_profile
 
+        if self.default_printer_kind.currentData() != "thermique":
+            return
         pid = self.printer_profile.currentData()
         if not pid:
             return
         profile = get_profile(pid)
-        current_fmt = self.ticket_format.currentData()
+        current_fmt = self.thermal_width.currentData()
         if current_fmt in ("58mm", "80mm") and current_fmt != profile.paper_width:
-            idx = self.ticket_format.findData(profile.paper_width)
+            idx = self.thermal_width.findData(profile.paper_width)
             if idx >= 0:
-                self.ticket_format.blockSignals(True)
-                self.ticket_format.setCurrentIndex(idx)
-                self.ticket_format.blockSignals(False)
+                self.thermal_width.blockSignals(True)
+                self.thermal_width.setCurrentIndex(idx)
+                self.thermal_width.blockSignals(False)
 
     def _print_test_page(self) -> None:
         # Applique d'abord les réglages saisis pour tester la configuration réelle.
@@ -849,12 +869,16 @@ class SettingsPage(QWidget):
 
     def _save_appearance(self, silent: bool = False) -> None:
         from app.printers.printer_profile import save_printer_profile_id
+        from app.printers.printer_targets import set_default_print_preference
 
         dark = self.theme.currentText() == "Sombre"
         self.state.set_dark(dark)
-        settings_service.set_setting("ticket_format", self.ticket_format.currentData())
+        set_default_print_preference(
+            self.default_printer_kind.currentData() or "thermique",
+            self.thermal_width.currentData() or "80mm",
+        )
         pid = self.printer_profile.currentData()
-        if pid:
+        if pid and self.default_printer_kind.currentData() == "thermique":
             save_printer_profile_id(pid)
         settings_service.set_setting(
             "pos_catalog_large_text",
@@ -1215,13 +1239,21 @@ class SettingsPage(QWidget):
         self.logo_label.setText(shop.logo_path)
         self.footer.setText(shop.ticket_footer)
         self.theme.setCurrentText("Sombre" if self.state.dark else "Clair")
-        fmt = settings_service.get_setting("ticket_format", "80mm")
-        fmt_index = self.ticket_format.findData(fmt)
-        if fmt_index < 0:
-            # Anciennes valeurs stockées comme texte simple.
-            fmt_index = self.ticket_format.findText(fmt)
-        if fmt_index >= 0:
-            self.ticket_format.setCurrentIndex(fmt_index)
+        from app.printers.half_a4_invoice import is_half_a4
+        from app.printers.printer_targets import get_default_paper
+
+        fmt = get_default_paper()
+        kind = "encre" if is_half_a4(fmt) else "thermique"
+        kind_index = self.default_printer_kind.findData(kind)
+        if kind_index >= 0:
+            self.default_printer_kind.blockSignals(True)
+            self.default_printer_kind.setCurrentIndex(kind_index)
+            self.default_printer_kind.blockSignals(False)
+        width = "58mm" if fmt == "58mm" else "80mm"
+        width_index = self.thermal_width.findData(width)
+        if width_index >= 0:
+            self.thermal_width.setCurrentIndex(width_index)
+        self._on_default_printer_kind_changed()
         from app.printers.printer_profile import (
             DEFAULT_PROFILE_ID_58,
             DEFAULT_PROFILE_ID_80,

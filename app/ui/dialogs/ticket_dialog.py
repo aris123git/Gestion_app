@@ -82,7 +82,9 @@ class TicketDialog(QDialog):
             self.choice_group.addButton(radio)
             layout.addWidget(radio)
 
-        default = settings_service.get_setting("ticket_format", "80mm")
+        from app.printers.printer_targets import get_default_paper
+
+        default = get_default_paper()
         if is_half_a4(default):
             self.radio_ink.setChecked(True)
         elif default == "58mm":

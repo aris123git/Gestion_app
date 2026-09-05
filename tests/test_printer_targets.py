@@ -18,9 +18,13 @@ from app.database.seed import seed_all  # noqa: E402
 from app.printers.half_a4_invoice import PAPER_HALF_A4  # noqa: E402
 from app.printers.printer_targets import (  # noqa: E402
     describe_destinations,
+    get_default_paper,
+    get_default_printer_kind,
     get_invoice_printer_name,
     get_thermal_printer_name,
+    paper_for_kind,
     printer_for_paper,
+    set_default_print_preference,
     set_printers,
 )
 from app.services import settings_service  # noqa: E402
@@ -60,6 +64,20 @@ class PrinterTargetsTestCase(unittest.TestCase):
         set_printers(thermal_name="A", invoice_name="B")
         self.assertEqual(settings_service.get_setting("printer_name"), "A")
         self.assertEqual(settings_service.get_setting("invoice_printer_name"), "B")
+
+    def test_default_printer_kind_thermique(self) -> None:
+        paper = set_default_print_preference("thermique", "58mm")
+        self.assertEqual(paper, "58mm")
+        self.assertEqual(get_default_paper(), "58mm")
+        self.assertEqual(get_default_printer_kind(), "thermique")
+        self.assertEqual(paper_for_kind("thermique", "80mm"), "80mm")
+
+    def test_default_printer_kind_encre(self) -> None:
+        paper = set_default_print_preference("encre", "80mm")
+        self.assertEqual(paper, PAPER_HALF_A4)
+        self.assertEqual(get_default_paper(), PAPER_HALF_A4)
+        self.assertEqual(get_default_printer_kind(), "encre")
+        self.assertEqual(paper_for_kind("encre"), PAPER_HALF_A4)
 
 
 if __name__ == "__main__":
