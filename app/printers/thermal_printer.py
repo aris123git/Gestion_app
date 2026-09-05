@@ -735,45 +735,28 @@ def resolve_printer_name(
     return _fallback_after_invalid(preferred, device=False)
 
 
-def _resolve_system_default() -> tuple[str, str]:
-    """Valide l'imprimante par défaut OS ; échoue clairement si fantôme."""
-    system = (default_printer() or "").strip()
-    if not system:
-        return "", ""
-    available = list_printers()
-    if available and not match_printer_in_list(system, available):
-        warning = (
-            f"L'imprimante par défaut du système (« {system} ») est introuvable. "
-            "Choisissez une imprimante valide dans Paramètres → Apparence du ticket."
-        )
-        logger.warning(warning)
-        return "", warning
-    if not available:
-        probed = probe_printer_exists(system)
-        if probed is False:
-            warning = (
-                f"L'imprimante par défaut du système (« {system} ») est introuvable. "
-                "Choisissez une imprimante valide dans Paramètres → Apparence du ticket."
-            )
-            logger.warning(warning)
-            return "", warning
-    return "", ""
-
-
 def _fallback_after_invalid(preferred: str, *, device: bool) -> tuple[str, str]:
     _clear_printer_setting_if_matches(preferred)
     kind = "Périphérique" if device else "Imprimante"
-    base = (
-        f"{kind} « {preferred} » introuvable sur ce poste. "
-        "Passage sur l'imprimante par défaut du système. "
-        "Choisissez une imprimante valide dans Paramètres → Apparence du ticket."
+    warning = (
+        f"{kind} « {preferred} » introuvable sur ce poste "
+        "(désinstallée ou hors ligne).\n"
+        "Aucun envoi n'a été redirigé vers une autre imprimante.\n"
+        "Dans Paramètres → Apparence du ticket, choisissez "
+        "l'imprimante thermique et/ou encre installée, puis Appliquer."
     )
-    logger.warning(base)
-    # Vérifier aussi le défaut système (sinon on « cherche » encore un fantôme).
-    _name, extra = _resolve_system_default()
-    warning = base if not extra else f"{base}\n{extra}"
+    logger.warning(warning)
     return "", warning
 
+
+def _resolve_system_default() -> tuple[str, str]:
+    """Sans nom choisi : on n'improvise pas de cible (PDF / autre file)."""
+    return "", (
+        "Aucune imprimante sélectionnée.\n"
+        "Dans Paramètres → Apparence du ticket, choisissez "
+        "l'imprimante thermique (ticket) et l'imprimante encre (facture), "
+        "puis Appliquer."
+    )
 
 def _clear_printer_setting_if_matches(preferred: str) -> None:
     """Efface le réglage ticket et/ou facture s'il pointe vers le nom fantôme."""
@@ -905,60 +888,45 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
     if not target:
         available = list_printers()
         tip = ""
-        suggested = suggest_thermal_printer(available)
-        if suggested:
+        ticket = printers_for_ticket_combo(available)
+        ink = printers_for_invoice_combo(available)
+        if ticket or ink:
+            parts = []
+            if ticket:
+                parts.append("thermique : " + ", ".join(ticket[:3]))
+            if ink:
+                parts.append("encre : " + ", ".join(ink[:3]))
             tip = (
-                f" Une imprimante ticket « {suggested} » a été détectée : "
-                "sélectionnez-la dans Paramètres → Apparence du ticket."
+                " Imprimantes installées détectées ("
+                + " · ".join(parts)
+                + ") — sélectionnez-les dans Paramètres "
+                "(ticket thermique + facture encre)."
             )
-        elif available:
-            tip = (
-                " Imprimantes vues sur ce poste : "
-                + ", ".join(available[:6])
-                + ("…" if len(available) > 6 else "")
-                + "."
-            )
+        msg = hint or "Aucune imprimante sélectionnée."
         return PrintResult(
             False,
             Path(),
-            "Aucune imprimante utilisable."
+            msg
             + tip
-            + " Vérifiez que l'imprimante (ex. POS 80C) est allumée et installée.",
+            + " L'impression n'envoie le ticket qu'à l'imprimante "
+            "installée et choisie (pas de redirection automatique).",
         )
 
     preflight = _windows_printer_preflight(target)
     if preflight is not None:
+        # Ne jamais rediriger vers une autre file : uniquement la sélection.
         if "introuvable" in (preflight.message or "").lower() or "ouvrir" in (
             preflight.message or ""
         ).lower():
             _clear_printer_setting_if_matches(target)
-            fallback = suggest_thermal_printer()
-            if fallback and fallback.lower() != target.lower():
-                retry = _windows_printer_preflight(fallback)
-                if retry is None:
-                    target = fallback
-                    hint = (
-                        f"Imprimante précédente indisponible — "
-                        f"envoi vers « {fallback} »."
-                    )
-                else:
-                    return PrintResult(
-                        False,
-                        Path(),
-                        preflight.message
-                        + " Astuce : dans Paramètres, choisissez l'imprimante "
-                        "nommée POS 80C (ou similaire) dans la liste.",
-                    )
-            else:
-                return PrintResult(
-                    False,
-                    Path(),
-                    preflight.message
-                    + " Astuce : dans Paramètres, choisissez l'imprimante "
-                    "nommée POS 80C (ou similaire) dans la liste.",
-                )
-        else:
-            return preflight
+        return PrintResult(
+            False,
+            Path(),
+            preflight.message
+            + " Aucun envoi vers une autre imprimante. "
+            "Dans Paramètres, choisissez la thermique ou l'encre "
+            "installée (ex. POS 80C), puis réessayez.",
+        )
 
     job_id = 0
     written = 0
@@ -1018,31 +986,25 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
 
 
 def _pick_windows_print_target(printer_name: str) -> tuple[str, str]:
-    """Choisit la file Windows (évite PDF virtuel si un POS ticket existe)."""
-    available = list_printers()
+    """Cible Windows = uniquement l'imprimante **sélectionnée** (si installée).
+
+    Pas de bascule automatique vers PDF, défaut système, ou autre POS détecté.
+    """
     preferred = (printer_name or "").strip()
-    if preferred:
-        matched = match_printer_in_list(preferred, available) if available else preferred
-        return matched or preferred, ""
+    if not preferred:
+        return "", ""
 
-    system = (default_printer() or "").strip()
-    if system and not is_virtual_printer(system):
-        if not available or match_printer_in_list(system, available):
-            return system, ""
-
-    suggested = suggest_thermal_printer(available)
-    if suggested:
-        hint = ""
-        if system and is_virtual_printer(system):
-            hint = (
-                f"L'imprimante Windows par défaut (« {system} ») n'est pas un ticket. "
-                f"Envoi vers « {suggested} »."
-            )
-        elif not system:
-            hint = f"Aucune imprimante par défaut — envoi vers « {suggested} »."
-        return suggested, hint
-
-    return system, ""
+    available = list_printers()
+    if available:
+        matched = match_printer_in_list(preferred, available)
+        if matched:
+            return matched, ""
+        return "", (
+            f"Imprimante « {preferred} » absente de Windows. "
+            "Sélectionnez la thermique ou l'encre installée dans Paramètres."
+        )
+    # Liste vide : on tente quand même le nom choisi (OpenPrinter tranchera).
+    return preferred, ""
 
 
 
@@ -1208,8 +1170,7 @@ def purge_printer_queue(printer_name: Optional[str] = None) -> PrintResult:
         return PrintResult(False, Path(), msg)
     if (
         warning
-        and "L'imprimante par défaut du système" in warning
-        and "introuvable" in warning
+        and "Aucune imprimante" in warning
     ):
         return PrintResult(False, Path(), warning)
     preflight = _windows_printer_preflight(target)
@@ -1448,16 +1409,26 @@ def _send_content(
         if printer_name is not None
         else settings_service.get_setting("printer_name", "")
     ).strip()
+    if not printer_name:
+        return PrintResult(
+            False,
+            Path(),
+            "Aucune imprimante thermique sélectionnée.\n"
+            "Dans Paramètres → Apparence du ticket, choisissez "
+            "l'imprimante ticket (ex. POS 80C), puis Appliquer.\n"
+            "L'impression n'utilise que l'imprimante installée et choisie.",
+        )
     printer_name, printer_warning = resolve_printer_name(printer_name)
 
-    # Défaut système fantôme : ne pas lancer une recherche Windows/CUPS inutile.
-    if (
-        not printer_name
-        and printer_warning
-        and "L'imprimante par défaut du système" in printer_warning
-        and "introuvable" in printer_warning
-    ):
-        return PrintResult(False, Path(), printer_warning)
+    # Cible invalide / non sélectionnée : ne pas lancer d'envoi fantôme.
+    if not printer_name:
+        return PrintResult(
+            False,
+            Path(),
+            printer_warning
+            or "Imprimante thermique introuvable. "
+            "Choisissez-en une dans Paramètres → Apparence du ticket.",
+        )
 
     try:
         feed_lines = int(

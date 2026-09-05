@@ -73,10 +73,14 @@ class TicketDialog(QDialog):
             default_label = f"Ticket thermique {width} mm → {thermal_name}"
 
         intro = QLabel(
-            f"<b>Impression par défaut</b> (Paramètres) :<br/>{default_label}<br/><br/>"
-            "Cliquez sur <b>Imprimer</b> pour utiliser ce réglage. "
-            "Changez la destination ci-dessous <i>uniquement</i> "
-            "si vous voulez l'autre imprimante."
+            f"<b>Deux destinations</b> (Paramètres) :<br/>"
+            f"• Thermique : {thermal_name}<br/>"
+            f"• Encre / laser : {invoice_name}<br/><br/>"
+            f"<b>Impression par défaut</b> : {default_label}<br/><br/>"
+            "Cliquez sur <b>Imprimer</b> : le ticket part <b>uniquement</b> "
+            "vers l'imprimante installée et sélectionnée "
+            "(pas de redirection PDF / autre file). "
+            "Changez la destination ci-dessous seulement pour l'autre type."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)

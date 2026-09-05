@@ -290,17 +290,26 @@ def print_half_a4_invoice(
         if printer_name is not None
         else get_invoice_printer_name()
     ).strip()
+    if not printer_name:
+        return PrintResult(
+            False,
+            pdf_path,
+            "Aucune imprimante encre / laser sélectionnée.\n"
+            "Dans Paramètres → Apparence du ticket, choisissez "
+            "l'imprimante facture, puis Appliquer.\n"
+            f"PDF enregistré : {pdf_path}",
+        )
     from app.printers.thermal_printer import resolve_printer_name
 
     printer_name, printer_warning = resolve_printer_name(printer_name)
 
-    if (
-        not printer_name
-        and printer_warning
-        and "L'imprimante par défaut du système" in printer_warning
-        and "introuvable" in printer_warning
-    ):
-        return PrintResult(False, pdf_path, printer_warning)
+    if not printer_name:
+        return PrintResult(
+            False,
+            pdf_path,
+            (printer_warning or "Imprimante facture introuvable.")
+            + f"\nPDF enregistré : {pdf_path}",
+        )
 
     if sys.platform.startswith("win"):
         result = _print_pdf_windows(pdf_path, printer_name)
@@ -330,12 +339,12 @@ def _print_pdf_windows(pdf_path: Path, printer_name: str) -> PrintResult:  # pra
 
     from app.printers import thermal_printer as tp
 
-    target = (printer_name or "").strip() or tp.default_printer()
+    target = (printer_name or "").strip()
     if not target:
         return PrintResult(
             False,
             pdf_path,
-            f"Aucune imprimante configurée. PDF enregistré : {pdf_path}",
+            f"Aucune imprimante facture sélectionnée. PDF enregistré : {pdf_path}",
         )
 
     # Réutilise le pré-contrôle offline du module thermique.

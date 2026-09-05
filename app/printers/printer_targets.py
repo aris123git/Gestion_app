@@ -23,8 +23,8 @@ def get_thermal_printer_name() -> str:
 def get_invoice_printer_name() -> str:
     """Imprimante facture papier (jet d'encre / laser).
 
-    Si non configurée, retombe sur l'imprimante thermique pour ne pas casser
-    les installations existantes (une seule imprimante).
+    Si non configurée, retombe sur l'imprimante thermique (magasin avec
+    une seule machine). Préférez renseigner les **deux** dans Paramètres.
     """
     dedicated = (
         settings_service.get_setting(SETTING_INVOICE_PRINTER, "") or ""
@@ -35,7 +35,7 @@ def get_invoice_printer_name() -> str:
 
 
 def printer_for_paper(paper: str) -> str:
-    """Retourne le nom d'imprimante à utiliser selon le format choisi."""
+    """Nom d'imprimante sélectionné selon le format (thermique vs encre)."""
     if is_half_a4(paper):
         return get_invoice_printer_name()
     return get_thermal_printer_name()
@@ -61,14 +61,16 @@ def paper_for_kind(kind: str, thermal_width: str = "80mm") -> str:
 
 def describe_destinations() -> Tuple[str, str]:
     """Libellés d'affichage (thermique, facture) pour l'UI caissier."""
-    thermal = get_thermal_printer_name() or "(imprimante par défaut du système)"
+    thermal = get_thermal_printer_name() or "(non sélectionnée — Paramètres)"
     invoice = (
         settings_service.get_setting(SETTING_INVOICE_PRINTER, "") or ""
     ).strip()
     if not invoice:
-        invoice = f"{thermal} (même que ticket)"
+        if get_thermal_printer_name():
+            invoice = f"{thermal} (même que ticket — idéalement choisir l'encre)"
+        else:
+            invoice = "(non sélectionnée — Paramètres)"
     return thermal, invoice
-
 
 def set_printers(
     thermal_name: Optional[str] = None,

@@ -1,4 +1,4 @@
-"""Tests de résolution d'imprimante (cible absente → défaut système)."""
+"""Tests de résolution d'imprimante (cible sélectionnée uniquement)."""
 
 from __future__ import annotations
 
@@ -14,11 +14,10 @@ from app.printers import thermal_printer  # noqa: E402
 
 
 class ResolvePrinterNameTestCase(unittest.TestCase):
-    def test_empty_preferred_uses_system_default(self) -> None:
-        with mock.patch.object(thermal_printer, "default_printer", return_value=""):
-            name, warning = thermal_printer.resolve_printer_name("")
+    def test_empty_preferred_requires_selection(self) -> None:
+        name, warning = thermal_printer.resolve_printer_name("")
         self.assertEqual(name, "")
-        self.assertEqual(warning, "")
+        self.assertIn("sélectionnée", warning.lower())
 
     def test_known_printer_kept(self) -> None:
         with mock.patch.object(
@@ -36,11 +35,9 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
         self.assertEqual(name, "EPSON_TM_T20")
         self.assertEqual(warning, "")
 
-    def test_unknown_printer_falls_back_and_clears_setting(self) -> None:
+    def test_unknown_printer_clears_without_redirect(self) -> None:
         with mock.patch.object(
             thermal_printer, "list_printers", return_value=["EPSON_TM_T20"]
-        ), mock.patch.object(
-            thermal_printer, "default_printer", return_value="EPSON_TM_T20"
         ), mock.patch.object(
             thermal_printer.settings_service,
             "get_setting",
@@ -52,6 +49,7 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
             set_setting.assert_any_call("printer_name", "")
         self.assertEqual(name, "")
         self.assertIn("introuvable", warning.lower())
+        self.assertIn("redirigé", warning.lower())
 
     def test_empty_detection_list_probe_false_clears(self) -> None:
         """Liste vide + sonde négative → on n'insiste pas sur le fantôme."""
@@ -59,8 +57,6 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
             thermal_printer, "list_printers", return_value=[]
         ), mock.patch.object(
             thermal_printer, "probe_printer_exists", return_value=False
-        ), mock.patch.object(
-            thermal_printer, "default_printer", return_value=""
         ), mock.patch.object(
             thermal_printer.settings_service,
             "get_setting",
@@ -100,7 +96,7 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
         self.assertEqual(name, "EPSON_TM_T20")
         self.assertIn("vérifier", warning.lower())
 
-    def test_system_default_ghost_warned(self) -> None:
+    def test_empty_preferred_no_system_guess(self) -> None:
         with mock.patch.object(
             thermal_printer, "list_printers", return_value=["PDF"]
         ), mock.patch.object(
@@ -108,7 +104,7 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
         ):
             name, warning = thermal_printer.resolve_printer_name("")
         self.assertEqual(name, "")
-        self.assertIn("par défaut du système", warning)
+        self.assertIn("sélectionnée", warning.lower())
 
     def test_device_path_missing_falls_back(self) -> None:
         missing = "/dev/usb/lp_does_not_exist_xyz"
@@ -188,9 +184,11 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
         )
         self.assertTrue(thermal_printer.is_likely_thermal_printer("POS 80C"))
         self.assertTrue(thermal_printer.is_virtual_printer("Microsoft Print to PDF"))
-        self.assertFalse(thermal_printer.is_likely_thermal_printer("Microsoft Print to PDF"))
+        self.assertFalse(
+            thermal_printer.is_likely_thermal_printer("Microsoft Print to PDF")
+        )
 
-    def test_pick_windows_target_skips_pdf_default(self) -> None:
+    def test_pick_windows_empty_does_not_guess(self) -> None:
         available = ["Microsoft Print to PDF", "POS-80C"]
         with mock.patch.object(
             thermal_printer, "list_printers", return_value=available
@@ -200,8 +198,8 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
             return_value="Microsoft Print to PDF",
         ):
             target, hint = thermal_printer._pick_windows_print_target("")
-        self.assertEqual(target, "POS-80C")
-        self.assertIn("POS-80C", hint)
+        self.assertEqual(target, "")
+        self.assertEqual(hint, "")
 
     def test_pick_windows_target_honors_fuzzy_preferred(self) -> None:
         available = ["POS-80C", "HP DeskJet"]
@@ -211,6 +209,14 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
             target, hint = thermal_printer._pick_windows_print_target("POS 80C")
         self.assertEqual(target, "POS-80C")
         self.assertEqual(hint, "")
+
+    def test_pick_windows_rejects_missing_preferred(self) -> None:
+        with mock.patch.object(
+            thermal_printer, "list_printers", return_value=["POS-80C"]
+        ):
+            target, hint = thermal_printer._pick_windows_print_target("Fantome")
+        self.assertEqual(target, "")
+        self.assertIn("absente", hint.lower())
 
 
 class ListPrintersDetailedTestCase(unittest.TestCase):
@@ -255,7 +261,9 @@ class ListPrintersDetailedTestCase(unittest.TestCase):
         ), mock.patch.object(
             thermal_printer.sys, "platform", "linux"
         ):
-            found = {p.name: p.online for p in thermal_printer.list_printers_detailed()}
+            found = {
+                p.name: p.online for p in thermal_printer.list_printers_detailed()
+            }
         self.assertFalse(found["POS-80C"])
         self.assertTrue(found["PDF"])
 
@@ -281,6 +289,7 @@ class ListPrintersDetailedTestCase(unittest.TestCase):
         self.assertEqual(invoice, ["HP DeskJet 2700"])
         self.assertNotIn("Microsoft Print to PDF", ticket)
         self.assertNotIn("Fax", invoice)
+
 
 if __name__ == "__main__":
     unittest.main()
