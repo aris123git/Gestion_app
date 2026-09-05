@@ -266,13 +266,23 @@ class SettingsPage(QWidget):
             "Imprimante facture (jet d'encre / laser). "
             "Laissez vide pour utiliser la même que le ticket."
         )
-        refresh_printers = QPushButton("Actualiser")
-        refresh_printers.clicked.connect(lambda: self._reload_printers())
+        refresh_printers = QPushButton("Rechercher")
+        refresh_printers.setToolTip(
+            "Liste les imprimantes installées sur cet ordinateur "
+            "(POS 80C, Epson TM, jet d'encre…)."
+        )
+        refresh_printers.clicked.connect(self._search_connected_printers)
         printer_row = QHBoxLayout()
         printer_row.addWidget(self.printer, 1)
         printer_row.addWidget(refresh_printers)
         invoice_row = QHBoxLayout()
         invoice_row.addWidget(self.invoice_printer, 1)
+        self.printers_status = QLabel("")
+        self.printers_status.setWordWrap(True)
+        self.printers_status.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.printers_status.setToolTip(
+            "Résultat de la dernière recherche d'imprimantes sur ce poste."
+        )
 
         self.footer = QLineEdit()
 
@@ -305,6 +315,7 @@ class SettingsPage(QWidget):
         form.addRow("Taille du texte", self.pos_text_size)
         form.addRow("Imprimante ticket (thermique 58/80)", printer_row)
         form.addRow("Imprimante facture (encre / laser)", invoice_row)
+        form.addRow("", self.printers_status)
         form.addRow("Avance papier", self.feed_lines)
         form.addRow("Coupe", self.cut_mode)
         form.addRow("Après vente", self.auto_print)
@@ -757,6 +768,60 @@ class SettingsPage(QWidget):
                 "Test accents FR",
             )
 
+    def _search_connected_printers(self) -> None:
+        """Scanne les imprimantes installées sur le poste et affiche le résultat."""
+        from app.printers import thermal_printer
+
+        self._reload_printers()
+        available = thermal_printer.list_printers()
+        thermals = [n for n in available if thermal_printer.is_likely_thermal_printer(n)]
+        others = [n for n in available if n not in thermals]
+
+        if not available:
+            self.printers_status.setText(
+                "Aucune imprimante détectée sur cet ordinateur. "
+                "Vérifiez qu'elle est allumée, branchée (USB), "
+                "et installée dans Windows (Paramètres → Imprimantes)."
+            )
+            warn(
+                self,
+                "Aucune imprimante trouvée sur cet ordinateur.\n\n"
+                "1. Allumez l'imprimante (ex. POS 80C)\n"
+                "2. Branchez le câble USB\n"
+                "3. Vérifiez qu'elle apparaît dans Windows "
+                "(Paramètres → Bluetooth et appareils → Imprimantes)\n"
+                "4. Revenez ici et cliquez à nouveau sur « Rechercher »",
+                "Recherche d'imprimantes",
+            )
+            return
+
+        # Si aucune ticket choisie, proposer la meilleure POS détectée.
+        if not self._printer_value() and thermals:
+            suggested = thermal_printer.suggest_thermal_printer(thermals) or thermals[0]
+            idx = self.printer.findData(suggested)
+            if idx >= 0:
+                self.printer.setCurrentIndex(idx)
+
+        lines = [f"{len(available)} imprimante(s) trouvée(s) sur cet ordinateur."]
+        if thermals:
+            lines.append("Tickets / POS : " + ", ".join(thermals[:8]))
+            if len(thermals) > 8:
+                lines.append(f"… et {len(thermals) - 8} autre(s) ticket.")
+        if others:
+            preview = ", ".join(others[:5])
+            if len(others) > 5:
+                preview += "…"
+            lines.append("Autres : " + preview)
+        lines.append("Choisissez dans la liste, puis cliquez Appliquer.")
+        self.printers_status.setText(" ".join(lines))
+
+        detail = "Imprimantes détectées :\n\n"
+        if thermals:
+            detail += "• Tickets / POS :\n  - " + "\n  - ".join(thermals) + "\n\n"
+        if others:
+            detail += "• Autres :\n  - " + "\n  - ".join(others)
+        info(self, detail.strip(), "Recherche d'imprimantes")
+
     def _reload_printers(self, select=None, select_invoice=None) -> None:
         """Détecte les imprimantes installées et remplit les listes (ticket + facture)."""
         from app.printers import thermal_printer
@@ -781,6 +846,22 @@ class SettingsPage(QWidget):
         self._fill_printer_combo(self.printer, select, available)
         self._fill_printer_combo(self.invoice_printer, select_invoice, available)
 
+        if available:
+            thermals = [
+                n for n in available if thermal_printer.is_likely_thermal_printer(n)
+            ]
+            status = f"{len(available)} imprimante(s) détectée(s)"
+            if thermals:
+                status += " — tickets : " + ", ".join(thermals[:4])
+                if len(thermals) > 4:
+                    status += "…"
+            self.printers_status.setText(status + ".")
+        else:
+            self.printers_status.setText(
+                "Aucune imprimante détectée. Cliquez « Rechercher » après "
+                "avoir branché / installé l'imprimante (ex. POS 80C)."
+            )
+
         if (cleared_thermal or cleared_invoice) and not getattr(
             self, "_printer_invalid_warned", False
         ):
@@ -789,7 +870,8 @@ class SettingsPage(QWidget):
                 self,
                 "Une imprimante enregistrée n'existe plus sur ce poste.\n"
                 "Sélection : « (Imprimante par défaut) ».\n"
-                "Choisissez une imprimante valide dans la liste, puis Appliquer.",
+                "Cliquez « Rechercher », choisissez POS 80C (ou similaire), "
+                "puis Appliquer.",
                 "Imprimante introuvable",
             )
 
