@@ -1465,10 +1465,14 @@ class SettingsPage(QWidget):
         layout.addLayout(actions)
 
         hint = QLabel(
-            "Démarrer le portail local (sur le serveur / ce PC) :\n"
+            "Démarrer le portail (serveur / PC bureau) :\n"
             "  python -m portal\n"
-            "Puis associez et synchronisez. L'URL par défaut est "
-            f"{portal_service.DEFAULT_PORTAL_URL}"
+            "URL par défaut : "
+            f"{portal_service.DEFAULT_PORTAL_URL}\n"
+            "• Mode bureau : totaux de tous les magasins, puis clic pour le détail "
+            "(lecture seule, comme la caisse).\n"
+            "• Mot de passe bureau : affiché au 1er démarrage du portail "
+            "(ou variable NEXAPOS_PORTAL_BUREAU_PASSWORD)."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #64748b; font-size: 12px;")

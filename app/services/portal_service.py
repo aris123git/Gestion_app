@@ -114,11 +114,73 @@ def save_portal_settings(
 
 
 def build_snapshot() -> dict[str, Any]:
-    """Indicateurs entreprise à publier sur le portail (lecture seule)."""
+    """Indicateurs + listes (comme la caisse) pour consultation lecture seule."""
+    from app.controllers.dashboard_controller import DashboardController
+    from app.controllers.product_controller import ProductController
+    from app.controllers.sale_controller import SaleController
     from app.services.dashboard_service import DashboardService
+    from app.services.debt_service import DebtService
 
     shop = settings_service.get_shop_info()
-    summary = DashboardService.financial_summary()
+    financial = DashboardService.financial_summary()
+    dash = DashboardController.summary()
+    metrics = {**financial, **dash}
+
+    sales_rows: list[dict[str, Any]] = []
+    for sale in SaleController.list(limit=80):
+        sales_rows.append(
+            {
+                "ticket": sale.ticket_number or "",
+                "date": sale.date.isoformat() if sale.date else "",
+                "cashier": getattr(sale, "cashier_name", "") or "",
+                "client": getattr(sale, "client_name", "") or "",
+                "payment": getattr(sale, "payment_summary", "") or "",
+                "total": float(sale.total or 0),
+                "profit": float(sale.profit or 0),
+                "status": sale.status or "",
+            }
+        )
+
+    debts_rows: list[dict[str, Any]] = []
+    for debt in DebtService.list_debts(filter_mode="unpaid", limit=120):
+        client = getattr(debt, "client", None)
+        sale = getattr(debt, "sale", None)
+        debts_rows.append(
+            {
+                "date": debt.created_at.isoformat() if debt.created_at else "",
+                "client": getattr(client, "name", "") or "",
+                "phone": getattr(client, "phone", "") or "",
+                "initial": float(debt.amount_initial or 0),
+                "remaining": float(debt.amount_remaining or 0),
+                "due_date": debt.due_date.isoformat() if debt.due_date else "",
+                "status": debt.status or "",
+                "ticket": getattr(sale, "ticket_number", "") or "",
+                "note": debt.note or "",
+            }
+        )
+
+    products_rows: list[dict[str, Any]] = []
+    for product in ProductController.list(only_active=True, limit=150):
+        products_rows.append(
+            {
+                "name": product.name or "",
+                "category": (
+                    product.category.name
+                    if getattr(product, "category", None) is not None
+                    else ""
+                ),
+                "barcode": product.barcode or "",
+                "sale_price": float(product.sale_price or 0),
+                "quantity": float(product.quantity or 0),
+                "min_stock": float(product.min_stock or 0),
+                "unit": (
+                    product.unit.name
+                    if getattr(product, "unit", None) is not None
+                    else ""
+                ),
+            }
+        )
+
     return {
         "shop": {
             "name": shop.name or "",
@@ -128,7 +190,10 @@ def build_snapshot() -> dict[str, Any]:
             "currency": shop.currency or "FCFA",
             "shop_type": shop.shop_type or "",
         },
-        "metrics": summary,
+        "metrics": metrics,
+        "sales": sales_rows,
+        "debts": debts_rows,
+        "products": products_rows,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 

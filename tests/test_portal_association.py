@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 from pathlib import Path
 
 _DATA_DIR = tempfile.mkdtemp(prefix="gestion_portal_")
@@ -97,7 +99,65 @@ class PortalAssociationTestCase(unittest.TestCase):
         self.assertEqual(record["api_key_hash"], self.portal_main._hash_key(key))
         self.assertIn("metrics", record.get("snapshot") or {})
         self.assertIn("revenue_today", (record["snapshot"].get("metrics") or {}))
+        self.assertIn("sales", record["snapshot"])
+        self.assertIn("debts", record["snapshot"])
+        self.assertIn("products", record["snapshot"])
 
+    def test_bureau_login_and_totals_page(self) -> None:
+        import urllib.request
+        from http.cookiejar import CookieJar
+
+        # Force known bureau password
+        bureau_path = self.portal_data / "_bureau.json"
+        bureau_path.write_text(
+            json.dumps({"password_hash": self.portal_main._hash_key("bureau-secret")}),
+            encoding="utf-8",
+        )
+        # Seed two shops with snapshots
+        for eid, name, ca in (
+            ("ENT-A", "Magasin A", 1000),
+            ("ENT-B", "Magasin B", 2500),
+        ):
+            self.portal_main._save(
+                eid,
+                {
+                    "enterprise_id": eid,
+                    "api_key_hash": self.portal_main._hash_key("k"),
+                    "shop_name": name,
+                    "synced_at": "2026-01-01",
+                    "snapshot": {
+                        "shop": {"name": name, "currency": "FCFA"},
+                        "metrics": {
+                            "revenue_today": ca,
+                            "profit_net_today": ca / 10,
+                            "client_debts": 50,
+                            "sales_today": 2,
+                        },
+                        "sales": [],
+                        "debts": [],
+                        "products": [],
+                    },
+                },
+            )
+
+        jar = CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        data = urllib.parse.urlencode({"password": "bureau-secret"}).encode()
+        req = urllib.request.Request(
+            "http://127.0.0.1:18787/login/bureau", data=data, method="POST"
+        )
+        with opener.open(req, timeout=5) as resp:
+            # follow redirect manually if needed
+            html = resp.read().decode()
+            url = resp.geturl()
+        if "bureau" not in url and "totaux" not in html.lower():
+            with opener.open("http://127.0.0.1:18787/bureau", timeout=5) as resp2:
+                html = resp2.read().decode()
+        self.assertIn("totaux", html.lower())
+        self.assertIn("Magasin A", html)
+        self.assertIn("Magasin B", html)
+        # 1000+2500 = 3500 displayed somehow
+        self.assertTrue("3 500" in html or "3500" in html)
     def test_sync_rejects_bad_key(self) -> None:
         portal_service.save_portal_settings(
             enabled=True, url="http://127.0.0.1:18787"
