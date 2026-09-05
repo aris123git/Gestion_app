@@ -110,15 +110,13 @@ LOGIN_PAGE = """<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>NexaPOS — Portail entreprise</title>
   <style>
-    :root { --bg:#0f172a; --card:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: "Segoe UI", system-ui, sans-serif; background:linear-gradient(160deg,#0f172a,#1e3a5f); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
-    .card { width:100%; max-width:420px; background:var(--card); border-radius:16px; padding:28px; box-shadow:0 20px 50px rgba(0,0,0,.35); }
+    body { margin:0; font-family: "Segoe UI", system-ui, sans-serif; background:linear-gradient(160deg,#0f172a,#1e3a5f); color:#e2e8f0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+    .card { width:100%; max-width:420px; background:#1e293b; border-radius:16px; padding:28px; box-shadow:0 20px 50px rgba(0,0,0,.35); }
     h1 { margin:0 0 8px; font-size:1.4rem; }
-    p { color:var(--muted); font-size:.92rem; line-height:1.45; }
-    label { display:block; margin:14px 0 6px; font-size:.85rem; color:var(--muted); }
-    input { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:var(--text); }
-    button { margin-top:18px; width:100%; padding:12px; border:0; border-radius:10px; background:var(--accent); color:#0f172a; font-weight:700; cursor:pointer; }
+    p { color:#94a3b8; font-size:.92rem; line-height:1.45; }
+    label { display:block; margin:14px 0 6px; font-size:.85rem; color:#94a3b8; }
+    input { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; }
+    button { margin-top:18px; width:100%; padding:12px; border:0; border-radius:10px; background:#38bdf8; color:#0f172a; font-weight:700; cursor:pointer; }
     .err { color:#fca5a5; margin-top:12px; font-size:.9rem; }
   </style>
 </head>
@@ -127,15 +125,20 @@ LOGIN_PAGE = """<!DOCTYPE html>
     <h1>Portail NexaPOS</h1>
     <p>Consultez les indicateurs de votre entreprise (lecture seule). Utilisez l’identifiant et la clé API générés dans le logiciel (Paramètres → Portail web).</p>
     <label>Identifiant entreprise</label>
-    <input name="enterprise_id" required placeholder="ENT-XXXXXXXX" value="{eid}"/>
+    <input name="enterprise_id" required placeholder="ENT-XXXXXXXX" value="__EID__"/>
     <label>Clé API</label>
     <input name="api_key" type="password" required placeholder="Clé secrète"/>
-    {error}
+    __ERROR__
     <button type="submit">Se connecter</button>
   </form>
 </body>
 </html>
 """
+
+
+def _login_html(eid: str = "", error: str = "") -> str:
+    error_html = f'<div class="err">{error}</div>' if error else ""
+    return LOGIN_PAGE.replace("__EID__", eid or "").replace("__ERROR__", error_html)
 
 
 def _fmt_money(value: Any, currency: str) -> str:
@@ -167,34 +170,24 @@ def _dashboard_html(record: dict) -> str:
         f'<div class="value">{_fmt_money(val, currency)}</div></div>'
         for label, val in cards
     )
-    return f"""<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>{name} — Portail NexaPOS</title>
-  <style>
-    body {{ margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:#0b1220; color:#e2e8f0; }}
-    header {{ padding:28px 24px 12px; }}
-    h1 {{ margin:0 0 6px; font-size:1.6rem; }}
-    .meta {{ color:#94a3b8; font-size:.92rem; }}
-    .grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; padding:16px 24px 40px; }}
-    .metric {{ background:#1e293b; border-radius:14px; padding:16px; }}
-    .label {{ color:#94a3b8; font-size:.8rem; margin-bottom:8px; }}
-    .value {{ font-size:1.25rem; font-weight:700; }}
-    a {{ color:#38bdf8; }}
-  </style>
-</head>
-<body>
-  <header>
-    <h1>{name}</h1>
-    <div class="meta">Lecture seule · Dernière synchronisation : {synced} · <a href="/">Déconnexion</a></div>
-  </header>
-  <div class="grid">{cards_html}</div>
-</body>
-</html>
-"""
-
+    return (
+        "<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"utf-8\"/>"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>"
+        f"<title>{name} — Portail NexaPOS</title>"
+        "<style>"
+        "body{margin:0;font-family:Segoe UI,system-ui,sans-serif;background:#0b1220;color:#e2e8f0;}"
+        "header{padding:28px 24px 12px;}h1{margin:0 0 6px;font-size:1.6rem;}"
+        ".meta{color:#94a3b8;font-size:.92rem;}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;padding:16px 24px 40px;}"
+        ".metric{background:#1e293b;border-radius:14px;padding:16px;}"
+        ".label{color:#94a3b8;font-size:.8rem;margin-bottom:8px;}"
+        ".value{font-size:1.25rem;font-weight:700;}a{color:#38bdf8;}"
+        "</style></head><body>"
+        f"<header><h1>{name}</h1>"
+        f"<div class=\"meta\">Lecture seule · Dernière synchronisation : {synced} · "
+        "<a href=\"/\">Déconnexion</a></div></header>"
+        f"<div class=\"grid\">{cards_html}</div></body></html>"
+    )
 
 class PortalHandler(BaseHTTPRequestHandler):
     server_version = "NexaPOSPortal/1.0"
@@ -222,11 +215,10 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         if path in ("/", "/login"):
             err = qs.get("error", [""])[0]
-            error_html = f'<div class="err">{err}</div>' if err else ""
             _html_response(
                 self,
                 200,
-                LOGIN_PAGE.format(eid=qs.get("enterprise_id", [""])[0], error=error_html),
+                _login_html(qs.get("enterprise_id", [""])[0], err),
             )
             return
 
@@ -246,9 +238,10 @@ class PortalHandler(BaseHTTPRequestHandler):
                 _html_response(
                     self,
                     200,
-                    LOGIN_PAGE.format(
-                        eid=eid,
-                        error='<div class="err">Entreprise associée, mais aucune donnée synchronisée pour l’instant. Cliquez « Synchroniser » dans le logiciel.</div>',
+                    _login_html(
+                        eid,
+                        "Entreprise associée, mais aucune donnée synchronisée pour l’instant. "
+                        "Cliquez « Synchroniser » dans le logiciel.",
                     ),
                 )
                 return
