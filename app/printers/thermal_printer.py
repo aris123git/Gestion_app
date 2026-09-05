@@ -168,31 +168,53 @@ _CUT_MODES = {"full": "FULL", "partial": "PART"}
 def list_printers() -> list[str]:
     """Retourne la liste des imprimantes installées sur le poste.
 
-    - Windows : via ``win32print`` (imprimantes locales et partagées) ;
+    - Windows : via le spooler Windows (files locales et partagées) ;
     - Linux/macOS : via ``lpstat`` (CUPS).
-    En cas d'échec ou d'absence d'outil, retourne une liste vide.
+
+    Les imprimantes ticket (POS 80C, Epson TM…) sont listées en premier.
+    En cas d'échec, retourne une liste vide.
     """
+    names: list[str] = []
     if sys.platform.startswith("win"):  # pragma: no cover - dépend de Windows
         try:
             import win32print
 
             flags = (
-                win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+                win32print.PRINTER_ENUM_LOCAL
+                | win32print.PRINTER_ENUM_CONNECTIONS
             )
-            return [printer[2] for printer in win32print.EnumPrinters(flags)]
+            raw = win32print.EnumPrinters(flags)
+            names = [printer[2] for printer in raw if printer and printer[2]]
         except Exception:
-            return []
-    try:
-        proc = subprocess.run(
-            ["lpstat", "-a"], capture_output=True, timeout=5, text=True, check=False
-        )
-        return [
-            line.split()[0]
-            for line in proc.stdout.splitlines()
-            if line.strip()
-        ]
-    except Exception:
-        return []
+            names = []
+    else:
+        try:
+            proc = subprocess.run(
+                ["lpstat", "-a"],
+                capture_output=True,
+                timeout=5,
+                text=True,
+                check=False,
+            )
+            names = [
+                line.split()[0]
+                for line in proc.stdout.splitlines()
+                if line.strip()
+            ]
+        except Exception:
+            names = []
+
+    # Déduplique en conservant l'ordre, tickets POS en tête.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for name in names:
+        key = name.strip()
+        if not key or key.lower() in seen:
+            continue
+        seen.add(key.lower())
+        unique.append(key)
+    unique.sort(key=lambda n: (0 if is_likely_thermal_printer(n) else 1, n.lower()))
+    return unique
 
 
 def default_printer() -> str:
@@ -226,8 +248,102 @@ def is_device_path(name: str) -> bool:
     return bool(name) and ("/" in name or name.startswith("\\"))
 
 
+def normalize_printer_key(name: str) -> str:
+    """Normalise un nom pour comparaison souple (POS 80C ↔ POS-80C ↔ POS80C)."""
+    import re
+
+    text = (name or "").strip().lower()
+    # Enlever suffixes Windows fréquents.
+    for suffix in (
+        " (copie 1)",
+        " (copy 1)",
+        " (redirected",
+    ):
+        if suffix in text:
+            text = text.split(suffix, 1)[0]
+    text = re.sub(r"[^a-z0-9]+", "", text)
+    return text
+
+
+# Motifs typiques d'imprimantes ticket (noms Windows courants).
+_THERMAL_NAME_HINTS = (
+    "pos",
+    "tm-",
+    "tm_",
+    "tmt",
+    "epson",
+    "xp-",
+    "xp_",
+    "xprinter",
+    "gp-",
+    "gprinter",
+    "receipt",
+    "ticket",
+    "thermal",
+    "thermique",
+    "80c",
+    "80mm",
+    "58mm",
+    "58c",
+    "rongta",
+    "bixolon",
+    "star ",
+    "tsp",
+    "citizen",
+)
+
+
+_VIRTUAL_PRINTER_HINTS = (
+    "microsoft print to pdf",
+    "microsoft xps",
+    "onenote",
+    "fax",
+    "adobe pdf",
+    "foxit",
+    "send to",
+    "anydesk",
+    "pdf creator",
+    "bullzip",
+    "cutepdf",
+)
+
+
+def is_virtual_printer(name: str) -> bool:
+    """True pour PDF / Fax / XPS… (pas une imprimante ticket physique)."""
+    low = (name or "").strip().lower()
+    if not low:
+        return False
+    return any(hint in low for hint in _VIRTUAL_PRINTER_HINTS)
+
+
+def is_likely_thermal_printer(name: str) -> bool:
+    """Heuristique : nom ressemble à une imprimante ticket (POS 80C, TM-T20…)."""
+    low = (name or "").strip().lower()
+    if not low or is_virtual_printer(low):
+        return False
+    return any(hint in low for hint in _THERMAL_NAME_HINTS)
+
+
+def suggest_thermal_printer(available: Optional[list[str]] = None) -> str:
+    """Propose une imprimante ticket détectée (ex. POS-80C), ou chaîne vide."""
+    known = available if available is not None else list_printers()
+    thermals = [n for n in known if is_likely_thermal_printer(n)]
+    if not thermals:
+        return ""
+    # Préférer un nom contenant 80 / POS.
+    for preferred_token in ("pos", "80", "tm", "58"):
+        for name in thermals:
+            if preferred_token in name.lower():
+                return name
+    return thermals[0]
+
+
 def match_printer_in_list(name: str, available: list[str]) -> str:
-    """Retourne le nom canonique dans ``available`` (égalité exacte puis insensible à la casse)."""
+    """Retourne le nom canonique dans ``available``.
+
+    Ordre : égalité exacte → casse → normalisation (POS 80C ≈ POS-80C) →
+    containment normalisé.
+    """
     name = (name or "").strip()
     if not name or not available:
         return ""
@@ -237,6 +353,20 @@ def match_printer_in_list(name: str, available: list[str]) -> str:
     for candidate in available:
         if candidate.lower() == lower:
             return candidate
+
+    key = normalize_printer_key(name)
+    if not key:
+        return ""
+    for candidate in available:
+        if normalize_printer_key(candidate) == key:
+            return candidate
+    # Contient : « POS 80 » trouve « POS-80C USB »
+    for candidate in available:
+        cand_key = normalize_printer_key(candidate)
+        if key in cand_key or cand_key in key:
+            # Éviter les faux positifs trop courts (ex. « 80 »).
+            if len(key) >= 4 and len(cand_key) >= 4:
+                return candidate
     return ""
 
 
@@ -617,28 +747,73 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
     """
     try:
         import win32print
-    except Exception as exc:
-        return PrintResult(False, Path(), f"Module d'impression Windows absent : {exc}")
-
-    target = (printer_name or "").strip() or default_printer()
-    if not target:
+    except Exception:
         return PrintResult(
             False,
             Path(),
-            "Aucune imprimante Windows configurée. "
-            "Installez une imprimante ou choisissez-en une dans "
+            "Composant d'impression Windows manquant (pywin32). "
+            "Réinstallez l'application ou choisissez une imprimante dans "
             "Paramètres → Apparence du ticket.",
         )
 
-    # Pré-contrôle : ne pas alimenter la file si le périphérique est indisponible
-    # (y compris file fantôme / recherche réseau bloquée).
+    target, hint = _pick_windows_print_target(printer_name)
+    if not target:
+        available = list_printers()
+        tip = ""
+        suggested = suggest_thermal_printer(available)
+        if suggested:
+            tip = (
+                f" Une imprimante ticket « {suggested} » a été détectée : "
+                "sélectionnez-la dans Paramètres → Apparence du ticket."
+            )
+        elif available:
+            tip = (
+                " Imprimantes vues sur ce poste : "
+                + ", ".join(available[:6])
+                + ("…" if len(available) > 6 else "")
+                + "."
+            )
+        return PrintResult(
+            False,
+            Path(),
+            "Aucune imprimante utilisable."
+            + tip
+            + " Vérifiez que l'imprimante (ex. POS 80C) est allumée et installée.",
+        )
+
     preflight = _windows_printer_preflight(target)
     if preflight is not None:
         if "introuvable" in (preflight.message or "").lower() or "ouvrir" in (
             preflight.message or ""
         ).lower():
             _clear_printer_setting_if_matches(target)
-        return preflight
+            fallback = suggest_thermal_printer()
+            if fallback and fallback.lower() != target.lower():
+                retry = _windows_printer_preflight(fallback)
+                if retry is None:
+                    target = fallback
+                    hint = (
+                        f"Imprimante précédente indisponible — "
+                        f"envoi vers « {fallback} »."
+                    )
+                else:
+                    return PrintResult(
+                        False,
+                        Path(),
+                        preflight.message
+                        + " Astuce : dans Paramètres, choisissez l'imprimante "
+                        "nommée POS 80C (ou similaire) dans la liste.",
+                    )
+            else:
+                return PrintResult(
+                    False,
+                    Path(),
+                    preflight.message
+                    + " Astuce : dans Paramètres, choisissez l'imprimante "
+                    "nommée POS 80C (ou similaire) dans la liste.",
+                )
+        else:
+            return preflight
 
     job_id = 0
     written = 0
@@ -655,7 +830,17 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
     except Exception as exc:
         if job_id:
             _windows_cancel_job(target, job_id)
-        return PrintResult(False, Path(), f"Échec de l'impression Windows : {exc}")
+        msg = str(exc)
+        low = msg.lower()
+        if "invalid printer" in low or "0x00000709" in low or "1801" in low:
+            msg = (
+                f"Imprimante « {target} » introuvable. "
+                "Choisissez POS 80C (ou le nom exact) dans "
+                "Paramètres → Apparence du ticket."
+            )
+        else:
+            msg = f"Échec de l'impression vers « {target} » : {exc}"
+        return PrintResult(False, Path(), msg)
 
     if int(written) < len(raw):
         _windows_cancel_job(target, job_id)
@@ -666,8 +851,6 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
             f"({written}/{len(raw)} octets). Vérifiez le câble USB / le pilote.",
         )
 
-    # Court contrôle post-envoi : si le job reste bloqué (offline / erreur),
-    # on l'annule pour éviter l'impression en rafale au redémarrage.
     blocked = _windows_job_blocked(target, job_id, timeout_s=2.5)
     if blocked:
         _windows_cancel_job(target, job_id)
@@ -679,12 +862,43 @@ def _print_windows(raw: bytes, printer_name: str) -> PrintResult:  # pragma: no 
             "Vérifiez que l'imprimante est allumée et connectée, puis réessayez.",
         )
 
-    return PrintResult(
-        True,
-        Path(),
-        f"Ticket envoyé à « {target} ». "
-        "Si rien ne sort, vérifiez papier / câble (ne redémarrez pas pour « forcer »).",
+    message = f"Ticket envoyé à « {target} »."
+    if hint:
+        message = f"{hint}\n{message}"
+    message += (
+        " Si rien ne sort, vérifiez papier / câble "
+        "(ne redémarrez pas pour « forcer »)."
     )
+    return PrintResult(True, Path(), message)
+
+
+def _pick_windows_print_target(printer_name: str) -> tuple[str, str]:
+    """Choisit la file Windows (évite PDF virtuel si un POS ticket existe)."""
+    available = list_printers()
+    preferred = (printer_name or "").strip()
+    if preferred:
+        matched = match_printer_in_list(preferred, available) if available else preferred
+        return matched or preferred, ""
+
+    system = (default_printer() or "").strip()
+    if system and not is_virtual_printer(system):
+        if not available or match_printer_in_list(system, available):
+            return system, ""
+
+    suggested = suggest_thermal_printer(available)
+    if suggested:
+        hint = ""
+        if system and is_virtual_printer(system):
+            hint = (
+                f"L'imprimante Windows par défaut (« {system} ») n'est pas un ticket. "
+                f"Envoi vers « {suggested} »."
+            )
+        elif not system:
+            hint = f"Aucune imprimante par défaut — envoi vers « {suggested} »."
+        return suggested, hint
+
+    return system, ""
+
 
 
 # Drapeaux Windows indiquant qu'il ne faut PAS empiler de nouveaux jobs.

@@ -165,6 +165,53 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
             "",
         )
 
+    def test_pos80c_fuzzy_match(self) -> None:
+        available = ["Microsoft Print to PDF", "POS-80C", "HP DeskJet"]
+        self.assertEqual(
+            thermal_printer.match_printer_in_list("POS 80C", available),
+            "POS-80C",
+        )
+        self.assertEqual(
+            thermal_printer.match_printer_in_list("pos80c", available),
+            "POS-80C",
+        )
+        self.assertEqual(
+            thermal_printer.match_printer_in_list("POS-80", available),
+            "POS-80C",
+        )
+
+    def test_suggest_thermal_prefers_pos(self) -> None:
+        available = ["Microsoft Print to PDF", "HP LaserJet", "POS-80C"]
+        self.assertEqual(
+            thermal_printer.suggest_thermal_printer(available),
+            "POS-80C",
+        )
+        self.assertTrue(thermal_printer.is_likely_thermal_printer("POS 80C"))
+        self.assertTrue(thermal_printer.is_virtual_printer("Microsoft Print to PDF"))
+        self.assertFalse(thermal_printer.is_likely_thermal_printer("Microsoft Print to PDF"))
+
+    def test_pick_windows_target_skips_pdf_default(self) -> None:
+        available = ["Microsoft Print to PDF", "POS-80C"]
+        with mock.patch.object(
+            thermal_printer, "list_printers", return_value=available
+        ), mock.patch.object(
+            thermal_printer,
+            "default_printer",
+            return_value="Microsoft Print to PDF",
+        ):
+            target, hint = thermal_printer._pick_windows_print_target("")
+        self.assertEqual(target, "POS-80C")
+        self.assertIn("POS-80C", hint)
+
+    def test_pick_windows_target_honors_fuzzy_preferred(self) -> None:
+        available = ["POS-80C", "HP DeskJet"]
+        with mock.patch.object(
+            thermal_printer, "list_printers", return_value=available
+        ):
+            target, hint = thermal_printer._pick_windows_print_target("POS 80C")
+        self.assertEqual(target, "POS-80C")
+        self.assertEqual(hint, "")
+
 
 if __name__ == "__main__":
     unittest.main()

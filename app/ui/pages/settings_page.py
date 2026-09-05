@@ -254,9 +254,18 @@ class SettingsPage(QWidget):
         self.printer = QComboBox()
         self.printer.setEditable(True)
         self.printer.setMinimumWidth(260)
+        self.printer.setToolTip(
+            "Imprimante ticket thermique installée sous Windows "
+            "(souvent nommée POS 80C, POS-80, Epson TM…). "
+            "Cliquez Actualiser si elle n'apparaît pas."
+        )
         self.invoice_printer = QComboBox()
         self.invoice_printer.setEditable(True)
         self.invoice_printer.setMinimumWidth(260)
+        self.invoice_printer.setToolTip(
+            "Imprimante facture (jet d'encre / laser). "
+            "Laissez vide pour utiliser la même que le ticket."
+        )
         refresh_printers = QPushButton("Actualiser")
         refresh_printers.clicked.connect(lambda: self._reload_printers())
         printer_row = QHBoxLayout()

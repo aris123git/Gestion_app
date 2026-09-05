@@ -324,7 +324,7 @@ def _print_pdf_windows(pdf_path: Path, printer_name: str) -> PrintResult:  # pra
         return PrintResult(
             False,
             pdf_path,
-            f"Impression PDF indisponible (pywin32) : {exc}. "
+            f"Impression PDF indisponible. "
             f"Ouvrez le fichier manuellement : {pdf_path}",
         )
 
