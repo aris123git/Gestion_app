@@ -773,19 +773,24 @@ class SettingsPage(QWidget):
         from app.printers import thermal_printer
 
         self._reload_printers()
-        available = thermal_printer.list_printers()
+        detailed = thermal_printer.list_printers_detailed()
+        available = [p.name for p in detailed]
+        online = [p.name for p in detailed if p.online]
+        offline = [p.name for p in detailed if not p.online]
         thermals = [n for n in available if thermal_printer.is_likely_thermal_printer(n)]
         others = [n for n in available if n not in thermals]
 
         if not available:
             self.printers_status.setText(
                 "Aucune imprimante détectée sur cet ordinateur. "
-                "Vérifiez qu'elle est allumée, branchée (USB), "
-                "et installée dans Windows (Paramètres → Imprimantes)."
+                "La base du logiciel ne conserve pas d'anciennes imprimantes : "
+                "seules celles installées dans Windows apparaissent."
             )
             warn(
                 self,
                 "Aucune imprimante trouvée sur cet ordinateur.\n\n"
+                "Le logiciel ne lit pas une vieille liste en base : "
+                "il interroge Windows à chaque recherche.\n\n"
                 "1. Allumez l'imprimante (ex. POS 80C)\n"
                 "2. Branchez le câble USB\n"
                 "3. Vérifiez qu'elle apparaît dans Windows "
@@ -795,31 +800,61 @@ class SettingsPage(QWidget):
             )
             return
 
-        # Si aucune ticket choisie, proposer la meilleure POS détectée.
         if not self._printer_value() and thermals:
-            suggested = thermal_printer.suggest_thermal_printer(thermals) or thermals[0]
-            idx = self.printer.findData(suggested)
-            if idx >= 0:
-                self.printer.setCurrentIndex(idx)
+            online_for_suggest = [n for n in thermals if n in online]
+            if online_for_suggest:
+                suggested = (
+                    thermal_printer.suggest_thermal_printer(online_for_suggest)
+                    or online_for_suggest[0]
+                )
+                idx = self.printer.findData(suggested)
+                if idx >= 0:
+                    self.printer.setCurrentIndex(idx)
 
-        lines = [f"{len(available)} imprimante(s) trouvée(s) sur cet ordinateur."]
-        if thermals:
-            lines.append("Tickets / POS : " + ", ".join(thermals[:8]))
-            if len(thermals) > 8:
-                lines.append(f"… et {len(thermals) - 8} autre(s) ticket.")
-        if others:
-            preview = ", ".join(others[:5])
-            if len(others) > 5:
+        online_thermals = [n for n in thermals if n in online]
+        online_others = [n for n in others if n in online]
+        lines = [
+            f"{len(online)} imprimante(s) utilisable(s) sur cet ordinateur"
+            + (f" ({len(offline)} hors ligne ignorée(s))" if offline else "")
+            + "."
+        ]
+        if online_thermals:
+            lines.append("Tickets / POS : " + ", ".join(online_thermals[:8]))
+        if online_others:
+            preview = ", ".join(online_others[:5])
+            if len(online_others) > 5:
                 preview += "…"
             lines.append("Autres : " + preview)
-        lines.append("Choisissez dans la liste, puis cliquez Appliquer.")
+        lines.append(
+            "Liste live Windows — le logiciel ne stocke pas de catalogue "
+            "d'imprimantes en base. Choisissez puis Appliquer."
+        )
         self.printers_status.setText(" ".join(lines))
 
-        detail = "Imprimantes détectées :\n\n"
-        if thermals:
-            detail += "• Tickets / POS :\n  - " + "\n  - ".join(thermals) + "\n\n"
-        if others:
-            detail += "• Autres :\n  - " + "\n  - ".join(others)
+        detail = (
+            "Imprimantes détectées sur cet ordinateur\n"
+            "(détection live — pas une ancienne liste en base) :\n\n"
+        )
+        if online_thermals:
+            detail += "• Tickets / POS :\n"
+            for name in online_thermals:
+                detail += f"  - {name}\n"
+            detail += "\n"
+        if online_others:
+            detail += "• Autres (proposées) :\n"
+            for name in online_others:
+                detail += f"  - {name}\n"
+        if offline:
+            detail += (
+                "\n• Hors ligne / désactivées (non proposées dans la liste) :\n"
+            )
+            for name in offline:
+                detail += f"  - {name}\n"
+            detail += (
+                "\nCes files sont encore installées dans Windows mais "
+                "éteintes, débranchées ou mises hors ligne. "
+                "Elles ne viennent pas de la base du logiciel."
+            )
         info(self, detail.strip(), "Recherche d'imprimantes")
 
     def _reload_printers(self, select=None, select_invoice=None) -> None:
@@ -831,30 +866,50 @@ class SettingsPage(QWidget):
         if select_invoice is None:
             select_invoice = self._invoice_printer_value()
 
-        available = thermal_printer.list_printers()
+        detailed = thermal_printer.list_printers_detailed()
+        # Toutes les files encore installées (y compris hors ligne) :
+        # sert à valider un ancien nom sans le prendre pour un fantôme.
+        installed = [p.name for p in detailed]
+        online = [p.name for p in detailed if p.online]
+        offline_names = {p.name for p in detailed if not p.online}
         select, cleared_thermal = self._sanitize_printer_selection(
             (select or "").strip(),
-            available,
+            installed,
             setting_key="printer_name",
         )
         select_invoice, cleared_invoice = self._sanitize_printer_selection(
             (select_invoice or "").strip(),
-            available,
+            installed,
             setting_key="invoice_printer_name",
         )
 
-        self._fill_printer_combo(self.printer, select, available)
-        self._fill_printer_combo(self.invoice_printer, select_invoice, available)
+        # Listes de choix : uniquement les imprimantes en ligne.
+        # Si le réglage sauvé est hors ligne, on l'ajoute seul (marqué).
+        self._fill_printer_combo(
+            self.printer, select, online, offline_names=offline_names
+        )
+        self._fill_printer_combo(
+            self.invoice_printer,
+            select_invoice,
+            online,
+            offline_names=offline_names,
+        )
 
-        if available:
+        if installed:
             thermals = [
-                n for n in available if thermal_printer.is_likely_thermal_printer(n)
+                n for n in online if thermal_printer.is_likely_thermal_printer(n)
             ]
-            status = f"{len(available)} imprimante(s) détectée(s)"
+            status = (
+                f"{len(online)} imprimante(s) utilisable(s) (live Windows/CUPS)"
+            )
             if thermals:
                 status += " — tickets : " + ", ".join(thermals[:4])
                 if len(thermals) > 4:
                     status += "…"
+            if offline_names:
+                status += (
+                    f" — {len(offline_names)} hors ligne non proposée(s)"
+                )
             self.printers_status.setText(status + ".")
         else:
             self.printers_status.setText(
@@ -868,8 +923,9 @@ class SettingsPage(QWidget):
             self._printer_invalid_warned = True
             warn(
                 self,
-                "Une imprimante enregistrée n'existe plus sur ce poste.\n"
-                "Sélection : « (Imprimante par défaut) ».\n"
+                "Une imprimante enregistrée n'existe plus sur ce poste "
+                "(ou a été désinstallée / désactivée dans Windows).\n"
+                "Elle a été retirée de la sélection.\n"
                 "Cliquez « Rechercher », choisissez POS 80C (ou similaire), "
                 "puis Appliquer.",
                 "Imprimante introuvable",
@@ -913,9 +969,23 @@ class SettingsPage(QWidget):
         # Liste vide : détection incertaine → garder le nom (affichage éditable).
         return select, False
 
-    def _fill_printer_combo(self, combo: QComboBox, select: str, available: list) -> None:
+    def _fill_printer_combo(
+        self,
+        combo: QComboBox,
+        select: str,
+        available: list,
+        *,
+        offline_names: set | None = None,
+    ) -> None:
+        """Remplit le combo avec les imprimantes **en ligne** (`available`).
+
+        Les hors ligne ne sont pas proposées, sauf le réglage actuellement
+        sauvegardé s'il est encore installé dans Windows (marqué hors ligne).
+        Un nom uniquement en base et absent de Windows n'est pas réinjecté.
+        """
         from app.printers import thermal_printer
 
+        offline_names = offline_names or set()
         combo.blockSignals(True)
         combo.clear()
         combo.addItem(DEFAULT_PRINTER_LABEL, "")
@@ -931,8 +1001,17 @@ class SettingsPage(QWidget):
                     select = matched
             if index >= 0:
                 combo.setCurrentIndex(index)
+            elif select in offline_names:
+                # Encore installée mais hors ligne : visible, pas les autres.
+                combo.addItem(f"{select} (hors ligne)", select)
+                combo.setCurrentIndex(combo.count() - 1)
+            elif available:
+                # Liste live connue : ne pas réafficher un vieux nom issu de la base.
+                combo.setCurrentIndex(0)
+            elif thermal_printer.is_device_path(select):
+                combo.setEditText(select)
             else:
-                # Nom enregistré hors liste (détection HS) : le montrer tel quel.
+                # Détection HS : conserver le texte enregistré.
                 combo.setEditText(select)
         else:
             combo.setCurrentIndex(0)

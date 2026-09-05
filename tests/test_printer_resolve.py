@@ -213,5 +213,52 @@ class ResolvePrinterNameTestCase(unittest.TestCase):
         self.assertEqual(hint, "")
 
 
+class ListPrintersDetailedTestCase(unittest.TestCase):
+    def test_skips_pending_deletion(self) -> None:
+        raw = [
+            thermal_printer.DiscoveredPrinter("POS-80C", online=True),
+            thermal_printer.DiscoveredPrinter(
+                "OldPrinter", online=False, pending_deletion=True
+            ),
+        ]
+        with mock.patch.object(
+            thermal_printer, "_list_printers_posix", return_value=raw
+        ), mock.patch.object(
+            thermal_printer.sys, "platform", "linux"
+        ):
+            found = thermal_printer.list_printers_detailed()
+        names = [p.name for p in found]
+        self.assertEqual(names, ["POS-80C"])
+
+    def test_include_offline_flag(self) -> None:
+        raw = [
+            thermal_printer.DiscoveredPrinter("POS-80C", online=True),
+            thermal_printer.DiscoveredPrinter("HP DeskJet", online=False),
+        ]
+        with mock.patch.object(
+            thermal_printer, "_list_printers_posix", return_value=raw
+        ), mock.patch.object(
+            thermal_printer.sys, "platform", "linux"
+        ):
+            all_names = thermal_printer.list_printers(include_offline=True)
+            online_only = thermal_printer.list_printers(include_offline=False)
+        self.assertEqual(all_names, ["POS-80C", "HP DeskJet"])
+        self.assertEqual(online_only, ["POS-80C"])
+
+    def test_marks_offline_status(self) -> None:
+        raw = [
+            thermal_printer.DiscoveredPrinter("POS-80C", online=False),
+            thermal_printer.DiscoveredPrinter("PDF", online=True),
+        ]
+        with mock.patch.object(
+            thermal_printer, "_list_printers_posix", return_value=raw
+        ), mock.patch.object(
+            thermal_printer.sys, "platform", "linux"
+        ):
+            found = {p.name: p.online for p in thermal_printer.list_printers_detailed()}
+        self.assertFalse(found["POS-80C"])
+        self.assertTrue(found["PDF"])
+
+
 if __name__ == "__main__":
     unittest.main()

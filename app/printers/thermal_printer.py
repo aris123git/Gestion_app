@@ -165,56 +165,140 @@ DEFAULT_CUT_MODE = "full"
 _CUT_MODES = {"full": "FULL", "partial": "PART"}
 
 
-def list_printers() -> list[str]:
-    """Retourne la liste des imprimantes installées sur le poste.
+@dataclass
+class DiscoveredPrinter:
+    """Imprimante vue sur le poste (pas stockée en base — détection live)."""
 
-    - Windows : via le spooler Windows (files locales et partagées) ;
-    - Linux/macOS : via ``lpstat`` (CUPS).
+    name: str
+    online: bool = True
+    pending_deletion: bool = False
 
-    Les imprimantes ticket (POS 80C, Epson TM…) sont listées en premier.
-    En cas d'échec, retourne une liste vide.
+
+def list_printers_detailed() -> list[DiscoveredPrinter]:
+    """Détecte les imprimantes **actuellement** installées sur le poste.
+
+    Important : la base SQLite ne stocke **pas** un catalogue d'imprimantes.
+    Seuls les noms choisis (`printer_name` / `invoice_printer_name`) y sont
+    mémorisés. Cette fonction interroge Windows / CUPS à chaque appel.
     """
-    names: list[str] = []
+    found: list[DiscoveredPrinter] = []
     if sys.platform.startswith("win"):  # pragma: no cover - dépend de Windows
-        try:
-            import win32print
-
-            flags = (
-                win32print.PRINTER_ENUM_LOCAL
-                | win32print.PRINTER_ENUM_CONNECTIONS
-            )
-            raw = win32print.EnumPrinters(flags)
-            names = [printer[2] for printer in raw if printer and printer[2]]
-        except Exception:
-            names = []
+        found = _list_printers_windows()
     else:
+        found = _list_printers_posix()
+
+    # Déduplique, ignore les files en cours de suppression.
+    seen: set[str] = set()
+    unique: list[DiscoveredPrinter] = []
+    for item in found:
+        key = (item.name or "").strip()
+        if not key or item.pending_deletion:
+            continue
+        low = key.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        unique.append(DiscoveredPrinter(name=key, online=item.online))
+    unique.sort(
+        key=lambda p: (
+            0 if is_likely_thermal_printer(p.name) else 1,
+            0 if p.online else 1,
+            p.name.lower(),
+        )
+    )
+    return unique
+
+
+def list_printers(*, include_offline: bool = True) -> list[str]:
+    """Noms des imprimantes installées sur le poste (détection live).
+
+    Les imprimantes ticket (POS 80C…) sont listées en premier.
+    Les files désinstallées / en suppression ne sont pas renvoyées.
+    """
+    return [
+        p.name
+        for p in list_printers_detailed()
+        if include_offline or p.online
+    ]
+
+
+def _list_printers_windows() -> list[DiscoveredPrinter]:  # pragma: no cover
+    try:
+        import win32print
+    except Exception:
+        return []
+
+    flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+    # Level 2 : Attributes + Status (hors ligne / suppression).
+    try:
+        raw = win32print.EnumPrinters(flags, None, 2)
+    except Exception:
         try:
-            proc = subprocess.run(
-                ["lpstat", "-a"],
-                capture_output=True,
-                timeout=5,
-                text=True,
-                check=False,
-            )
-            names = [
-                line.split()[0]
-                for line in proc.stdout.splitlines()
-                if line.strip()
+            raw = win32print.EnumPrinters(flags)
+            return [
+                DiscoveredPrinter(name=printer[2], online=True)
+                for printer in raw
+                if printer and printer[2]
             ]
         except Exception:
-            names = []
+            return []
 
-    # Déduplique en conservant l'ordre, tickets POS en tête.
-    seen: set[str] = set()
-    unique: list[str] = []
-    for name in names:
-        key = name.strip()
-        if not key or key.lower() in seen:
+    pending_deletion = 0x00000004
+    status_offline = 0x00000080
+    status_not_available = 0x00001000
+    attr_work_offline = 0x00000400
+
+    out: list[DiscoveredPrinter] = []
+    for printer in raw or []:
+        try:
+            name = (printer.get("pPrinterName") or printer.get("Name") or "").strip()
+        except AttributeError:
+            # Ancien format tuple
+            name = ""
+            if isinstance(printer, (tuple, list)) and len(printer) > 2:
+                name = str(printer[2] or "").strip()
+        if not name:
             continue
-        seen.add(key.lower())
-        unique.append(key)
-    unique.sort(key=lambda n: (0 if is_likely_thermal_printer(n) else 1, n.lower()))
-    return unique
+        try:
+            status = int(printer.get("Status", 0) or 0)
+            attrs = int(printer.get("Attributes", 0) or 0)
+        except Exception:
+            status, attrs = 0, 0
+        pending = bool(status & pending_deletion)
+        offline = bool(
+            (attrs & attr_work_offline)
+            or (status & status_offline)
+            or (status & status_not_available)
+        )
+        out.append(
+            DiscoveredPrinter(
+                name=name,
+                online=not offline,
+                pending_deletion=pending,
+            )
+        )
+    return out
+
+
+def _list_printers_posix() -> list[DiscoveredPrinter]:
+    try:
+        proc = subprocess.run(
+            ["lpstat", "-a"],
+            capture_output=True,
+            timeout=5,
+            text=True,
+            check=False,
+        )
+    except Exception:
+        return []
+    out: list[DiscoveredPrinter] = []
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            continue
+        name = line.split()[0]
+        # lpstat -a : files acceptant des jobs (= actives).
+        out.append(DiscoveredPrinter(name=name, online=True))
+    return out
 
 
 def default_printer() -> str:

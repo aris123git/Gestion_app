@@ -77,6 +77,53 @@ class SettingsPrinterSanitizeTestCase(unittest.TestCase):
         self.assertEqual(select, "")
         self.assertTrue(cleared)
 
+    def test_fill_combo_skips_other_offline_printers(self) -> None:
+        """Les hors ligne ne sont pas proposées, sauf le réglage courant."""
+        from PySide6.QtWidgets import QApplication, QComboBox
+
+        app = QApplication.instance() or QApplication([])
+        holder = type("H", (), {})()
+        holder._fill_printer_combo = MethodType(
+            SettingsPage._fill_printer_combo, holder
+        )
+        combo = QComboBox()
+        combo.setEditable(True)
+        holder._fill_printer_combo(
+            combo,
+            "POS-80C",
+            [],  # aucune en ligne proposée
+            offline_names={"OldZombie", "POS-80C"},
+        )
+        # POS-80C est hors ligne mais réglage courant → une entrée marquée.
+        labels = [combo.itemText(i) for i in range(combo.count())]
+        self.assertIn("POS-80C (hors ligne)", labels)
+        self.assertNotIn("OldZombie", labels)
+        self.assertNotIn("OldZombie (hors ligne)", labels)
+        self.assertEqual(combo.currentData(), "POS-80C")
+        del app
+
+    def test_fill_combo_does_not_reinject_db_ghost(self) -> None:
+        from PySide6.QtWidgets import QApplication, QComboBox
+
+        app = QApplication.instance() or QApplication([])
+        holder = type("H", (), {})()
+        holder._fill_printer_combo = MethodType(
+            SettingsPage._fill_printer_combo, holder
+        )
+        combo = QComboBox()
+        combo.setEditable(True)
+        holder._fill_printer_combo(
+            combo,
+            "Imprimante_Fantome",
+            ["POS-80C", "HP DeskJet"],
+            offline_names=set(),
+        )
+        self.assertEqual(combo.currentData(), "")
+        self.assertNotIn("Imprimante_Fantome", [
+            combo.itemText(i) for i in range(combo.count())
+        ])
+        del app
+
 
 if __name__ == "__main__":
     unittest.main()
