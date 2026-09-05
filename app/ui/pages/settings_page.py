@@ -771,27 +771,36 @@ class SettingsPage(QWidget):
         *,
         setting_key: str,
     ) -> tuple[str, bool]:
-        """Valide un nom d'imprimante ; efface le réglage s'il est fantôme."""
+        """Valide un nom d'imprimante pour l'affichage Paramètres.
+
+        On n'efface le réglage que si l'absence est **prouvée** :
+        - chemin périphérique inexistant, ou
+        - liste système non vide et nom absent.
+
+        Si la détection renvoie une liste vide (lpstat / EnumPrinters HS),
+        on conserve le nom enregistré pour ne pas retomber sur
+        « (Imprimante par défaut) » à chaque ouverture des paramètres.
+        """
         from app.printers import thermal_printer
 
         if not select:
             return "", False
-        if thermal_printer.is_device_path(select) and not Path(select).exists():
-            settings_service.set_setting(setting_key, "")
-            return "", True
         if thermal_printer.is_device_path(select):
-            return select, False
-        matched = thermal_printer.match_printer_in_list(select, available)
-        if available and not matched:
-            settings_service.set_setting(setting_key, "")
-            return "", True
-        if not available:
-            probed = thermal_printer.probe_printer_exists(select)
-            if probed is False:
+            if not Path(select).exists():
                 settings_service.set_setting(setting_key, "")
                 return "", True
             return select, False
-        return matched or select, False
+
+        matched = thermal_printer.match_printer_in_list(select, available)
+        if available:
+            if matched:
+                return matched, False
+            # Liste fiable + nom absent → fantôme.
+            settings_service.set_setting(setting_key, "")
+            return "", True
+
+        # Liste vide : détection incertaine → garder le nom (affichage éditable).
+        return select, False
 
     def _fill_printer_combo(self, combo: QComboBox, select: str, available: list) -> None:
         from app.printers import thermal_printer
@@ -801,13 +810,18 @@ class SettingsPage(QWidget):
         combo.addItem(DEFAULT_PRINTER_LABEL, "")
         for name in available:
             combo.addItem(name, name)
+        select = (select or "").strip()
         if select:
             index = combo.findData(select)
+            if index < 0:
+                matched = thermal_printer.match_printer_in_list(select, available)
+                if matched:
+                    index = combo.findData(matched)
+                    select = matched
             if index >= 0:
                 combo.setCurrentIndex(index)
-            elif thermal_printer.is_device_path(select):
-                combo.setEditText(select)
             else:
+                # Nom enregistré hors liste (détection HS) : le montrer tel quel.
                 combo.setEditText(select)
         else:
             combo.setCurrentIndex(0)
@@ -815,13 +829,23 @@ class SettingsPage(QWidget):
 
     def _printer_value(self) -> str:
         """Imprimante ticket thermique ('' = imprimante par défaut)."""
-        text = self.printer.currentText().strip()
-        return "" if text == DEFAULT_PRINTER_LABEL else text
+        return self._combo_printer_value(self.printer)
 
     def _invoice_printer_value(self) -> str:
         """Imprimante facture encre ('' = même que ticket / défaut système)."""
-        text = self.invoice_printer.currentText().strip()
-        return "" if text == DEFAULT_PRINTER_LABEL else text
+        return self._combo_printer_value(self.invoice_printer)
+
+    def _combo_printer_value(self, combo: QComboBox) -> str:
+        text = (combo.currentText() or "").strip()
+        if not text or text == DEFAULT_PRINTER_LABEL:
+            return ""
+        # Préférer la data de l'entrée sélectionnée (nom canonique).
+        idx = combo.currentIndex()
+        if idx > 0:
+            data = combo.itemData(idx)
+            if data:
+                return str(data).strip()
+        return text
 
     def _save_appearance(self, silent: bool = False) -> None:
         from app.printers.printer_profile import save_printer_profile_id
