@@ -1,21 +1,24 @@
-"""Helpers de tableau facture — modèle photo HARD SARL.
+"""Helpers de tableau facture — modèle moderne (bords arrondis).
 
-Tableau encadré avec séparateurs verticaux (Designation | Qte | Prix | Montant),
-TOTAL hors cadre avec soulignement du montant uniquement,
+Tableau encadré Designation | Qte | Prix | Montant,
+TOTAL hors cadre avec soulignement du montant,
 cadre arrondi pour le montant en lettres.
+
+À l'impression ESC/POS, les coins ╭╮╰╯ sont mappés vers ┌┐└┘ (CP850).
 """
 
 from __future__ import annotations
 
 H, V = "─", "│"
+# Coins droits (legacy / codepages DOS).
 TL, TR, BL, BR = "┌", "┐", "└", "┘"
 T, B, LJ, RJ, X = "┬", "┴", "├", "┤", "┼"
+# Coins arrondis (aperçu moderne ; remappés à l'impression).
 RTL, RTR, RBL, RBR = "╭", "╮", "╰", "╯"
 
 
 def table_column_widths(width: int) -> tuple[int, int, int, int]:
     """Largeurs internes Designation / Qte / Prix / Montant (hors │)."""
-    # 5 traits verticaux → width - 5 = somme des colonnes.
     usable = max(14, width - 5)
     if width <= 32:
         qte, prix, montant = 3, 6, 7
@@ -40,26 +43,36 @@ def _cell(text: str, w: int, align: str = "left") -> str:
     return text.ljust(w)
 
 
-def _rule(cols: tuple[int, int, int, int], left: str, mid: str, right: str) -> str:
+def _rule(
+    cols: tuple[int, int, int, int],
+    left: str,
+    mid: str,
+    right: str,
+) -> str:
     d, q, p, m = cols
     return left + (H * d) + mid + (H * q) + mid + (H * p) + mid + (H * m) + right
 
 
-def table_top(width: int, cols: tuple[int, int, int, int]) -> str:
-    return _rule(cols, TL, T, TR)[:width]
+def table_top(
+    width: int, cols: tuple[int, int, int, int], *, rounded: bool = True
+) -> str:
+    left, right = (RTL, RTR) if rounded else (TL, TR)
+    return _rule(cols, left, T, right)[:width]
 
 
 def table_mid(width: int, cols: tuple[int, int, int, int]) -> str:
     return _rule(cols, LJ, X, RJ)[:width]
 
 
-def table_bottom(width: int, cols: tuple[int, int, int, int]) -> str:
-    return _rule(cols, BL, B, BR)[:width]
+def table_bottom(
+    width: int, cols: tuple[int, int, int, int], *, rounded: bool = True
+) -> str:
+    left, right = (RBL, RBR) if rounded else (BL, BR)
+    return _rule(cols, left, B, right)[:width]
 
 
 def table_header_row(width: int, cols: tuple[int, int, int, int]) -> str:
     d, q, p, m = cols
-    # Libellés du modèle photo (sans accent sur Designation).
     if width <= 32:
         labels = ("Article", "Qte", "Prix", "Montant")
     else:
@@ -126,16 +139,15 @@ def total_underlined(width: int, amount: str) -> list[str]:
 
     amount = (amount or "").strip()
     line = row("TOTAL", amount, width)
-    # Souligner uniquement la zone du montant (à droite).
     underline = (" " * (width - len(amount))) + ("─" * len(amount))
     return [line[:width], underline[:width]]
 
 
-def frame_text(text: str, width: int, *, rounded: bool = False) -> list[str]:
-    """Cadre du montant en lettres — coins droits (─│ continus en CP850).
+def frame_text(text: str, width: int, *, rounded: bool = True) -> list[str]:
+    """Cadre du montant en lettres — coins arrondis par défaut (moderne).
 
-    ``rounded=True`` conserve ╭╮ pour l'aperçu écran ; à l'impression ESC/POS
-    ils sont mappés vers ┌┐ (même famille de traits continus).
+    ``rounded=False`` force les coins droits. À l'impression ESC/POS, les
+    coins arrondis sont mappés vers ┌┐└┘ (présents en CP850).
     """
     inner_w = max(4, width - 2)
     chunks: list[str] = []
@@ -154,7 +166,6 @@ def frame_text(text: str, width: int, *, rounded: bool = False) -> list[str]:
     return [ln[:width] for ln in out]
 
 
-# Alias rétrocompat
 def hline(width: int, char: str = "-") -> str:
     return (char * width)[:width]
 
@@ -185,12 +196,12 @@ def table_total_top(width, cols) -> str:
     return table_mid(width, cols)
 
 
-def table_total_bottom(width, cols) -> str:
-    return table_bottom(width, cols)
+def table_total_bottom(width, cols, *, rounded: bool = True) -> str:
+    return table_bottom(width, cols, rounded=rounded)
 
 
-def table_total_rule(width, cols) -> str:
-    return table_bottom(width, cols)
+def table_total_rule(width, cols, *, rounded: bool = True) -> str:
+    return table_bottom(width, cols, rounded=rounded)
 
 
 def table_rule(width, cols) -> str:

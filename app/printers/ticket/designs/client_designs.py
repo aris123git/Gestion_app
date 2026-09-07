@@ -331,30 +331,30 @@ class TerminalDesign(TicketDesign):
 
 
 class FactureTableauDesign(TicketDesign):
-    """Facture modèle photo (HARD SARL) — structure ligne à ligne.
-
-    Logo facultatif : personnalisable (poissonnerie, quincaillerie, boutique…)
-    via Commerce → Logo + option Designs. Pas un élément fixe du template.
-    """
+    """Facture modèle photo — tableau cadré, coins droits (CP850 natif)."""
 
     id = "facture"
-    label = "Facture tableau"
+    label = "Facture tableau (coins droits)"
     description = (
-        "Modèle facture photo : nom à gauche, adresse/tél/fax à droite, "
-        "tableau cadré, TOTAL souligné, montant en lettres encadré. "
-        "Logo optionnel (personnalisable)."
+        "Nom à gauche, adresse/tél/fax à droite, tableau ┌┐ cadré, "
+        "TOTAL souligné, montant en lettres encadré. "
+        "Coins droits : plus fiables sur beaucoup d'imprimantes thermiques. "
+        "Logo optionnel."
     )
     uses_logo = True
+    # Sous-classes : FactureTableauArrondiDesign met True.
+    rounded_corners = False
 
     def render(self, data: TicketData, opts: TicketOptions, width: int) -> list[StyledLine]:
         lines: list[StyledLine] = []
+        rounded = bool(getattr(self, "rounded_corners", False))
         name = (data.shop_name or "Commerce").strip().upper()
         phone = (data.shop_phone or "").strip()
         email = (getattr(data, "shop_email", None) or "").strip()
         fax = (getattr(data, "shop_fax", None) or "").strip()
         address = (data.shop_address or "").strip()
 
-        # 1) NOM (gras) à gauche — bloc adresse / Tel / Fax à droite (même hauteur).
+        # 1) NOM (gras) à gauche — bloc adresse / Tel / Fax à droite.
         right_block: list[str] = []
         if opts.show_address and address:
             right_w = max(12, min(width // 2 + 6, width - max(8, len(name[:12]) + 1)))
@@ -367,7 +367,6 @@ class FactureTableauDesign(TicketDesign):
         if fax:
             right_block.append(f"Fax : {fax}")
         elif email:
-            # Fax boutique non renseigné : email si disponible.
             right_block.append(f"Email : {email}")
         if opts.show_shop_name or right_block:
             left_name = name if opts.show_shop_name else ""
@@ -382,7 +381,7 @@ class FactureTableauDesign(TicketDesign):
                 )
         lines.append(L(""))
 
-        # 2) COMPTANT puis N° Facture/ — gauche, l'un sous l'autre.
+        # 2) COMPTANT puis N° Facture/
         pay_label = ""
         if opts.show_payment and data.payments:
             raw = (data.payments[0].method or "").strip()
@@ -405,7 +404,7 @@ class FactureTableauDesign(TicketDesign):
             )
             lines.append(L(f"N° Facture/ {spaced}", bold=True))
 
-        # 3) Client (ligne suivante, pas de ligne vide superflue avant).
+        # 3) Client
         client = (data.client_name or "").strip()
         if data.client_id or client:
             lines.append(L(f"Client  {client}"))
@@ -413,9 +412,7 @@ class FactureTableauDesign(TicketDesign):
             lines.append(L("Client"))
         lines.append(L(""))
 
-        # 4) Tableau cadré — TOUTES les lignes du cadre au même style ESC/POS.
-        # Si on alterne gras / normal, les │ ne se rejoignent plus à l'impression
-        # (fonte bold ≠ fonte normale) → traits verticaux discontinus.
+        # 4) Tableau cadré (coins droits ou arrondis selon le design).
         cols = table_column_widths(width)
         compact_amt = width <= 32
         bold_total = bool(getattr(opts, "bold_total", True))
@@ -428,7 +425,11 @@ class FactureTableauDesign(TicketDesign):
                     return "0"
             return money(value, data.currency, with_currency=False)
 
-        table_lines: list[str] = [table_top(width, cols), table_header_row(width, cols), table_mid(width, cols)]
+        table_lines: list[str] = [
+            table_top(width, cols, rounded=rounded),
+            table_header_row(width, cols),
+            table_mid(width, cols),
+        ]
         for item in data.items:
             des = (item.name or "").strip()
             q = format_quantity(item.quantity)
@@ -448,11 +449,11 @@ class FactureTableauDesign(TicketDesign):
                     width, cols, "Remise", "", "", cell_amt(data.discount)
                 )
             )
-        table_lines.append(table_bottom(width, cols))
+        table_lines.append(table_bottom(width, cols, rounded=rounded))
         for piece in table_lines:
             lines.append(L(piece, bold=False))
 
-        # 5) TOTAL hors cadre, montant souligné (pas de boîte).
+        # 5) TOTAL hors cadre, montant souligné.
         if opts.show_total:
             lines.append(L(""))
             for piece in total_underlined(width, cell_amt(data.total)):
@@ -461,18 +462,17 @@ class FactureTableauDesign(TicketDesign):
 
         lines.append(L(""))
 
-        # 6) Phrase libre + montant en lettres SEUL dans un cadre.
-        # Cadre entier au même style (sinon │ discontinus). Coins droits = CP850.
+        # 6) Montant en lettres encadré.
         intro = "Arrêtée la présente facture à la somme de :"
         for piece in wrap_text(intro, width):
             lines.append(L(piece))
         words = amount_in_words(data.total, data.currency)
-        for framed in frame_text(words, width, rounded=False):
+        for framed in frame_text(words, width, rounded=rounded):
             lines.append(L(framed, bold=False))
 
         lines.append(L(""))
 
-        # 7) Caissier / date / heure (une ligne).
+        # 7) Caissier / date / heure.
         footer_bits = []
         if m["cashier"]:
             footer_bits.append(m["cashier"].upper())
@@ -510,6 +510,19 @@ class FactureTableauDesign(TicketDesign):
         return lines
 
 
+class FactureTableauArrondiDesign(FactureTableauDesign):
+    """Même facture tableau, coins arrondis ╭╮╰╯ (moderne)."""
+
+    id = "facture_arrondi"
+    label = "Facture tableau (bords arrondis)"
+    description = (
+        "Même modèle que « Facture tableau », avec coins arrondis ╭╮. "
+        "À l'impression, les coins sont adaptés au codepage (CP850). "
+        "Logo optionnel."
+    )
+    rounded_corners = True
+
+
 def wrap_text_local(text: str, width: int) -> list[str]:
     return wrap_text(text, width)
 
@@ -524,4 +537,5 @@ CLIENT_DESIGN_CLASSES = (
     BoldDesign,
     TerminalDesign,
     FactureTableauDesign,
+    FactureTableauArrondiDesign,
 )

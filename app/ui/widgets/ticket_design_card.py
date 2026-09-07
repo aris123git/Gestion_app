@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -13,6 +13,29 @@ from PySide6.QtWidgets import (
 )
 
 from app.printers.ticket.renderer import render_ticket_preview
+
+# Coins de tableau : sans eux à l'écran, facture droits ≈ facture arrondi.
+_TABLE_CORNERS = frozenset("╭┌")
+
+
+def _card_preview_window(text: str, *, max_lines: int = 14) -> str:
+    """Fenêtre d'aperçu cadrée sur le tableau (sinon seul l'en-tête est visible)."""
+    lines = text.splitlines()
+    if not lines:
+        return text
+    box_idx = next(
+        (i for i, ln in enumerate(lines) if ln and ln[0] in _TABLE_CORNERS),
+        None,
+    )
+    if box_idx is None:
+        return "\n".join(lines[:max_lines])
+    # Contexte au-dessus (COMPTANT / N° Facture / Client).
+    start = max(0, box_idx - 4)
+    end = min(len(lines), start + max_lines)
+    if end < box_idx + 6 and len(lines) > max_lines:
+        start = max(0, min(box_idx - 1, len(lines) - max_lines))
+        end = start + max_lines
+    return "\n".join(lines[start:end])
 
 
 class TicketDesignCard(QFrame):
@@ -51,8 +74,10 @@ class TicketDesignCard(QFrame):
         mono.setStyleHint(QFont.StyleHint.Monospace)
         mono.setFixedPitch(True)
         self.preview.setFont(mono)
-        self.preview.setFixedHeight(160)
+        self.preview.setFixedHeight(200)
         self.preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.preview.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.preview.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.preview.setStyleSheet(
             "QPlainTextEdit { line-height: 1; background: #fff; color: #111; }"
         )
@@ -65,12 +90,21 @@ class TicketDesignCard(QFrame):
         self._refresh_preview()
         self._apply_style(False)
 
-    def _refresh_preview(self, paper: str = "80mm") -> None:
+    def _refresh_preview(self, paper: str = "80mm") -> None:  # noqa: ARG002
         try:
-            text = render_ticket_preview(self.design_id, paper=paper)
+            # 58mm : largeur adaptée à la carte (~280px), coins visibles sans scroll H.
+            text = render_ticket_preview(self.design_id, paper="58mm")
+            text = _card_preview_window(text)
         except Exception as exc:
             text = f"(aperçu indisponible)\n{exc}"
         self.preview.setPlainText(text)
+        QTimer.singleShot(0, self._scroll_preview_top)
+
+    def _scroll_preview_top(self) -> None:
+        cursor = self.preview.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        self.preview.setTextCursor(cursor)
+        self.preview.ensureCursorVisible()
 
     def _on_toggled(self, checked: bool) -> None:
         self._apply_style(checked)
