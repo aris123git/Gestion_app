@@ -269,6 +269,20 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
                     msg=repr(line),
                 )
 
+    def test_card_preview_window_shows_table_corners(self) -> None:
+        """L'aperçu carte doit montrer le tableau (sinon les 2 factures semblent identiques)."""
+        from app.ui.widgets.ticket_design_card import _card_preview_window
+        from app.printers.ticket.options import TicketOptions
+
+        opts = TicketOptions()
+        for design_id, corner in (("facture", "┌"), ("facture_arrondi", "╭")):
+            full = render_ticket_preview(design_id, paper="58mm", options=opts)
+            win = _card_preview_window(full)
+            self.assertIn(corner, win, msg=design_id)
+            self.assertIn("Qte", win)
+            # En-tête long hors fenêtre : on voit COMPTANT + tableau.
+            self.assertIn("COMPTANT", win)
+
     def test_facture_tableau_structure(self) -> None:
         """Facture tableau coins droits — option sélectionnable dans Designs."""
         data = sample_ticket_data()
