@@ -103,10 +103,11 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
                 "bold",
                 "terminal",
                 "facture",
+                "facture_arrondi",
             },
         )
         self.assertEqual(kitchen_ids, {"serveur", "cuisine", "cuisine_compact"})
-        self.assertEqual(len(list_designs()), 12)
+        self.assertEqual(len(list_designs()), 13)
 
     def test_each_design_renders_58_and_80(self) -> None:
         data = sample_ticket_data()
@@ -269,6 +270,7 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
                 )
 
     def test_facture_tableau_structure(self) -> None:
+        """Facture tableau coins droits — option sélectionnable dans Designs."""
         data = sample_ticket_data()
         data.shop_email = "contact@cafe.port"
         data.shop_fax = "50 30 13 78"
@@ -287,17 +289,72 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
             self.assertIn("Arrêtée la présente facture", text)
             self.assertIn("Tel :", text)
             self.assertIn("Fax :", text)
-            # Tableau cadré avec colonnes (coins arrondis modernes).
+            # Coins droits ┌┐└┘ (plus fiables CP850).
+            self.assertIn("┌", text)
+            self.assertIn("┬", text)
+            self.assertIn("│", text)
+            self.assertIn("└", text)
+            self.assertIn("┐", text)
+            self.assertNotIn("╭", text)
+            self.assertNotIn("╰", text)
+            self.assertIn("─", text)
+            self.assertIn("mille", text.lower())
+            table_rows = [
+                ln
+                for ln in text.splitlines()
+                if ln.startswith("│")
+                or ln.startswith("┌")
+                or ln.startswith("├")
+                or ln.startswith("└")
+            ]
+            grid = [
+                ln
+                for ln in table_rows
+                if ln.count("│") >= 4 or ln.count("┬") or ln.count("┼") or ln.count("┴")
+            ]
+            self.assertGreaterEqual(len(grid), 4)
+            positions = None
+            box_chars = "│╭╮╰╯┌┐└┘├┤┬┴┼"
+            for ln in grid:
+                pos = tuple(i for i, c in enumerate(ln) if c in box_chars)
+                if positions is None:
+                    positions = pos
+                else:
+                    self.assertEqual(pos, positions, msg=repr(ln))
+            width = 32 if paper == "58mm" else 48
+            for line in text.splitlines():
+                self.assertLessEqual(len(line), width + 2, msg=repr(line))
+
+    def test_facture_tableau_arrondi_structure(self) -> None:
+        """Facture tableau bords arrondis — 2e option dans Designs des tickets."""
+        from app.printers.ticket.registry import get_design
+
+        design = get_design("facture_arrondi")
+        self.assertEqual(design.id, "facture_arrondi")
+        self.assertIn("arrondi", design.label.lower())
+        self.assertTrue(getattr(design, "rounded_corners", False))
+
+        data = sample_ticket_data()
+        data.shop_email = "contact@cafe.port"
+        data.shop_fax = "50 30 13 78"
+        for paper in ("58mm", "80mm"):
+            text = render_ticket_text_from_data(
+                data, design_id="facture_arrondi", paper=paper
+            )
+            self.assertIn("COMPTANT", text)
+            self.assertIn("N° Facture", text)
+            self.assertIn("TOTAL", text)
+            self.assertIn("Arrêtée la présente facture", text)
+            # Coins arrondis ╭╮╰╯.
             self.assertIn("╭", text)
             self.assertIn("┬", text)
             self.assertIn("│", text)
             self.assertIn("╰", text)
-            # Cadre montant en lettres (arrondi).
             self.assertIn("╮", text)
-            # TOTAL souligné (trait sous le montant, pas cadre total).
+            self.assertNotIn("┌", text)
+            self.assertNotIn("└", text)
             self.assertIn("─", text)
             self.assertIn("mille", text.lower())
-            # Traits verticaux alignés sur toutes les lignes du tableau.
             table_rows = [
                 ln
                 for ln in text.splitlines()
@@ -306,7 +363,6 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
                 or ln.startswith("├")
                 or ln.startswith("╰")
             ]
-            # Exclure le cadre montant en lettres (une seule paire │ latéraux).
             grid = [
                 ln
                 for ln in table_rows
@@ -361,6 +417,18 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
         ]
         self.assertTrue(border_lines)
         self.assertTrue(all(not s.bold for s in border_lines))
+
+        # Même règle pour la variante bords arrondis.
+        styled_r = render_ticket(
+            data, design_id="facture_arrondi", options=opts, paper="80mm"
+        )
+        border_r = [
+            s
+            for s in styled_r
+            if s.text.startswith(("╭", "├", "╰")) and s.text.count("─") > 5
+        ]
+        self.assertTrue(border_r)
+        self.assertTrue(all(not s.bold for s in border_r))
 
     def test_kitchen_enable_disable_setting(self) -> None:
         from app.printers.ticket.options import (
