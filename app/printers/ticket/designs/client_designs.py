@@ -340,8 +340,8 @@ class FactureTableauDesign(TicketDesign):
     id = "facture"
     label = "Facture tableau"
     description = (
-        "Modèle facture photo : nom à gauche, adresse/tél/fax à droite, "
-        "tableau cadré, TOTAL souligné, montant en lettres encadré. "
+        "Modèle facture moderne : nom à gauche, adresse/tél/fax à droite, "
+        "tableau à bords arrondis, TOTAL souligné, montant en lettres encadré. "
         "Logo optionnel (personnalisable)."
     )
     uses_logo = True
@@ -413,9 +413,8 @@ class FactureTableauDesign(TicketDesign):
             lines.append(L("Client"))
         lines.append(L(""))
 
-        # 4) Tableau cadré — TOUTES les lignes du cadre au même style ESC/POS.
-        # Si on alterne gras / normal, les │ ne se rejoignent plus à l'impression
-        # (fonte bold ≠ fonte normale) → traits verticaux discontinus.
+        # 4) Tableau cadré — coins arrondis (moderne). Même style ESC/POS
+        # sur tout le cadre pour que les │ restent alignés à l'impression.
         cols = table_column_widths(width)
         compact_amt = width <= 32
         bold_total = bool(getattr(opts, "bold_total", True))
@@ -428,7 +427,11 @@ class FactureTableauDesign(TicketDesign):
                     return "0"
             return money(value, data.currency, with_currency=False)
 
-        table_lines: list[str] = [table_top(width, cols), table_header_row(width, cols), table_mid(width, cols)]
+        table_lines: list[str] = [
+            table_top(width, cols, rounded=True),
+            table_header_row(width, cols),
+            table_mid(width, cols),
+        ]
         for item in data.items:
             des = (item.name or "").strip()
             q = format_quantity(item.quantity)
@@ -448,7 +451,7 @@ class FactureTableauDesign(TicketDesign):
                     width, cols, "Remise", "", "", cell_amt(data.discount)
                 )
             )
-        table_lines.append(table_bottom(width, cols))
+        table_lines.append(table_bottom(width, cols, rounded=True))
         for piece in table_lines:
             lines.append(L(piece, bold=False))
 
@@ -461,13 +464,12 @@ class FactureTableauDesign(TicketDesign):
 
         lines.append(L(""))
 
-        # 6) Phrase libre + montant en lettres SEUL dans un cadre.
-        # Cadre entier au même style (sinon │ discontinus). Coins droits = CP850.
+        # 6) Phrase libre + montant en lettres dans un cadre arrondi.
         intro = "Arrêtée la présente facture à la somme de :"
         for piece in wrap_text(intro, width):
             lines.append(L(piece))
         words = amount_in_words(data.total, data.currency)
-        for framed in frame_text(words, width, rounded=False):
+        for framed in frame_text(words, width, rounded=True):
             lines.append(L(framed, bold=False))
 
         lines.append(L(""))

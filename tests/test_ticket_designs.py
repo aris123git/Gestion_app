@@ -287,26 +287,36 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
             self.assertIn("Arrêtée la présente facture", text)
             self.assertIn("Tel :", text)
             self.assertIn("Fax :", text)
-            # Tableau cadré avec colonnes (photo).
-            self.assertIn("┌", text)
+            # Tableau cadré avec colonnes (coins arrondis modernes).
+            self.assertIn("╭", text)
             self.assertIn("┬", text)
             self.assertIn("│", text)
-            self.assertIn("└", text)
-            # Cadre montant en lettres (coins droits = traits continus CP850).
-            self.assertIn("┌", text)
+            self.assertIn("╰", text)
+            # Cadre montant en lettres (arrondi).
+            self.assertIn("╮", text)
             # TOTAL souligné (trait sous le montant, pas cadre total).
             self.assertIn("─", text)
             self.assertIn("mille", text.lower())
             # Traits verticaux alignés sur toutes les lignes du tableau.
             table_rows = [
-                ln for ln in text.splitlines() if ln.startswith("│") or ln.startswith("┌") or ln.startswith("├") or ln.startswith("└")
+                ln
+                for ln in text.splitlines()
+                if ln.startswith("│")
+                or ln.startswith("╭")
+                or ln.startswith("├")
+                or ln.startswith("╰")
             ]
             # Exclure le cadre montant en lettres (une seule paire │ latéraux).
-            grid = [ln for ln in table_rows if ln.count("│") >= 4 or ln.count("┬") or ln.count("┼") or ln.count("┴")]
+            grid = [
+                ln
+                for ln in table_rows
+                if ln.count("│") >= 4 or ln.count("┬") or ln.count("┼") or ln.count("┴")
+            ]
             self.assertGreaterEqual(len(grid), 4)
             positions = None
+            box_chars = "│╭╮╰╯┌┐└┘├┤┬┴┼"
             for ln in grid:
-                pos = tuple(i for i, c in enumerate(ln) if c in "│┌┐└┘├┤┬┴┼")
+                pos = tuple(i for i, c in enumerate(ln) if c in box_chars)
                 if positions is None:
                     positions = pos
                 else:
@@ -345,7 +355,9 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
         self.assertTrue(item_lines)
         self.assertTrue(all(not s.bold for s in item_lines))
         border_lines = [
-            s for s in styled if s.text.startswith(("┌", "├", "└")) and s.text.count("─") > 5
+            s
+            for s in styled
+            if s.text.startswith(("╭", "├", "╰", "┌", "└")) and s.text.count("─") > 5
         ]
         self.assertTrue(border_lines)
         self.assertTrue(all(not s.bold for s in border_lines))
