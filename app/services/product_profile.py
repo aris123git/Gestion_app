@@ -101,13 +101,8 @@ def set_product(product: str) -> None:
 
 
 def require_product() -> str:
-    """Produit courant ; défaut Gestion App si absent (migration anciennes installs)."""
-    current = get_product()
-    if current:
-        return current
-    # Ancienne install déjà activée sans fichier profil → Gestion App.
-    set_product(PRODUCT_GESTION)
-    return PRODUCT_GESTION
+    """Produit courant pour l'UI. Ne persiste rien (évite de court-circuiter le choix 1er PC)."""
+    return get_product() or PRODUCT_GESTION
 
 
 def is_gestion() -> bool:
