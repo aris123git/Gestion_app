@@ -63,17 +63,22 @@ class ProductProfileTestCase(unittest.TestCase):
         self.assertIn("Avoirs", maquis_labels)
         self.assertIn("Achats", maquis_labels)  # héritage Gestion
 
-    def test_profit_loyalty_is_gestion_only(self) -> None:
+    def test_profit_loyalty_on_both_products(self) -> None:
         product_profile.set_product(product_profile.PRODUCT_GESTION)
         self.assertTrue(product_profile.supports_profit_loyalty())
-        self.assertIn("fidélité", product_profile.PRODUCT_DESCRIPTIONS[
-            product_profile.PRODUCT_GESTION
-        ].lower())
-        product_profile.set_product(product_profile.PRODUCT_MAQUIS)
-        self.assertFalse(product_profile.supports_profit_loyalty())
-        self.assertNotIn(
+        self.assertIn(
             "fidélité",
-            product_profile.PRODUCT_DESCRIPTIONS[product_profile.PRODUCT_MAQUIS].lower(),
+            product_profile.PRODUCT_DESCRIPTIONS[
+                product_profile.PRODUCT_GESTION
+            ].lower(),
+        )
+        product_profile.set_product(product_profile.PRODUCT_MAQUIS)
+        self.assertTrue(product_profile.supports_profit_loyalty())
+        self.assertIn(
+            "fidélité",
+            product_profile.PRODUCT_DESCRIPTIONS[
+                product_profile.PRODUCT_MAQUIS
+            ].lower(),
         )
     @classmethod
     def setUpClass(cls) -> None:

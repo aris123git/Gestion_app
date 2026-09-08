@@ -1194,7 +1194,7 @@ class SettingsPage(QWidget):
             "<b>pas d'argent / pas de remise monétaire</b>. "
             "Le reste de crédit n'apparaît sur le ticket que s'il est "
             "strictement positif.<br/>"
-            "<b>Fonctionnalité Gestion App</b> — "
+            "Disponible sur <b>Gestion App</b> et <b>Maquis Caisse</b> — "
             "<i>réglages réservés à l'administrateur.</i>"
         )
         hint.setWordWrap(True)

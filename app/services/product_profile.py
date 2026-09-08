@@ -33,7 +33,7 @@ PRODUCT_DESCRIPTIONS = {
     PRODUCT_MAQUIS: (
         "Restaurants, maquis, buvettes, bars… "
         "Caisse, tables, commandes ouvertes, stock, avoirs, dettes — "
-        "version PC de Maquis Caisse."
+        "fidélité bénéfices (produit offert) — version PC de Maquis Caisse."
     ),
 }
 
@@ -115,8 +115,8 @@ def is_maquis() -> bool:
 
 
 def supports_profit_loyalty() -> bool:
-    """Fidélité bénéfices (produit offert) : réservée à Gestion App."""
-    return is_gestion()
+    """Fidélité bénéfices (produit offert) : Gestion App et Maquis Caisse."""
+    return require_product() in (PRODUCT_GESTION, PRODUCT_MAQUIS)
 
 
 def product_label(product: Optional[str] = None) -> str:

@@ -273,7 +273,7 @@ class POSPage(QWidget):
         self.loyalty_offer_btn = QPushButton("Offrir produit")
         self.loyalty_offer_btn.setToolTip(
             "Ajoute le produit sélectionné du catalogue comme produit offert "
-            "(fidélité Gestion App). Pas de remise en argent — uniquement un article boutique."
+            "(fidélité). Pas de remise en argent — uniquement un article boutique."
         )
         self.loyalty_offer_btn.setEnabled(False)
         self.loyalty_offer_btn.clicked.connect(self._offer_selected_loyalty_product)
