@@ -38,6 +38,15 @@ class ActivationDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
 
+        from app.services import product_profile
+
+        brand = QLabel(product_profile.PARENT_NAME)
+        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand.setStyleSheet("font-size: 22px; font-weight: 800;")
+        product_line = QLabel(product_profile.product_label())
+        product_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        product_line.setStyleSheet("color: #334155; font-weight: 600;")
+
         title = QLabel("Activation requise")
         title.setObjectName("PageTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -67,6 +76,8 @@ class ActivationDialog(QDialog):
         buttons.addStretch()
         buttons.addWidget(self.activate_button)
 
+        layout.addWidget(brand)
+        layout.addWidget(product_line)
         layout.addWidget(title)
         layout.addWidget(message)
         layout.addSpacing(6)

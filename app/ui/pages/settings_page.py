@@ -128,6 +128,19 @@ class SettingsPage(QWidget):
         form.addRow("Type de commerce", self.shop_type)
         form.addRow("TVA", self.vat)
         form.addRow("Logo", logo_row)
+
+        from app.services import product_profile
+
+        self.product_profile_label = QLabel(product_profile.product_label())
+        self.product_profile_label.setStyleSheet("font-weight: 600;")
+        form.addRow("Produit NexaGes (ce poste)", self.product_profile_label)
+        hint = QLabel(
+            "Choisi une seule fois sur un nouvel ordinateur "
+            "(Gestion App ou Maquis Caisse). Impression et base sont communes."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        form.addRow("", hint)
         outer.addWidget(make_card(form_widget))
 
         save = QPushButton("Enregistrer les informations")

@@ -1,7 +1,9 @@
-"""Gestion Commerciale - Logiciel de gestion commerciale (POS) hors ligne.
+"""Gestion Commerciale / NexaGes - Logiciel de gestion NexaDigit.
 
-Application de point de vente modulaire pour petits et moyens commerces.
+Point d'entrée UI : choix produit (Gestion App | Maquis Caisse) sur nouveau
+poste, puis activation, configuration, connexion.
 """
 
-__version__ = "1.0.0"
-__app_name__ = "Gestion Commerciale"
+__version__ = "1.1.0"
+__app_name__ = "NexaGes"
+__vendor__ = "NexaDigit"

@@ -25,6 +25,8 @@ from app.ui.widgets.helpers import activate_and_center
 
 SHOP_TYPES = [
     "Boutique",
+    "Maquis / Restaurant",
+    "Buvette / Bar",
     "Poissonnerie",
     "Pharmacie",
     "Quincaillerie",
