@@ -70,6 +70,8 @@ class SaleResult:
     change_due: float
     lines: List[CartLine] = field(default_factory=list)
     payments: List[PaymentLine] = field(default_factory=list)
+    # Reste de crédit fidélité après utilisation (None = ne rien écrire sur le ticket).
+    loyalty_credit_remaining: Optional[float] = None
 
 
 class InsufficientPaymentError(Exception):
@@ -168,19 +170,39 @@ class SaleController:
         user_id: Optional[int] = None,
         allow_credit: bool = False,
         debt_due_date: Optional[date] = None,
+        loyalty_credit: float = 0,
     ) -> SaleResult:
         """Enregistre une vente complète, met à jour le stock et les paiements.
 
         - ``amount_received`` : espèces remises par le client (pour la monnaie).
         - ``allow_credit`` : autorise un paiement partiel / total porté à la dette
           client (méthode ``PAYMENT_METHOD_CREDIT`` / « Dette » sur le ticket).
+        - ``loyalty_credit`` : remise fidélité bénéfices (hors plafond caissier).
         """
         if not lines:
             raise ValueError("Le panier est vide.")
         cls._validate_lines(lines)
 
         subtotal = round(sum(line.total for line in lines), 2)
-        discount = min(subtotal, max(0.0, to_float(discount)))
+        manual_discount = min(subtotal, max(0.0, to_float(discount)))
+        loyalty_credit = max(0.0, to_float(loyalty_credit))
+        if loyalty_credit > 0.009 and not client_id:
+            raise ValueError(
+                "Impossible d'appliquer une remise fidélité sans client sélectionné."
+            )
+        if loyalty_credit > 0.009:
+            from app.services.profit_loyalty_service import ProfitLoyaltyService
+
+            available = ProfitLoyaltyService.credit_balance(int(client_id))
+            if loyalty_credit > available + 0.009:
+                raise ValueError(
+                    f"Crédit fidélité insuffisant (disponible {available:g})."
+                )
+            loyalty_credit = min(loyalty_credit, available)
+        # La remise fidélité se soustrait après la remise manuelle.
+        room_for_loyalty = max(0.0, subtotal - manual_discount)
+        loyalty_credit = min(loyalty_credit, room_for_loyalty)
+        discount = round(manual_discount + loyalty_credit, 2)
         total = round(max(0.0, subtotal - discount), 2)
 
         credit_method = config.PAYMENT_METHOD_CREDIT
@@ -205,7 +227,7 @@ class SaleController:
         )
         covered = round(cash_paid + credit_marked, 2)
 
-        # Plafonds caissier + permissions (remise / crédit / montant libre).
+        # Plafonds caissier + permissions (remise manuelle / crédit / montant libre).
         if user_id:
             from app.database.connection import session_scope as _user_scope
             from app.models.user import User
@@ -225,7 +247,7 @@ class SaleController:
                 credit_for_limit = max(credit_for_limit, round(total - cash_paid, 2))
             assert_sale_permissions(
                 user=user,
-                discount=discount,
+                discount=manual_discount,
                 credit_amount=credit_for_limit if allow_credit else credit_marked,
             )
             free_amounts = [
@@ -234,7 +256,7 @@ class SaleController:
             assert_cashier_sale_limits(
                 user=user,
                 subtotal=subtotal,
-                discount=discount,
+                discount=manual_discount,
                 credit_amount=credit_for_limit,
                 free_amount_lines=free_amounts,
             )
@@ -475,15 +497,38 @@ class SaleController:
                 "",
             )
 
+        loyalty_remaining: Optional[float] = None
         # Fidélité + CRM (points uniquement sur la part encaissée, hors dette).
         if client_id:
             from app.services.customer_service import CustomerService
             from app.services.loyalty_service import LoyaltyService
+            from app.services.profit_loyalty_service import ProfitLoyaltyService
+
+            if loyalty_credit > 0.009:
+                ProfitLoyaltyService.redeem_credit(
+                    int(client_id),
+                    loyalty_credit,
+                    sale_id=result.sale_id,
+                )
 
             LoyaltyService.add_points_for_sale(
                 client_id, cash_paid, sale_id=result.sale_id, user_id=user_id
             )
             CustomerService.mark_visit(client_id)
+            # Après la vente : nouveaux paliers de bénéfice → avoirs.
+            ProfitLoyaltyService.grant_for_client(
+                int(client_id),
+                sale_id=result.sale_id,
+                user_id=user_id,
+            )
+            # Ticket : n'écrire le reste de remise que s'il est > 0
+            # (après utilisation éventuelle + nouveaux paliers).
+            if loyalty_credit > 0.009:
+                loyalty_remaining = ProfitLoyaltyService.ticket_remaining_line(
+                    int(client_id)
+                )
+
+        result.loyalty_credit_remaining = loyalty_remaining
         return result
 
     # --- Ventes en attente (Sprint 5) --------------------------------------

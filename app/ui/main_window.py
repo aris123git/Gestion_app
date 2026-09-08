@@ -22,14 +22,16 @@ from PySide6.QtWidgets import (
 
 from app import __version__
 from app.services import permissions as perms
-from app.services import settings_service
+from app.services import product_profile, settings_service
 from app.ui.pages.assistant_page import AssistantPage
 from app.ui.pages.audit_page import AuditPage
+from app.ui.pages.avoirs_page import AvoirsPage
 from app.ui.pages.categories_page import CategoriesPage
 from app.ui.pages.clients_page import ClientsPage
 from app.ui.pages.dashboard_page import DashboardPage
 from app.ui.pages.debts_page import DebtsPage
 from app.ui.pages.expenses_page import ExpensesPage
+from app.ui.pages.orders_page import OrdersPage
 from app.ui.pages.pos_page import POSPage
 from app.ui.pages.products_page import ProductsPage
 from app.ui.pages.purchases_page import PurchasesPage
@@ -37,6 +39,7 @@ from app.ui.pages.reports_page import ReportsPage
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.pages.stock_page import StockPage
 from app.ui.pages.suppliers_page import SuppliersPage
+from app.ui.pages.tables_page import TablesPage
 from app.ui.pages.users_page import UsersPage
 from app.ui.dialogs.global_search_dialog import GlobalSearchDialog
 from app.ui.responsive import (
@@ -51,31 +54,60 @@ from app.ui.state import AppState
 
 logger = logging.getLogger(__name__)
 
-# (libellé, icône, classe de page, permission requise ou None = tous les rôles)
-NAV_ITEMS = [
-    ("Caisse", "🛒", POSPage, perms.SELL),
-    ("Tableau de bord", "📊", DashboardPage, perms.VIEW_DASHBOARD),
-    ("Produits", "📦", ProductsPage, perms.VIEW_PRODUCTS),
-    ("Catégories", "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
-    ("Stock", "📥", StockPage, perms.MANAGE_STOCK),
-    ("Achats", "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
-    ("Clients", "👥", ClientsPage, perms.MANAGE_CLIENTS),
-    ("Dettes", "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
-    ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
-    ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
-    ("Rapports", "📈", ReportsPage, perms.VIEW_REPORTS),
-    ("Journal d'audit", "📝", AuditPage, perms.VIEW_AUDIT),
-    ("Assistant", "💡", AssistantPage, perms.VIEW_ASSISTANT),
-    ("Utilisateurs", "🔐", UsersPage, perms.MANAGE_USERS),
-    ("Paramètres", "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
-]
+
+def build_nav_items():
+    """Navigation selon le produit NexaGes (Gestion App | Maquis Caisse)."""
+    common_tail = [
+        ("Rapports", "📈", ReportsPage, perms.VIEW_REPORTS),
+        ("Journal d'audit", "📝", AuditPage, perms.VIEW_AUDIT),
+        ("Assistant", "💡", AssistantPage, perms.VIEW_ASSISTANT),
+        ("Utilisateurs", "🔐", UsersPage, perms.MANAGE_USERS),
+        ("Paramètres", "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
+    ]
+    if product_profile.is_maquis():
+        return [
+            ("Caisse", "🛒", POSPage, perms.SELL),
+            ("Tables", "🪑", TablesPage, perms.SELL),
+            ("Commandes", "🍽️", OrdersPage, perms.SELL),
+            ("Tableau de bord", "📊", DashboardPage, perms.VIEW_DASHBOARD),
+            ("Produits", "📦", ProductsPage, perms.VIEW_PRODUCTS),
+            ("Catégories", "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
+            ("Stock", "📥", StockPage, perms.MANAGE_STOCK),
+            ("Achats", "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
+            ("Clients", "👥", ClientsPage, perms.MANAGE_CLIENTS),
+            ("Dettes", "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
+            ("Avoirs", "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
+            ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
+            ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
+            *common_tail,
+        ]
+    return [
+        ("Caisse", "🛒", POSPage, perms.SELL),
+        ("Tableau de bord", "📊", DashboardPage, perms.VIEW_DASHBOARD),
+        ("Produits", "📦", ProductsPage, perms.VIEW_PRODUCTS),
+        ("Catégories", "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
+        ("Stock", "📥", StockPage, perms.MANAGE_STOCK),
+        ("Achats", "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
+        ("Clients", "👥", ClientsPage, perms.MANAGE_CLIENTS),
+        ("Dettes", "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
+        ("Avoirs", "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
+        ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
+        ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
+        *common_tail,
+    ]
+
+
+# Construit au chargement du module ; MainWindow peut reconstruire si besoin.
+NAV_ITEMS = build_nav_items()
 
 
 class MainWindow(QWidget):
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
-        self.setWindowTitle("Gestion Commerciale")
+        global NAV_ITEMS
+        NAV_ITEMS = build_nav_items()
+        self.setWindowTitle(product_profile.window_title())
         self.setObjectName("MainWindow")
         # Compatible petits écrans ; taille initiale = écran disponible (pas 1920 forcé).
         self.setMinimumSize(640, 480)
@@ -154,7 +186,7 @@ class MainWindow(QWidget):
         self._menu_button.clicked.connect(self._toggle_drawer)
         row.addWidget(self._menu_button)
 
-        self._topbar_title = QLabel("Gestion Commerciale")
+        self._topbar_title = QLabel(product_profile.PARENT_NAME)
         self._topbar_title.setObjectName("TopBarTitle")
         row.addWidget(self._topbar_title, 1)
 
@@ -187,10 +219,11 @@ class MainWindow(QWidget):
         self._sidebar_layout = layout
 
         shop = settings_service.get_shop_info()
-        title = QLabel(shop.name or "Gestion")
+        title = QLabel(shop.name or product_profile.PARENT_NAME)
         title.setObjectName("SidebarTitle")
         title.setWordWrap(True)
-        subtitle = QLabel(shop.shop_type or "Commerce")
+        product_bit = product_profile.product_label()
+        subtitle = QLabel(f"{product_bit} · {shop.shop_type or 'Commerce'}")
         subtitle.setObjectName("SidebarSubtitle")
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -314,7 +347,7 @@ class MainWindow(QWidget):
             if mode == SIDEBAR_DRAWER:
                 self._topbar.show()
                 shop = settings_service.get_shop_info()
-                self._topbar_title.setText(shop.name or "Gestion Commerciale")
+                self._topbar_title.setText(shop.name or product_profile.PARENT_NAME)
                 user = self.state.current_user
                 if user:
                     self._topbar_user.setText(user.full_name or user.username)
@@ -446,10 +479,12 @@ class MainWindow(QWidget):
         if current and hasattr(current, "refresh"):
             current.refresh()
         shop = settings_service.get_shop_info()
-        self._title_label.setText(shop.name or "Gestion")
-        self._subtitle_label.setText(shop.shop_type or "Commerce")
+        self._title_label.setText(shop.name or product_profile.PARENT_NAME)
+        self._subtitle_label.setText(
+            f"{product_profile.product_label()} · {shop.shop_type or 'Commerce'}"
+        )
         if self._topbar.isVisible():
-            self._topbar_title.setText(shop.name or "Gestion Commerciale")
+            self._topbar_title.setText(shop.name or product_profile.PARENT_NAME)
 
     def _open_search(self) -> None:
         if not self._can_search():

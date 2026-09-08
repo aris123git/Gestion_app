@@ -1,4 +1,4 @@
-"""Orchestration de l'interface : thème, premier démarrage, connexion, fenêtre.
+"""Orchestration de l'interface : thème, produit, activation, connexion, fenêtre.
 
 Gère aussi le cycle de connexion/déconnexion (retour à l'écran de login sans
 quitter l'application).
@@ -13,11 +13,12 @@ from PySide6.QtWidgets import QApplication
 
 from app.database.connection import init_database
 from app.database.seed import seed_all
-from app.services import activation_service, backup_service
+from app.services import activation_service, backup_service, product_profile
 from app.startup_log import install_startup_excepthook, write_startup_error
 from app.ui.activation_dialog import ActivationDialog
 from app.ui.login_dialog import LoginDialog
 from app.ui.main_window import MainWindow
+from app.ui.product_choice_dialog import ProductChoiceDialog
 from app.ui.setup_wizard import SetupWizard
 from app.ui.state import AppState
 from app.ui.theme import apply_theme
@@ -40,6 +41,23 @@ class AppController:
     def _on_theme_changed(self, dark: bool) -> None:
         apply_theme(self.app, dark)
 
+    def ensure_product_chosen(self) -> bool:
+        """Sur nouvel ordinateur : choix Gestion App / Maquis Caisse."""
+        if product_profile.is_product_chosen():
+            return True
+        # Migration : déjà activé (fichier activation.dat) sans profil → Gestion App.
+        from app.services.activation_service import ACTIVATION_FILE
+
+        if ACTIVATION_FILE.exists():
+            product_profile.set_product(product_profile.PRODUCT_GESTION)
+            return True
+        dialog = ProductChoiceDialog()
+        dialog.exec()
+        ok = bool(dialog.selected)
+        dialog.deleteLater()
+        self.app.processEvents()
+        return ok
+
     def ensure_activated(self) -> bool:
         """Affiche l'activation au premier démarrage. Retourne True si activé."""
         if activation_service.is_activated():
@@ -58,31 +76,30 @@ class AppController:
         if not settings_service.is_configured():
             wizard = SetupWizard()
             wizard.exec()
-            # On s'assure que la fenêtre de l'assistant est bien détruite avant
-            # d'ouvrir la connexion (évite tout conflit de focus sur certains
-            # gestionnaires de fenêtres).
             wizard.deleteLater()
             self.app.processEvents()
             return settings_service.is_configured()
         return True
 
     def show_login(self) -> bool:
-        """Affiche la connexion. Retourne True si l'utilisateur s'est connecté."""
         dialog = LoginDialog(self.state)
         return bool(dialog.exec())
 
     def show_main(self) -> None:
+        if product_profile.is_maquis():
+            try:
+                from app.services.table_service import TableService
+
+                TableService.ensure_defaults()
+            except Exception:
+                logger.exception("Initialisation tables Maquis impossible")
         self.window = MainWindow(self.state)
-        # Maximisé = démarrage fiable sous Windows (évite showFullScreen trop tôt).
-        # Plein écran disponible via F11 une fois la fenêtre affichée.
         self.window.showMaximized()
-        # Force un premier calcul de layout après affichage.
         from PySide6.QtCore import QTimer
 
         QTimer.singleShot(0, self.window._publish_viewport)
 
     def restart_login(self) -> None:
-        """Après déconnexion : réaffiche la connexion puis la fenêtre."""
         if self.show_login():
             self.show_main()
         else:
@@ -90,7 +107,6 @@ class AppController:
 
 
 def restart_login() -> None:
-    """Point d'entrée module-level utilisé par la fenêtre principale."""
     if _controller is not None:
         _controller.restart_login()
 
@@ -110,23 +126,24 @@ def run() -> int:
             logger.exception("Échec de la sauvegarde automatique au démarrage.")
 
         app = QApplication.instance() or QApplication([])
-        app.setApplicationName("Gestion Commerciale")
+        app.setApplicationName(product_profile.PARENT_NAME)
+        app.setOrganizationName(product_profile.PARENT_VENDOR)
 
         _controller = AppController(app)
 
-        # Activation obligatoire au premier démarrage (hors ligne).
+        # 1) Nouveau PC → choix produit  2) Activation  3) Commerce  4) Login
+        if not _controller.ensure_product_chosen():
+            return 0
         if not _controller.ensure_activated():
             return 0
-
         if not _controller.run_first_start_if_needed():
             return 0
-
         if not _controller.show_login():
             return 0
 
         _controller.show_main()
         return app.exec()
     except Exception as exc:
-        write_startup_error(exc, note="Échec fatal au démarrage de Gestion Commerciale.")
+        write_startup_error(exc, note="Échec fatal au démarrage de NexaGes.")
         logger.exception("Échec fatal au démarrage.")
         raise

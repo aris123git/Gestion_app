@@ -98,9 +98,14 @@ class LoginDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
 
-        title = QLabel("Gestion Commerciale")
+        from app.services import product_profile
+
+        title = QLabel(product_profile.PARENT_NAME)
         title.setObjectName("PageTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        product_line = QLabel(product_profile.product_label())
+        product_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        product_line.setStyleSheet("font-weight: 600; color: #0f172a;")
         subtitle = QLabel("Veuillez vous connecter pour continuer")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("color: #64748b;")
@@ -139,6 +144,7 @@ class LoginDialog(QDialog):
         self.hint.setVisible(AuthService.default_admin_uses_default_password())
 
         layout.addWidget(title)
+        layout.addWidget(product_line)
         layout.addWidget(subtitle)
         layout.addSpacing(8)
         layout.addWidget(QLabel("Utilisateur"))

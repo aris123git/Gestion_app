@@ -47,10 +47,16 @@ class TicketData:
     logo_path: str = ""
     footer: str = "Merci de votre visite"
     vat_rate: float = 0.0
+    # Reste de remise fidélité à imprimer uniquement si > 0 (sinon None / 0 = silence).
+    loyalty_credit_remaining: Optional[float] = None
 
     @property
     def has_discount(self) -> bool:
         return float(self.discount or 0) > 0.01
+
+    @property
+    def has_loyalty_credit_remaining(self) -> bool:
+        return float(self.loyalty_credit_remaining or 0) > 0.01
 
     @property
     def has_vat(self) -> bool:
@@ -69,12 +75,24 @@ class TicketData:
         return round(float(self.total or 0) - self.vat_amount, 2)
 
     @classmethod
-    def from_sale(cls, sale, shop=None, *, vat_rate: float | None = None) -> "TicketData":
+    def from_sale(
+        cls,
+        sale,
+        shop=None,
+        *,
+        vat_rate: float | None = None,
+        loyalty_credit_remaining: float | None = None,
+    ) -> "TicketData":
         from app.services import settings_service
 
         shop = shop or settings_service.get_shop_info()
         if vat_rate is None:
             vat_rate = settings_service.get_vat_rate()
+        # Si non fourni : n'imprimer que si un reste > 0 existe (après vente).
+        if loyalty_credit_remaining is None:
+            rem = getattr(sale, "loyalty_credit_remaining", None)
+            if rem is not None:
+                loyalty_credit_remaining = rem
         items = [
             TicketLineItem(
                 name=str(getattr(it, "product_name", "") or ""),
@@ -91,6 +109,9 @@ class TicketData:
             )
             for pay in (getattr(sale, "payments", None) or [])
         ]
+        remaining = loyalty_credit_remaining
+        if remaining is not None and float(remaining) <= 0.01:
+            remaining = None
         return cls(
             ticket_number=str(getattr(sale, "ticket_number", "") or ""),
             moment=getattr(sale, "date", None) or datetime.now(),
@@ -119,6 +140,7 @@ class TicketData:
                 getattr(shop, "ticket_footer", None) or "Merci de votre visite"
             ),
             vat_rate=float(vat_rate or 0),
+            loyalty_credit_remaining=remaining,
         )
 
 
