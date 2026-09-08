@@ -27,7 +27,8 @@ PRODUCT_LABELS = {
 PRODUCT_DESCRIPTIONS = {
     PRODUCT_GESTION: (
         "Commerce, boutique, pharmacie, quincaillerie… "
-        "Caisse, stock, achats, dettes, rapports — et avoirs clients."
+        "Caisse, stock, achats, dettes, rapports, avoirs clients — "
+        "et fidélité bénéfices (produit boutique offert)."
     ),
     PRODUCT_MAQUIS: (
         "Restaurants, maquis, buvettes, bars… "
@@ -111,6 +112,11 @@ def is_gestion() -> bool:
 
 def is_maquis() -> bool:
     return require_product() == PRODUCT_MAQUIS
+
+
+def supports_profit_loyalty() -> bool:
+    """Fidélité bénéfices (produit offert) : réservée à Gestion App."""
+    return is_gestion()
 
 
 def product_label(product: Optional[str] = None) -> str:

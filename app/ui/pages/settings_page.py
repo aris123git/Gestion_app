@@ -71,7 +71,11 @@ class SettingsPage(QWidget):
         tabs.addTab(self._build_appearance_tab(), "Apparence du ticket")
         tabs.addTab(self._build_designs_tab(), "Designs des tickets")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
-        tabs.addTab(self._build_loyalty_tab(), "Fidélité bénéfices")
+        from app.services import product_profile
+
+        # Fidélité bénéfices (produit offert) : Gestion App uniquement.
+        if product_profile.supports_profit_loyalty():
+            tabs.addTab(self._build_loyalty_tab(), "Fidélité bénéfices")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
         tabs.addTab(self._build_portal_tab(), "Portail web")
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
@@ -1190,7 +1194,8 @@ class SettingsPage(QWidget):
             "<b>pas d'argent / pas de remise monétaire</b>. "
             "Le reste de crédit n'apparaît sur le ticket que s'il est "
             "strictement positif.<br/>"
-            "<i>Réservé à l'administrateur.</i>"
+            "<b>Fonctionnalité Gestion App</b> — "
+            "<i>réglages réservés à l'administrateur.</i>"
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #64748b;")

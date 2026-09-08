@@ -36,6 +36,10 @@ class ProfitLoyaltyService:
     # --- Réglages (admin) -------------------------------------------------
     @staticmethod
     def is_enabled() -> bool:
+        from app.services import product_profile
+
+        if not product_profile.supports_profit_loyalty():
+            return False
         return settings_service.get_setting(SETTING_ENABLED, "0") == "1"
 
     @staticmethod

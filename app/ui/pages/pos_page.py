@@ -273,12 +273,18 @@ class POSPage(QWidget):
         self.loyalty_offer_btn = QPushButton("Offrir produit")
         self.loyalty_offer_btn.setToolTip(
             "Ajoute le produit sélectionné du catalogue comme produit offert "
-            "(fidélité). Pas de remise en argent — uniquement un article boutique."
+            "(fidélité Gestion App). Pas de remise en argent — uniquement un article boutique."
         )
         self.loyalty_offer_btn.setEnabled(False)
         self.loyalty_offer_btn.clicked.connect(self._offer_selected_loyalty_product)
         loyalty_row.addWidget(self.loyalty_offer_btn)
-        layout.addLayout(loyalty_row)
+        self._loyalty_row_widget = QWidget()
+        self._loyalty_row_widget.setLayout(loyalty_row)
+        layout.addWidget(self._loyalty_row_widget)
+        from app.services import product_profile
+
+        # Fidélité bénéfices : visible uniquement en Gestion App.
+        self._loyalty_row_widget.setVisible(product_profile.supports_profit_loyalty())
 
         self.total_label = QLabel("Total : 0")
         self.total_label.setStyleSheet("font-size: 26px; font-weight: 800;")

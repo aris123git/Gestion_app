@@ -10,6 +10,7 @@ import unittest
 _DATA_DIR = tempfile.mkdtemp(prefix="gestion_profit_loyalty_")
 os.environ["GESTION_DATA_DIR"] = _DATA_DIR
 os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
+os.environ["NEXAGES_PRODUCT"] = "gestion"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from app import config  # noqa: E402
