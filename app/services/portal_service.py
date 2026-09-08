@@ -32,8 +32,13 @@ SETTING_OWNER_EMAIL = "portal_owner_email"
 SETTING_ASSOCIATED = "portal_associated"
 SETTING_LAST_SYNC = "portal_last_sync"
 SETTING_LAST_ERROR = "portal_last_error"
+SETTING_AUTO_SYNC = "portal_auto_sync"
+SETTING_AUTO_SYNC_MINUTES = "portal_auto_sync_minutes"
 
 DEFAULT_PORTAL_URL = "http://127.0.0.1:8787"
+DEFAULT_AUTO_SYNC_MINUTES = 15
+# Quand le portail est injoignable, on réessaie plus souvent.
+AUTO_SYNC_RETRY_MINUTES = 2
 
 
 @dataclass
@@ -75,6 +80,34 @@ def get_last_error() -> str:
     return settings_service.get_setting(SETTING_LAST_ERROR, "") or ""
 
 
+def is_auto_sync_enabled() -> bool:
+    """Sync auto active seulement si le portail l'est aussi (défaut : oui)."""
+    if not is_enabled():
+        return False
+    return settings_service.get_setting(SETTING_AUTO_SYNC, "1") == "1"
+
+
+def get_auto_sync_interval_minutes() -> int:
+    raw = settings_service.get_setting(
+        SETTING_AUTO_SYNC_MINUTES, str(DEFAULT_AUTO_SYNC_MINUTES)
+    )
+    try:
+        minutes = int(str(raw or DEFAULT_AUTO_SYNC_MINUTES).strip())
+    except (TypeError, ValueError):
+        minutes = DEFAULT_AUTO_SYNC_MINUTES
+    return max(5, min(minutes, 240))
+
+
+def next_auto_sync_interval_ms() -> int:
+    """Intervalle timer : normal, ou retry court après une erreur réseau."""
+    if get_last_error() and not get_last_sync():
+        return AUTO_SYNC_RETRY_MINUTES * 60_000
+    # Erreur récente alors qu'une sync a déjà réussi → retry court aussi.
+    if get_last_error():
+        return AUTO_SYNC_RETRY_MINUTES * 60_000
+    return get_auto_sync_interval_minutes() * 60_000
+
+
 def ensure_credentials() -> tuple[str, str]:
     """Crée enterprise_id + api_key s'ils manquent ; retourne (id, clé)."""
     eid = get_enterprise_id()
@@ -102,6 +135,8 @@ def save_portal_settings(
     url: str,
     owner_email: str = "",
     enterprise_id: Optional[str] = None,
+    auto_sync: Optional[bool] = None,
+    auto_sync_minutes: Optional[int] = None,
 ) -> None:
     settings_service.set_setting(SETTING_ENABLED, "1" if enabled else "0")
     settings_service.set_setting(SETTING_URL, (url or DEFAULT_PORTAL_URL).strip().rstrip("/"))
@@ -110,6 +145,13 @@ def save_portal_settings(
         cleaned = (enterprise_id or "").strip()
         if cleaned:
             settings_service.set_setting(SETTING_ENTERPRISE_ID, cleaned)
+    if auto_sync is not None:
+        settings_service.set_setting(SETTING_AUTO_SYNC, "1" if auto_sync else "0")
+    if auto_sync_minutes is not None:
+        settings_service.set_setting(
+            SETTING_AUTO_SYNC_MINUTES,
+            str(max(5, min(int(auto_sync_minutes), 240))),
+        )
     ensure_credentials()
 
 
@@ -307,6 +349,23 @@ def sync_now() -> PortalResult:
     return result
 
 
+def try_auto_sync(*, reason: str = "auto") -> PortalResult:
+    """Sync silencieuse (démarrage / périodique / retry réseau).
+
+    Ne fait rien si le portail ou la sync auto sont désactivés.
+    """
+    if not is_auto_sync_enabled():
+        return PortalResult(False, "Sync auto inactive.")
+    ensure_credentials()
+    logger.info("Sync auto portail (%s)", reason)
+    result = sync_now()
+    if result.ok:
+        logger.info("Sync auto OK (%s) : %s", reason, result.message)
+    else:
+        logger.warning("Sync auto échouée (%s) : %s", reason, result.message)
+    return result
+
+
 def test_connection() -> PortalResult:
     """Ping du portail (sans auth) pour vérifier l'URL."""
     return _request("GET", "/api/v1/health", auth=False)
@@ -317,6 +376,10 @@ def status_summary() -> str:
         return "Portail web désactivé."
     parts = [f"URL : {get_portal_url()}", f"Entreprise : {get_enterprise_id() or '—'}"]
     parts.append("Associé" if is_associated() else "Non associé")
+    if is_auto_sync_enabled():
+        parts.append(f"Sync auto : {get_auto_sync_interval_minutes()} min")
+    else:
+        parts.append("Sync auto : off")
     if get_last_sync():
         parts.append(f"Dernière sync : {get_last_sync()}")
     if get_last_error():

@@ -1407,6 +1407,23 @@ class SettingsPage(QWidget):
         form.setSpacing(10)
 
         self.portal_enabled = QCheckBox("Activer l'association au portail web")
+        self.portal_auto_sync = QCheckBox(
+            "Synchroniser automatiquement (démarrage + périodique + retry réseau)"
+        )
+        self.portal_auto_sync.setChecked(True)
+        self.portal_auto_sync.setToolTip(
+            "Envoie les données dès que le logiciel démarre, puis à intervalle "
+            "régulier. Si le portail est injoignable (pas d'Internet / site arrêté), "
+            "réessaie toutes les 2 minutes jusqu'à succès."
+        )
+        self.portal_auto_sync_minutes = QComboBox()
+        for minutes, label in (
+            (5, "Toutes les 5 minutes"),
+            (15, "Toutes les 15 minutes"),
+            (30, "Toutes les 30 minutes"),
+            (60, "Toutes les heures"),
+        ):
+            self.portal_auto_sync_minutes.addItem(label, minutes)
         self.portal_url = QLineEdit()
         self.portal_url.setPlaceholderText(portal_service.DEFAULT_PORTAL_URL)
         self.portal_enterprise_id = QLineEdit()
@@ -1429,6 +1446,8 @@ class SettingsPage(QWidget):
         self.portal_status.setStyleSheet("color: #64748b; font-size: 12px;")
 
         form.addRow(self.portal_enabled)
+        form.addRow(self.portal_auto_sync)
+        form.addRow("Fréquence sync auto", self.portal_auto_sync_minutes)
         form.addRow("URL du site", self.portal_url)
         form.addRow("Identifiant entreprise", self.portal_enterprise_id)
         form.addRow("Clé API", self.portal_api_key)
@@ -1469,6 +1488,9 @@ class SettingsPage(QWidget):
             "  python -m portal\n"
             "URL par défaut : "
             f"{portal_service.DEFAULT_PORTAL_URL}\n"
+            "• Sync auto : au démarrage du logiciel, puis selon la fréquence ; "
+            "si le site / Internet est coupé, nouvelle tentative toutes les "
+            f"{portal_service.AUTO_SYNC_RETRY_MINUTES} minutes.\n"
             "• Mode bureau : totaux de tous les magasins, puis clic pour le détail "
             "(lecture seule, comme la caisse).\n"
             "• Mot de passe bureau : affiché au 1er démarrage du portail "
@@ -1483,6 +1505,17 @@ class SettingsPage(QWidget):
     def _load_portal_ui(self) -> None:
         portal_service.ensure_credentials()
         self.portal_enabled.setChecked(portal_service.is_enabled())
+        self.portal_auto_sync.setChecked(
+            settings_service.get_setting(portal_service.SETTING_AUTO_SYNC, "1") == "1"
+        )
+        minutes = portal_service.get_auto_sync_interval_minutes()
+        idx = self.portal_auto_sync_minutes.findData(minutes)
+        if idx < 0:
+            idx = self.portal_auto_sync_minutes.findData(
+                portal_service.DEFAULT_AUTO_SYNC_MINUTES
+            )
+        if idx >= 0:
+            self.portal_auto_sync_minutes.setCurrentIndex(idx)
         self.portal_url.setText(portal_service.get_portal_url())
         self.portal_enterprise_id.setText(portal_service.get_enterprise_id())
         self.portal_api_key.setText(portal_service.get_api_key())
@@ -1495,12 +1528,15 @@ class SettingsPage(QWidget):
             url=self.portal_url.text().strip(),
             owner_email=self.portal_owner_email.text().strip(),
             enterprise_id=self.portal_enterprise_id.text().strip() or None,
+            auto_sync=self.portal_auto_sync.isChecked(),
+            auto_sync_minutes=int(self.portal_auto_sync_minutes.currentData() or 15),
         )
         # Conserve la clé saisie (si l'utilisateur l'a collée).
         key = self.portal_api_key.text().strip()
         if key:
             settings_service.set_setting(portal_service.SETTING_API_KEY, key)
         self._load_portal_ui()
+        self._notify_main_portal_timer()
         audit_service.log_action(
             getattr(self.state.current_user, "username", "") or "system",
             "Portail",
@@ -1593,10 +1629,23 @@ class SettingsPage(QWidget):
             url=self.portal_url.text().strip(),
             owner_email=self.portal_owner_email.text().strip(),
             enterprise_id=self.portal_enterprise_id.text().strip() or None,
+            auto_sync=self.portal_auto_sync.isChecked(),
+            auto_sync_minutes=int(self.portal_auto_sync_minutes.currentData() or 15),
         )
         key = self.portal_api_key.text().strip()
         if key:
             settings_service.set_setting(portal_service.SETTING_API_KEY, key)
+        self._notify_main_portal_timer()
+
+    def _notify_main_portal_timer(self) -> None:
+        """Replanifie le timer de sync auto dans la fenêtre principale."""
+        win = self.window()
+        reschedule = getattr(win, "_reschedule_portal_timer", None)
+        if callable(reschedule):
+            try:
+                reschedule()
+            except Exception:
+                pass
 
     def _open_portal_in_browser(self) -> None:
         import webbrowser

@@ -181,6 +181,52 @@ class PortalAssociationTestCase(unittest.TestCase):
         )
         self.assertFalse(bad.ok)
 
+    def test_auto_sync_skipped_when_disabled(self) -> None:
+        portal_service.save_portal_settings(
+            enabled=True,
+            url="http://127.0.0.1:18787",
+            auto_sync=False,
+        )
+        self.assertFalse(portal_service.is_auto_sync_enabled())
+        result = portal_service.try_auto_sync(reason="test")
+        self.assertFalse(result.ok)
+        self.assertIn("inactive", result.message.lower())
+
+    def test_auto_sync_on_startup_path(self) -> None:
+        portal_service.save_portal_settings(
+            enabled=True,
+            url="http://127.0.0.1:18787",
+            auto_sync=True,
+            auto_sync_minutes=15,
+        )
+        self.assertTrue(portal_service.is_auto_sync_enabled())
+        self.assertEqual(portal_service.get_auto_sync_interval_minutes(), 15)
+        result = portal_service.try_auto_sync(reason="startup")
+        self.assertTrue(result.ok, result.message)
+        self.assertTrue(portal_service.get_last_sync())
+        # Après succès : intervalle normal (pas retry 2 min).
+        self.assertEqual(
+            portal_service.next_auto_sync_interval_ms(),
+            15 * 60_000,
+        )
+
+    def test_auto_sync_retry_interval_after_error(self) -> None:
+        portal_service.save_portal_settings(
+            enabled=True,
+            url="http://127.0.0.1:9",  # port fermé
+            auto_sync=True,
+            auto_sync_minutes=30,
+        )
+        portal_service.ensure_credentials()
+        settings_service.set_setting(portal_service.SETTING_ASSOCIATED, "1")
+        fail = portal_service.try_auto_sync(reason="retry-test")
+        self.assertFalse(fail.ok)
+        self.assertTrue(portal_service.get_last_error())
+        self.assertEqual(
+            portal_service.next_auto_sync_interval_ms(),
+            portal_service.AUTO_SYNC_RETRY_MINUTES * 60_000,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
