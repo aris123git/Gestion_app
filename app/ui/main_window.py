@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Optional
 
-from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -50,6 +51,13 @@ from app.ui.responsive import (
 from app.ui.state import AppState
 
 logger = logging.getLogger(__name__)
+
+
+class _PortalSyncBridge(QObject):
+    """Relais thread → UI pour la sync auto portail (évite de bloquer Qt)."""
+
+    finished = Signal(object)  # PortalResult
+
 
 # (libellé, icône, classe de page, permission requise ou None = tous les rôles)
 NAV_ITEMS = [
@@ -131,6 +139,15 @@ class MainWindow(QWidget):
         self._backup_timer.setInterval(30 * 60_000)  # toutes les 30 minutes
         self._backup_timer.timeout.connect(self._run_periodic_backup)
         self._backup_timer.start()
+        # Sync portail web : démarrage + périodique + retry si injoignable.
+        self._portal_sync_busy = False
+        self._portal_sync_bridge = _PortalSyncBridge(self)
+        self._portal_sync_bridge.finished.connect(self._on_portal_auto_sync_done)
+        self._portal_timer = QTimer(self)
+        self._portal_timer.timeout.connect(
+            lambda: self._run_portal_auto_sync("periodic")
+        )
+        self._reschedule_portal_timer()
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
@@ -176,6 +193,49 @@ class MainWindow(QWidget):
             backup_service.run_startup_auto_backup()
         except Exception:
             logger.exception("Échec de la sauvegarde automatique périodique.")
+
+    def _reschedule_portal_timer(self) -> None:
+        """Ajuste le timer : intervalle normal ou retry court après erreur réseau."""
+        from app.services import portal_service
+
+        if not portal_service.is_auto_sync_enabled():
+            self._portal_timer.stop()
+            return
+        interval = portal_service.next_auto_sync_interval_ms()
+        self._portal_timer.setInterval(interval)
+        if not self._portal_timer.isActive():
+            self._portal_timer.start()
+
+    def _run_portal_auto_sync(self, reason: str = "periodic") -> None:
+        """Lance une sync portail en arrière-plan (ne bloque pas l'UI)."""
+        from app.services import portal_service
+
+        if self._portal_sync_busy:
+            return
+        if not portal_service.is_auto_sync_enabled():
+            self._portal_timer.stop()
+            return
+        self._portal_sync_busy = True
+        bridge = self._portal_sync_bridge
+
+        def work() -> None:
+            try:
+                result = portal_service.try_auto_sync(reason=reason)
+            except Exception as exc:
+                logger.exception("Sync auto portail impossible")
+                result = portal_service.PortalResult(False, str(exc))
+            bridge.finished.emit(result)
+
+        threading.Thread(target=work, daemon=True, name="portal-auto-sync").start()
+
+    def _on_portal_auto_sync_done(self, result) -> None:
+        self._portal_sync_busy = False
+        try:
+            self._reschedule_portal_timer()
+        except Exception:
+            logger.exception("Replanification timer portail impossible")
+        if result is not None and getattr(result, "ok", False):
+            logger.debug("Sync auto portail terminée : %s", result.message)
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
@@ -568,6 +628,11 @@ class MainWindow(QWidget):
         if not getattr(self, "_cash_session_prompted", False):
             self._cash_session_prompted = True
             QTimer.singleShot(50, self._ensure_cash_session)
+        if not getattr(self, "_portal_startup_sync_scheduled", False):
+            self._portal_startup_sync_scheduled = True
+            # Laisse l'UI s'afficher avant le 1er envoi réseau.
+            QTimer.singleShot(2500, lambda: self._run_portal_auto_sync("startup"))
+            self._reschedule_portal_timer()
 
     def _windowed_size(self) -> None:
         """Repasse en fenêtre à ~90 % de l'écran disponible."""
