@@ -238,6 +238,20 @@ def totals_block(
                 )
             )
         )
+    if getattr(data, "has_loyalty_credit_remaining", False):
+        lines.append(
+            L(
+                row(
+                    "Reste remise fidélité",
+                    money(
+                        data.loyalty_credit_remaining,
+                        cur,
+                        with_currency=currency_on_amounts,
+                    ),
+                    width,
+                )
+            )
+        )
     return lines
 
 

@@ -265,6 +265,24 @@ class POSPage(QWidget):
         discount_row.addStretch()
         layout.addLayout(discount_row)
 
+        loyalty_row = QHBoxLayout()
+        loyalty_row.addWidget(QLabel("Remise fidélité :"))
+        self.loyalty_credit_input = QDoubleSpinBox()
+        self.loyalty_credit_input.setRange(0, 1_000_000_000)
+        self.loyalty_credit_input.setDecimals(0)
+        self.loyalty_credit_input.setSingleStep(100)
+        self.loyalty_credit_input.setEnabled(False)
+        self.loyalty_credit_input.valueChanged.connect(self._update_total)
+        loyalty_row.addWidget(self.loyalty_credit_input)
+        self.loyalty_hint = QLabel("")
+        self.loyalty_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        loyalty_row.addWidget(self.loyalty_hint, 1)
+        use_all = QPushButton("Max")
+        use_all.setToolTip("Utiliser tout le crédit fidélité disponible (plafonné au panier).")
+        use_all.clicked.connect(self._use_max_loyalty)
+        loyalty_row.addWidget(use_all)
+        layout.addLayout(loyalty_row)
+
         self.total_label = QLabel("Total : 0")
         self.total_label.setStyleSheet("font-size: 26px; font-weight: 800;")
         self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -348,11 +366,49 @@ class POSPage(QWidget):
             self.client_search.set_client(select_id)
 
     def _on_client_selected(self, client_id) -> None:
-        # Réservé pour extensions (affichage solde dette, etc.).
-        _ = client_id
+        self._refresh_loyalty_credit(client_id)
 
     def _current_client_id(self) -> Optional[int]:
         return self.client_search.client_id
+
+    def _refresh_loyalty_credit(self, client_id=None) -> None:
+        from app.services.profit_loyalty_service import ProfitLoyaltyService
+
+        cid = client_id if client_id is not None else self._current_client_id()
+        currency = settings_service.get_currency()
+        if not cid or not ProfitLoyaltyService.is_enabled():
+            self.loyalty_credit_input.blockSignals(True)
+            self.loyalty_credit_input.setValue(0)
+            self.loyalty_credit_input.setMaximum(0)
+            self.loyalty_credit_input.setEnabled(False)
+            self.loyalty_credit_input.blockSignals(False)
+            self.loyalty_hint.setText(
+                "Sélectionnez un client (programme fidélité bénéfices)."
+                if ProfitLoyaltyService.is_enabled()
+                else "Fidélité bénéfices désactivée (Paramètres admin)."
+            )
+            self._update_total()
+            return
+        balance = ProfitLoyaltyService.credit_balance(int(cid))
+        room = max(0.0, self._cart_subtotal() - self._discount_value())
+        ceiling = min(balance, room) if room > 0 else 0.0
+        self.loyalty_credit_input.blockSignals(True)
+        self.loyalty_credit_input.setMaximum(max(0.0, ceiling))
+        if self.loyalty_credit_input.value() > ceiling:
+            self.loyalty_credit_input.setValue(ceiling)
+        self.loyalty_credit_input.setEnabled(balance > 0.01 and ceiling > 0.01)
+        self.loyalty_credit_input.blockSignals(False)
+        self.loyalty_hint.setText(
+            f"Disponible : {format_money(balance, currency)}"
+            if balance > 0.01
+            else "Pas encore de crédit (seuil de bénéfice non atteint)."
+        )
+        self._update_total()
+
+    def _use_max_loyalty(self) -> None:
+        self._refresh_loyalty_credit()
+        if self.loyalty_credit_input.isEnabled():
+            self.loyalty_credit_input.setValue(self.loyalty_credit_input.maximum())
 
     def _cashier_max_credit(self) -> Optional[float]:
         from app.services.cash_controls import limits_for_user
@@ -606,7 +662,7 @@ class POSPage(QWidget):
             self.cart_table.setCellWidget(row, self.COL_DEL, delete_button)
 
         self._updating = False
-        self._update_total()
+        self._refresh_loyalty_credit()
         self._apply_large_text()
 
     def _remove_line(self, row: int) -> None:
@@ -694,8 +750,16 @@ class POSPage(QWidget):
     def _discount_value(self) -> float:
         return min(self._cart_subtotal(), float(self.discount_input.value()))
 
+    def _loyalty_credit_value(self) -> float:
+        return max(0.0, float(self.loyalty_credit_input.value()))
+
     def _cart_total(self) -> float:
-        return max(0.0, self._cart_subtotal() - self._discount_value())
+        return max(
+            0.0,
+            self._cart_subtotal()
+            - self._discount_value()
+            - self._loyalty_credit_value(),
+        )
 
     def _update_total(self) -> None:
         subtotal = self._cart_subtotal()
@@ -723,6 +787,19 @@ class POSPage(QWidget):
                     "La remise ne peut pas dépasser le sous-total du panier.",
                     "Remise plafonnée",
                 )
+        # Plafonner la remise fidélité au reste du panier + solde client.
+        room = max(0.0, subtotal - self._discount_value())
+        max_loyalty = self.loyalty_credit_input.maximum()
+        if max_loyalty > room:
+            self.loyalty_credit_input.blockSignals(True)
+            self.loyalty_credit_input.setMaximum(room)
+            if self.loyalty_credit_input.value() > room:
+                self.loyalty_credit_input.setValue(room)
+            self.loyalty_credit_input.blockSignals(False)
+        elif self.loyalty_credit_input.value() > room:
+            self.loyalty_credit_input.blockSignals(True)
+            self.loyalty_credit_input.setValue(room)
+            self.loyalty_credit_input.blockSignals(False)
         currency = settings_service.get_currency()
         self.total_label.setText(f"Total : {format_money(self._cart_total(), currency)}")
 
@@ -733,6 +810,12 @@ class POSPage(QWidget):
             SaleController.delete_pending(pending_id, user_id=self.state.user_id)
         self.cart.clear()
         self.discount_input.setValue(0)
+        self.loyalty_credit_input.blockSignals(True)
+        self.loyalty_credit_input.setValue(0)
+        self.loyalty_credit_input.setMaximum(0)
+        self.loyalty_credit_input.setEnabled(False)
+        self.loyalty_credit_input.blockSignals(False)
+        self.loyalty_hint.setText("")
         self.client_search.clear()
         self._render_cart()
 
@@ -837,6 +920,7 @@ class POSPage(QWidget):
                 user_id=self.state.user_id,
                 allow_credit=credit_requested,
                 debt_due_date=dialog.credit_due_date,
+                loyalty_credit=self._loyalty_credit_value(),
             )
         except InsufficientPaymentError as exc:
             warn(self, str(exc), "Paiement insuffisant")
@@ -876,6 +960,9 @@ class POSPage(QWidget):
 
         sale = SaleController.get(result.sale_id)
         if sale:
+            # Reste remise fidélité : uniquement transmis s'il est > 0.
+            if result.loyalty_credit_remaining is not None:
+                sale.loyalty_credit_remaining = result.loyalty_credit_remaining
             # Après vente : choix ticket 58/80 ou facture encre (pas d'auto-print).
             TicketDialog(sale, self, auto_print=False).exec()
 

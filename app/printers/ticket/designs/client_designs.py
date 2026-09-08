@@ -504,6 +504,19 @@ class FactureTableauDesign(TicketDesign):
             else:
                 lines.append(L("  ".join(footer_bits)[:width]))
 
+        # Reste remise fidélité : uniquement si > 0.
+        if getattr(data, "has_loyalty_credit_remaining", False):
+            lines.append(L(""))
+            lines.append(
+                L(
+                    row(
+                        "Reste remise fidélité",
+                        money(data.loyalty_credit_remaining, data.currency),
+                        width,
+                    )
+                )
+            )
+
         if opts.show_footer and data.footer:
             lines.append(L(""))
             lines.extend(footer_block(data, opts, width))

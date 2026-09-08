@@ -71,6 +71,7 @@ class SettingsPage(QWidget):
         tabs.addTab(self._build_appearance_tab(), "Apparence du ticket")
         tabs.addTab(self._build_designs_tab(), "Designs des tickets")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
+        tabs.addTab(self._build_loyalty_tab(), "Fidélité bénéfices")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
         tabs.addTab(self._build_portal_tab(), "Portail web")
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
@@ -1174,6 +1175,84 @@ class SettingsPage(QWidget):
             getattr(self.state.current_user, "username", ""),
         )
         info(self, "Plafonds caissier enregistrés.")
+
+    # --- Onglet fidélité bénéfices (admin) ---------------------------------
+    def _build_loyalty_tab(self) -> QWidget:
+        from app.services.profit_loyalty_service import ProfitLoyaltyService
+
+        wrap = QWidget()
+        outer = QVBoxLayout(wrap)
+        hint = QLabel(
+            "Lorsque le <b>bénéfice cumulé</b> rapporté par un client atteint "
+            "le seuil fixé, il reçoit un crédit (avoir) égal au "
+            "<b>pourcentage</b> de ce seuil. En caisse, ce crédit se soustrait "
+            "du panier (boisson, frite…). Le reste n'apparaît sur le ticket "
+            "que s'il est strictement positif.<br/>"
+            "<i>Réservé à l'administrateur.</i>"
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #64748b;")
+        outer.addWidget(hint)
+
+        cfg = ProfitLoyaltyService.get_config()
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        form.setSpacing(10)
+
+        self.loyalty_enabled = QCheckBox("Activer la remise fidélité sur bénéfices")
+        self.loyalty_enabled.setChecked(bool(cfg["enabled"]))
+        form.addRow(self.loyalty_enabled)
+
+        self.loyalty_threshold = QDoubleSpinBox()
+        self.loyalty_threshold.setRange(1, 1_000_000_000)
+        self.loyalty_threshold.setDecimals(0)
+        self.loyalty_threshold.setSingleStep(1000)
+        self.loyalty_threshold.setValue(float(cfg["threshold"] or 50_000))
+        form.addRow("Seuil de bénéfice", self.loyalty_threshold)
+
+        self.loyalty_percent = QDoubleSpinBox()
+        self.loyalty_percent.setRange(0, 100)
+        self.loyalty_percent.setDecimals(1)
+        self.loyalty_percent.setSuffix(" %")
+        self.loyalty_percent.setValue(float(cfg["percent"] or 10))
+        form.addRow("Pourcentage de remise", self.loyalty_percent)
+
+        example = QLabel(
+            "Exemple : seuil 50 000, 10 % → dès 50 000 de bénéfice client, "
+            "crédit de 5 000 utilisable en caisse."
+        )
+        example.setWordWrap(True)
+        example.setStyleSheet("color: #475569; font-size: 12px;")
+        form.addRow(example)
+        outer.addWidget(make_card(form_widget))
+
+        save = QPushButton("Enregistrer la fidélité bénéfices")
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save_loyalty)
+        if getattr(self.state.current_user, "role", "") != perms.ROLE_ADMIN:
+            save.setEnabled(False)
+            self.loyalty_enabled.setEnabled(False)
+            self.loyalty_threshold.setEnabled(False)
+            self.loyalty_percent.setEnabled(False)
+            save.setToolTip("Seul l'administrateur peut modifier ces réglages.")
+        outer.addWidget(save)
+        outer.addStretch()
+        return wrap
+
+    def _save_loyalty(self) -> None:
+        from app.services.profit_loyalty_service import ProfitLoyaltyService
+
+        if getattr(self.state.current_user, "role", "") != perms.ROLE_ADMIN:
+            warn(self, "Seul l'administrateur peut fixer ces paramètres.")
+            return
+        ProfitLoyaltyService.set_config(
+            enabled=self.loyalty_enabled.isChecked(),
+            threshold=self.loyalty_threshold.value(),
+            percent=self.loyalty_percent.value(),
+            user_id=self.state.user_id,
+            username=getattr(self.state.current_user, "username", ""),
+        )
+        info(self, "Réglages de fidélité bénéfices enregistrés.")
 
     # --- Onglet sauvegarde -------------------------------------------------
     def _build_backup_tab(self) -> QWidget:

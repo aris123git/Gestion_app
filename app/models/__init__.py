@@ -12,6 +12,7 @@ from app.models.loyalty import CustomerPoints, CustomerPointsHistory
 from app.models.open_order import OpenOrder, OpenOrderItem
 from app.models.price_history import PriceHistory
 from app.models.product import Product
+from app.models.profit_loyalty import ClientProfitLoyalty
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.sale import Payment, Sale, SaleItem
 from app.models.settings import Setting, ShopInfo
@@ -28,6 +29,7 @@ __all__ = [
     "CashSession",
     "Category",
     "Client",
+    "ClientProfitLoyalty",
     "CustomerPoints",
     "CustomerPointsHistory",
     "Debt",
