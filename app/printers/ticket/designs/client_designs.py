@@ -510,7 +510,7 @@ class FactureTableauDesign(TicketDesign):
             lines.append(
                 L(
                     row(
-                        "Reste remise fidélité",
+                        "Reste crédit fidélité",
                         money(data.loyalty_credit_remaining, data.currency),
                         width,
                     )

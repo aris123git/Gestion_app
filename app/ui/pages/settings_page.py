@@ -71,7 +71,11 @@ class SettingsPage(QWidget):
         tabs.addTab(self._build_appearance_tab(), "Apparence du ticket")
         tabs.addTab(self._build_designs_tab(), "Designs des tickets")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
-        tabs.addTab(self._build_loyalty_tab(), "Fidélité bénéfices")
+        from app.services import product_profile
+
+        # Fidélité bénéfices (produit offert) : Gestion App uniquement.
+        if product_profile.supports_profit_loyalty():
+            tabs.addTab(self._build_loyalty_tab(), "Fidélité bénéfices")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
         tabs.addTab(self._build_portal_tab(), "Portail web")
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
@@ -1184,11 +1188,14 @@ class SettingsPage(QWidget):
         outer = QVBoxLayout(wrap)
         hint = QLabel(
             "Lorsque le <b>bénéfice cumulé</b> rapporté par un client atteint "
-            "le seuil fixé, il reçoit un crédit (avoir) égal au "
-            "<b>pourcentage</b> de ce seuil. En caisse, ce crédit se soustrait "
-            "du panier (boisson, frite…). Le reste n'apparaît sur le ticket "
-            "que s'il est strictement positif.<br/>"
-            "<i>Réservé à l'administrateur.</i>"
+            "le seuil fixé, il reçoit un crédit égal au <b>pourcentage</b> de "
+            "ce seuil. En caisse, ce crédit sert <b>uniquement</b> à offrir un "
+            "<b>produit de la boutique</b> (boisson, frite…) — "
+            "<b>pas d'argent / pas de remise monétaire</b>. "
+            "Le reste de crédit n'apparaît sur le ticket que s'il est "
+            "strictement positif.<br/>"
+            "Disponible sur <b>Gestion App</b> et <b>Maquis Caisse</b> — "
+            "<i>réglages réservés à l'administrateur.</i>"
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #64748b;")
@@ -1218,8 +1225,8 @@ class SettingsPage(QWidget):
         form.addRow("Pourcentage de remise", self.loyalty_percent)
 
         example = QLabel(
-            "Exemple : seuil 50 000, 10 % → dès 50 000 de bénéfice client, "
-            "crédit de 5 000 utilisable en caisse."
+            "Exemple : seuil 50 000, 10 % → crédit de 5 000 pour offrir "
+            "un produit boutique (ex. boisson), pas pour retirer de l'argent."
         )
         example.setWordWrap(True)
         example.setStyleSheet("color: #475569; font-size: 12px;")
