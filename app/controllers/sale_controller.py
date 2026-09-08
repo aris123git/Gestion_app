@@ -32,12 +32,25 @@ class CartLine:
     free_amount: bool = False
     amount: float = 0.0
     pack_content: float = 0.0
+    # Produit offert via fidélité bénéfices (pas une remise en argent).
+    loyalty_reward: bool = False
 
     @property
     def total(self) -> float:
+        if self.loyalty_reward:
+            return 0.0
         if self.free_amount:
             return round(float(self.amount), 2)
         return round(self.unit_price * self.quantity, 2)
+
+    @property
+    def reward_value(self) -> float:
+        """Valeur catalogue débitée du crédit fidélité (0 si ligne normale)."""
+        if not self.loyalty_reward:
+            return 0.0
+        if self.free_amount:
+            return round(float(self.amount), 2)
+        return round(float(self.unit_price) * float(self.quantity), 2)
 
     @property
     def stock_quantity(self) -> float:
@@ -48,6 +61,9 @@ class CartLine:
 
     @property
     def line_profit(self) -> float:
+        if self.loyalty_reward:
+            # Offert : pas de CA, coût d'achat supporté par le magasin.
+            return round(0.0 - float(self.purchase_price) * float(self.quantity), 2)
         if self.free_amount:
             return round(float(self.amount) - float(self.purchase_price) * float(self.quantity), 2)
         return round((float(self.unit_price) - float(self.purchase_price)) * float(self.quantity), 2)
@@ -177,18 +193,19 @@ class SaleController:
         - ``amount_received`` : espèces remises par le client (pour la monnaie).
         - ``allow_credit`` : autorise un paiement partiel / total porté à la dette
           client (méthode ``PAYMENT_METHOD_CREDIT`` / « Dette » sur le ticket).
-        - ``loyalty_credit`` : remise fidélité bénéfices (hors plafond caissier).
+        - ``loyalty_credit`` : ignoré — le crédit fidélité ne s'utilise que via
+          des lignes ``loyalty_reward`` (produit offert, jamais une remise argent).
         """
         if not lines:
             raise ValueError("Le panier est vide.")
         cls._validate_lines(lines)
 
-        subtotal = round(sum(line.total for line in lines), 2)
-        manual_discount = min(subtotal, max(0.0, to_float(discount)))
-        loyalty_credit = max(0.0, to_float(loyalty_credit))
+        # Fidélité = produits offerts uniquement (pas de remise monétaire libre).
+        _ = loyalty_credit  # compat signature ; valeur dérivée des lignes.
+        loyalty_credit = round(sum(float(line.reward_value) for line in lines), 2)
         if loyalty_credit > 0.009 and not client_id:
             raise ValueError(
-                "Impossible d'appliquer une remise fidélité sans client sélectionné."
+                "Impossible d'offrir un produit fidélité sans client sélectionné."
             )
         if loyalty_credit > 0.009:
             from app.services.profit_loyalty_service import ProfitLoyaltyService
@@ -196,13 +213,13 @@ class SaleController:
             available = ProfitLoyaltyService.credit_balance(int(client_id))
             if loyalty_credit > available + 0.009:
                 raise ValueError(
-                    f"Crédit fidélité insuffisant (disponible {available:g})."
+                    f"Crédit fidélité insuffisant pour ces produits "
+                    f"(besoin {loyalty_credit:g}, disponible {available:g})."
                 )
-            loyalty_credit = min(loyalty_credit, available)
-        # La remise fidélité se soustrait après la remise manuelle.
-        room_for_loyalty = max(0.0, subtotal - manual_discount)
-        loyalty_credit = min(loyalty_credit, room_for_loyalty)
-        discount = round(manual_discount + loyalty_credit, 2)
+
+        subtotal = round(sum(line.total for line in lines), 2)
+        # Remise manuelle uniquement — la fidélité n'ajoute pas d'argent remisé.
+        discount = min(subtotal, max(0.0, to_float(discount)))
         total = round(max(0.0, subtotal - discount), 2)
 
         credit_method = config.PAYMENT_METHOD_CREDIT
@@ -247,16 +264,18 @@ class SaleController:
                 credit_for_limit = max(credit_for_limit, round(total - cash_paid, 2))
             assert_sale_permissions(
                 user=user,
-                discount=manual_discount,
+                discount=discount,
                 credit_amount=credit_for_limit if allow_credit else credit_marked,
             )
             free_amounts = [
-                to_float(line.amount) for line in lines if line.free_amount
+                to_float(line.amount)
+                for line in lines
+                if line.free_amount and not line.loyalty_reward
             ]
             assert_cashier_sale_limits(
                 user=user,
                 subtotal=subtotal,
-                discount=manual_discount,
+                discount=discount,
                 credit_amount=credit_for_limit,
                 free_amount_lines=free_amounts,
             )
@@ -351,10 +370,10 @@ class SaleController:
                     )
 
             # Empêche de vendre en dessous du prix minimum défini sur le produit.
-            # Montant libre : le montant client n'est pas un prix unitaire.
+            # Montant libre / produit offert fidélité : pas un prix client.
             below_min = []
             for line in lines:
-                if line.free_amount:
+                if line.free_amount or line.loyalty_reward:
                     continue
                 info = min_prices.get(line.product_id)
                 if info and info[0] > 0 and float(line.unit_price) < info[0]:
@@ -375,6 +394,7 @@ class SaleController:
                     for l in lines
                     if (
                         not l.free_amount
+                        and not l.loyalty_reward
                         and l.product_id in min_prices
                         and min_prices[l.product_id][0] > 0
                     )
@@ -400,16 +420,21 @@ class SaleController:
                     purchase_price = float(product.purchase_price)
                 else:
                     purchase_price = 0.0
-                if line.free_amount:
+                if line.loyalty_reward:
+                    profit += 0.0 - purchase_price * float(line.quantity)
+                elif line.free_amount:
                     profit += float(line.amount) - purchase_price * float(line.quantity)
                 else:
                     profit += (line.unit_price - purchase_price) * line.quantity
 
+                item_name = line.name
+                if line.loyalty_reward and "offert" not in item_name.lower():
+                    item_name = f"{line.name} (offert fidélité)"
                 session.add(
                     SaleItem(
                         sale_id=sale.id,
                         product_id=line.product_id,
-                        product_name=line.name,
+                        product_name=item_name,
                         unit_price=line.unit_price,
                         purchase_price=purchase_price,
                         quantity=line.quantity,

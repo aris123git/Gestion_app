@@ -1184,10 +1184,12 @@ class SettingsPage(QWidget):
         outer = QVBoxLayout(wrap)
         hint = QLabel(
             "Lorsque le <b>bénéfice cumulé</b> rapporté par un client atteint "
-            "le seuil fixé, il reçoit un crédit (avoir) égal au "
-            "<b>pourcentage</b> de ce seuil. En caisse, ce crédit se soustrait "
-            "du panier (boisson, frite…). Le reste n'apparaît sur le ticket "
-            "que s'il est strictement positif.<br/>"
+            "le seuil fixé, il reçoit un crédit égal au <b>pourcentage</b> de "
+            "ce seuil. En caisse, ce crédit sert <b>uniquement</b> à offrir un "
+            "<b>produit de la boutique</b> (boisson, frite…) — "
+            "<b>pas d'argent / pas de remise monétaire</b>. "
+            "Le reste de crédit n'apparaît sur le ticket que s'il est "
+            "strictement positif.<br/>"
             "<i>Réservé à l'administrateur.</i>"
         )
         hint.setWordWrap(True)
@@ -1218,8 +1220,8 @@ class SettingsPage(QWidget):
         form.addRow("Pourcentage de remise", self.loyalty_percent)
 
         example = QLabel(
-            "Exemple : seuil 50 000, 10 % → dès 50 000 de bénéfice client, "
-            "crédit de 5 000 utilisable en caisse."
+            "Exemple : seuil 50 000, 10 % → crédit de 5 000 pour offrir "
+            "un produit boutique (ex. boisson), pas pour retirer de l'argent."
         )
         example.setWordWrap(True)
         example.setStyleSheet("color: #475569; font-size: 12px;")

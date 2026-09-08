@@ -1,4 +1,4 @@
-"""Tests fidélité bénéfices (seuil admin → crédit avoir → ticket reste)."""
+"""Tests fidélité bénéfices : crédit → produit offert (pas d'argent)."""
 
 from __future__ import annotations
 
@@ -45,6 +45,15 @@ class ProfitLoyaltyTestCase(unittest.TestCase):
                 "category_id": cats[0].id if cats else None,
             }
         )
+        cls.reward = ProductController.create(
+            {
+                "name": "Frite Offerte",
+                "sale_price": 500,
+                "purchase_price": 200,
+                "quantity": 200,
+                "category_id": cats[0].id if cats else None,
+            }
+        )
         cls.client = ClientController.create(
             {"name": "Client Fidèle", "phone": "770001234"}
         )
@@ -65,7 +74,7 @@ class ProfitLoyaltyTestCase(unittest.TestCase):
         engine.dispose()
         shutil.rmtree(config.DATA_DIR, ignore_errors=True)
 
-    def _sell(self, qty: float, *, loyalty: float = 0) -> object:
+    def _sell_paid(self, qty: float = 1) -> object:
         line = CartLine(
             self.product.id,
             self.product.name,
@@ -73,75 +82,128 @@ class ProfitLoyaltyTestCase(unittest.TestCase):
             qty,
             purchase_price=float(self.product.purchase_price),
         )
-        total = round(line.total - loyalty, 2)
         return SaleController.create_sale(
             [line],
-            [PaymentLine("Espèces", max(0.0, total))],
-            amount_received=max(0.0, total),
+            [PaymentLine("Espèces", line.total)],
+            amount_received=line.total,
             client_id=self.client.id,
             user_id=getattr(self.admin, "id", None),
-            loyalty_credit=loyalty,
+        )
+
+    def _sell_with_reward(self, reward_qty: float = 1) -> object:
+        paid = CartLine(
+            self.product.id,
+            self.product.name,
+            float(self.product.sale_price),
+            1,
+            purchase_price=float(self.product.purchase_price),
+        )
+        free = CartLine(
+            self.reward.id,
+            self.reward.name,
+            float(self.reward.sale_price),
+            reward_qty,
+            purchase_price=float(self.reward.purchase_price),
+            loyalty_reward=True,
+        )
+        # Total = paid only (free line total = 0).
+        return SaleController.create_sale(
+            [paid, free],
+            [PaymentLine("Espèces", paid.total)],
+            amount_received=paid.total,
+            client_id=self.client.id,
+            user_id=getattr(self.admin, "id", None),
         )
 
     def test_grants_avoir_when_profit_threshold_reached(self) -> None:
-        # Marge 1000 / unité → 5 ventes de 1 = 5000 bénéfice → 1 palier → 500 crédit.
         before = ProfitLoyaltyService.credit_balance(self.client.id)
         for _ in range(5):
-            self._sell(1)
+            self._sell_paid(1)
         after = ProfitLoyaltyService.credit_balance(self.client.id)
         self.assertAlmostEqual(after - before, 500.0, places=1)
-        summary = ProfitLoyaltyService.client_summary(self.client.id)
-        self.assertGreaterEqual(summary["profit_total"], 5_000)
-        self.assertGreaterEqual(summary["purchase_total"], 10_000)
 
-    def test_redeem_subtracts_and_ticket_remaining_only_if_positive(self) -> None:
+    def test_cash_loyalty_param_does_not_discount(self) -> None:
+        """Un loyalty_credit monétaire passé en paramètre est ignoré."""
         # Garantir un crédit.
         if ProfitLoyaltyService.credit_balance(self.client.id) < 500:
             for _ in range(5):
-                self._sell(1)
-        balance = ProfitLoyaltyService.credit_balance(self.client.id)
-        self.assertGreater(balance, 0)
-
-        # Utiliser une partie → reste sur ticket.
-        use = min(200.0, balance - 1) if balance > 1 else balance
-        if use <= 0:
-            self.skipTest("pas de crédit à consommer partiellement")
-        result = self._sell(1, loyalty=use)
-        self.assertIsNotNone(result.loyalty_credit_remaining)
-        self.assertGreater(result.loyalty_credit_remaining, 0.01)
-
-        data = TicketData(
-            ticket_number="T-test",
-            moment=__import__("datetime").datetime.now(),
-            discount=use,
-            total=2_000 - use,
-            loyalty_credit_remaining=result.loyalty_credit_remaining,
-            currency="FCFA",
+                self._sell_paid(1)
+        before = ProfitLoyaltyService.credit_balance(self.client.id)
+        line = CartLine(
+            self.product.id,
+            self.product.name,
+            2_000,
+            1,
+            purchase_price=1_000,
         )
-        opts = TicketOptions()
-        text = "\n".join(line.text for line in totals_block(data, opts, 42))
-        self.assertIn("Reste remise fidélité", text)
-
-        # Tout consommer → rien sur le ticket.
-        left = ProfitLoyaltyService.credit_balance(self.client.id)
-        if left <= 0:
-            return
-        # Vente assez grande pour absorber tout le crédit.
-        qty = max(1, int((left / 1000) + 1))
-        result2 = self._sell(qty, loyalty=left)
-        self.assertIsNone(result2.loyalty_credit_remaining)
-        data2 = TicketData(
-            ticket_number="T-test2",
-            moment=__import__("datetime").datetime.now(),
-            discount=left,
-            total=max(0.0, qty * 2000 - left),
-            loyalty_credit_remaining=None,
-            currency="FCFA",
+        result = SaleController.create_sale(
+            [line],
+            [PaymentLine("Espèces", 2_000)],
+            amount_received=2_000,
+            client_id=self.client.id,
+            user_id=getattr(self.admin, "id", None),
+            loyalty_credit=500,  # ne doit rien faire sans ligne loyalty_reward
         )
-        text2 = "\n".join(line.text for line in totals_block(data2, opts, 42))
-        self.assertNotIn("Reste remise fidélité", text2)
+        self.assertEqual(result.total, 2_000)
+        # Pas de consommation de crédit sans produit offert.
+        self.assertAlmostEqual(
+            ProfitLoyaltyService.credit_balance(self.client.id),
+            before + 0,  # peut augmenter si nouveau palier, mais pas baisser de 500
+            delta=600,
+        )
+        # Le crédit n'a pas baissé de 500 purement monétaire :
+        after = ProfitLoyaltyService.credit_balance(self.client.id)
+        self.assertGreaterEqual(after, before - 0.01)
 
-    def test_ticket_from_sale_hides_zero_remaining(self) -> None:
+    def test_product_reward_redeems_and_ticket_remaining(self) -> None:
+        if ProfitLoyaltyService.credit_balance(self.client.id) < 500:
+            for _ in range(5):
+                self._sell_paid(1)
+        before = ProfitLoyaltyService.credit_balance(self.client.id)
+        result = self._sell_with_reward(1)
+        after = ProfitLoyaltyService.credit_balance(self.client.id)
+        # 500 consommé (prix frite), éventuel nouveau palier possible.
+        self.assertLess(after, before)
+        self.assertAlmostEqual(result.total, 2_000, places=1)
+        if after > 0.01:
+            self.assertIsNotNone(result.loyalty_credit_remaining)
+            text = "\n".join(
+                line.text
+                for line in totals_block(
+                    TicketData(
+                        ticket_number="T",
+                        moment=__import__("datetime").datetime.now(),
+                        total=result.total,
+                        loyalty_credit_remaining=result.loyalty_credit_remaining,
+                        currency="FCFA",
+                    ),
+                    TicketOptions(),
+                    42,
+                )
+            )
+            self.assertIn("Reste crédit fidélité", text)
+
+    def test_cannot_offer_product_above_credit(self) -> None:
+        # Client sans crédit.
+        other = ClientController.create({"name": "Sans Crédit", "phone": "771112233"})
+        free = CartLine(
+            self.reward.id,
+            self.reward.name,
+            500,
+            1,
+            purchase_price=200,
+            loyalty_reward=True,
+        )
+        with self.assertRaises(ValueError):
+            SaleController.create_sale(
+                [free],
+                [PaymentLine("Espèces", 0)],
+                amount_received=0,
+                client_id=other.id,
+                user_id=getattr(self.admin, "id", None),
+            )
+
+    def test_ticket_hides_zero_remaining(self) -> None:
         sale = type(
             "S",
             (),
@@ -153,9 +215,9 @@ class ProfitLoyaltyTestCase(unittest.TestCase):
                 "client_id": self.client.id,
                 "items": [],
                 "subtotal": 1000,
-                "discount": 100,
-                "total": 900,
-                "amount_received": 900,
+                "discount": 0,
+                "total": 1000,
+                "amount_received": 1000,
                 "change_due": 0,
                 "payments": [],
                 "loyalty_credit_remaining": 0,

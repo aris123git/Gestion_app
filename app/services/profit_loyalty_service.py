@@ -1,9 +1,10 @@
-"""Fidélité : remise % sur le bénéfice client (seuil fixé par l'admin).
+"""Fidélité : crédit % sur le bénéfice client (seuil fixé par l'admin).
 
 Quand le bénéfice cumulé d'un client franchit un (ou plusieurs) seuils
-configurés, un avoir « Fidélité bénéfices » est créé. En caisse, cette
-remise se soustrait du panier ; le reste de crédit n'apparaît sur le
-ticket que s'il est strictement positif.
+configurés, un avoir « Fidélité bénéfices » est créé. En caisse, ce crédit
+ne s'utilise que pour offrir un produit de la boutique (jamais une remise
+en argent). Le reste de crédit n'apparaît sur le ticket que s'il est
+strictement positif.
 """
 
 from __future__ import annotations
