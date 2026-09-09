@@ -256,8 +256,9 @@ class SettingsPage(QWidget):
             self.printer_profile.addItem(profile.label, profile.id)
         self.printer_profile.setToolTip(
             "Profil de l'imprimante thermique : largeur (58/80 mm) et codepage "
-            "(CP850 recommandé pour le français). Si les accents sortent en "
-            "chinois ou symboles, changez de profil puis « Test accents FR »."
+            "(CP850 recommandé pour le français). "
+            "Xprinter : choisissez « Xprinter … tableau ASCII » si le tableau "
+            "affiche des « ? » ou des caractères chinois."
         )
         self.printer_profile.currentIndexChanged.connect(self._on_printer_profile_changed)
 
@@ -351,7 +352,10 @@ class SettingsPage(QWidget):
             "Les designs visuels (Classique, Moderne, Bon serveur…) se "
             "choisissent dans l'onglet <b>Designs des tickets</b>. "
             "Le <b>profil imprimante</b> fixe le codepage ESC/POS "
-            "(accents français) et la largeur en caractères."
+            "(accents français) et la largeur en caractères. "
+            "Sur <b>Xprinter</b>, utilisez le profil "
+            "« Xprinter … tableau ASCII » : annule le mode chinois et "
+            "dessine les filets du tableau en + - | (plus de « ? »)."
         )
         designs_hint.setWordWrap(True)
         designs_hint.setStyleSheet("color: #64748b;")
@@ -781,8 +785,9 @@ class SettingsPage(QWidget):
                 self,
                 f"Test accents envoyé.\n{result.message}\n\n"
                 "Vérifiez é è à ç œ sur le ticket. "
-                "Si caractères chinois ou symboles : changez le profil "
-                "(CP850 / CP858 / CP1252) puis réessayez.",
+                "Si caractères chinois ou « ? » sur le tableau : "
+                "profil « Xprinter … tableau ASCII » (ou CP850), "
+                "puis réessayez.",
                 "Test accents FR",
             )
         else:

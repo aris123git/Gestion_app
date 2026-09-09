@@ -817,7 +817,10 @@ def _build_escpos_serveur_bytes(
     from app.printers.ticket.styled import lines_to_escpos_bytes
 
     shop = shop or settings_service.get_shop_info()
-    profile = resolve_printer_profile(paper=paper)
+    profile = resolve_printer_profile(
+        paper=paper,
+        printer_name=settings_service.get_setting("printer_name", ""),
+    )
     data = TicketData.from_sale(sale, shop)
     kid = resolve_kitchen_design_id(design_id)
     styled = render_ticket(
@@ -853,7 +856,10 @@ def _build_escpos_bytes(
     from app.printers.escpos_encoder import build_escpos_document
     from app.printers.printer_profile import resolve_printer_profile
 
-    resolved = profile or resolve_printer_profile(paper=paper)
+    resolved = profile or resolve_printer_profile(
+        paper=paper,
+        printer_name=settings_service.get_setting("printer_name", ""),
+    )
     return build_escpos_document(
         content,
         resolved,
@@ -1445,7 +1451,7 @@ def _send_content(
     if design.preferred_feed is not None:
         feed_lines = min(feed_lines, design.preferred_feed)
 
-    profile = resolve_printer_profile(paper=paper)
+    profile = resolve_printer_profile(paper=paper, printer_name=printer_name)
 
     if sale is not None:
         data = TicketData.from_sale(sale)
@@ -1533,26 +1539,30 @@ def print_encoding_test_page(printer_name: Optional[str] = None) -> PrintResult:
     Permet de vérifier que le codepage du profil est correct : si les accents
     sortent en chinois / symboles, changer le profil dans Apparence du ticket.
     """
-    from app.printers.escpos_encoder import ACCENT_TEST_SAMPLE
+    from app.printers.escpos_encoder import ACCENT_TEST_SAMPLE, TABLE_TEST_SAMPLE
     from app.printers.printer_profile import resolve_printer_profile
 
     shop = settings_service.get_shop_info()
-    profile = resolve_printer_profile()
+    profile = resolve_printer_profile(printer_name=printer_name)
     paper = profile.paper_width
     width = profile.characters_per_line
     sep = _line("-", width)
     lines = [
         _center(shop.name or "Gestion Commerciale", width),
         _line("=", width),
-        _center("TEST ACCENTS FR", width),
+        _center("TEST ACCENTS + TABLEAU", width),
         _center(profile.label[:width], width),
         f"Codepage: {profile.escpos_codepage}",
         f"Codec: {profile.encoding}  |  {paper} / {width}c",
+        f"ASCII box: {'oui' if profile.ascii_box else 'non'}",
+        f"FS chinois: {'oui' if profile.cancel_chinese_mode else 'non'}",
         sep,
         ACCENT_TEST_SAMPLE.rstrip("\n"),
         sep,
-        "Si accents OK → profil correct.",
-        "Si chinois / symboles → changer profil.",
+        TABLE_TEST_SAMPLE.rstrip("\n"),
+        sep,
+        "Accents OK + tableau lisible → profil correct.",
+        "Chinois / ? sur filets → profil Xprinter ASCII.",
         sep,
         _center(datetime.now().strftime("%d/%m/%Y %H:%M"), width),
     ]

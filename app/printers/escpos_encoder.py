@@ -3,6 +3,10 @@
 Ne jamais envoyer d'UTF-8 brut à l'imprimante : on fixe un codepage
 (ESC t) puis on encode avec le codec Python correspondant.
 Les glyphes impossibles sont translittérés (é→e en dernier recours).
+
+Xprinter / clones chinois : annuler le mode chinois (FS .) avant le
+codepage, et dessiner les tableaux en ASCII (+ - |) pour éviter les
+« ? » et les caractères chinois sur les bordures.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from app.printers.printer_profile import PrinterProfile
 
 logger = logging.getLogger(__name__)
 
-# Remplacements avant encodage (glyphes absents des codepages DOS courants).
+# Remplacements avant encodage (glyphes absents / dangereux pour ESC/POS).
 _CHAR_MAP = {
     "œ": "oe",
     "Œ": "OE",
@@ -41,13 +45,53 @@ _CHAR_MAP = {
     "╯": "┘",
 }
 
+# Tableaux ASCII purs (< 128) : sûr même si le mode chinois reste actif.
+_ASCII_BOX_MAP = {
+    "─": "-",
+    "━": "-",
+    "═": "=",
+    "│": "|",
+    "┃": "|",
+    "║": "|",
+    "┌": "+",
+    "┐": "+",
+    "└": "+",
+    "┘": "+",
+    "┬": "+",
+    "┴": "+",
+    "├": "+",
+    "┤": "+",
+    "┼": "+",
+    "╔": "+",
+    "╗": "+",
+    "╚": "+",
+    "╝": "+",
+    "╦": "+",
+    "╩": "+",
+    "╠": "+",
+    "╣": "+",
+    "╬": "+",
+    "╭": "+",
+    "╮": "+",
+    "╰": "+",
+    "╯": "+",
+    "╴": "-",
+    "╵": "|",
+    "╶": "-",
+    "╷": "|",
+}
+
 
 def prepare_text(text: str, profile: PrinterProfile) -> str:
     """Normalise le texte pour le codepage cible (sans perdre les accents utiles)."""
     if not text:
         return ""
+    ascii_box = bool(getattr(profile, "ascii_box", False))
     out: list[str] = []
     for ch in text:
+        if ascii_box and ch in _ASCII_BOX_MAP:
+            out.append(_ASCII_BOX_MAP[ch])
+            continue
         if ch in _CHAR_MAP:
             out.append(_CHAR_MAP[ch] if profile.transliterate else ch)
         else:
@@ -76,6 +120,10 @@ def encode_text(text: str, profile: PrinterProfile) -> bytes:
         try:
             buf.extend(ch.encode(encoding))
         except UnicodeEncodeError:
+            # Bordure Unicode non encodable → ASCII (évite « ? » sur le tableau).
+            if ch in _ASCII_BOX_MAP:
+                buf.extend(_ASCII_BOX_MAP[ch].encode("ascii"))
+                continue
             if not profile.transliterate:
                 buf.extend(b"?")
                 continue
@@ -83,7 +131,9 @@ def encode_text(text: str, profile: PrinterProfile) -> bytes:
             try:
                 buf.extend(plain.encode(encoding))
             except UnicodeEncodeError:
-                # ASCII strict.
+                if plain in _ASCII_BOX_MAP:
+                    buf.extend(_ASCII_BOX_MAP[plain].encode("ascii"))
+                    continue
                 try:
                     buf.extend(plain.encode("ascii", errors="replace"))
                 except Exception:
@@ -91,8 +141,35 @@ def encode_text(text: str, profile: PrinterProfile) -> bytes:
     return bytes(buf)
 
 
-def configure_escpos_printer(dummy, profile: PrinterProfile) -> None:
-    """Fixe le codepage ESC/POS sur l'instance python-escpos."""
+def _init_sequence(profile: PrinterProfile) -> bytes:
+    """Séquence d'init ESC/POS (reset + sortie mode chinois + jeu US)."""
+    parts = bytearray()
+    if getattr(profile, "reset_before_print", False):
+        parts.extend(b"\x1b\x40")  # ESC @
+    if getattr(profile, "cancel_chinese_mode", False):
+        # FS . — indispensable sur Xprinter / clones (sinon octets → chinois).
+        parts.extend(b"\x1c\x2e")
+    if getattr(profile, "set_international_usa", False):
+        parts.extend(b"\x1b\x52\x00")  # ESC R 0
+    return bytes(parts)
+
+
+def configure_escpos_printer(
+    dummy, profile: PrinterProfile, *, full_init: bool = True
+) -> None:
+    """Fixe le codepage ESC/POS sur l'instance python-escpos.
+
+    ``full_init=True`` : ESC @ / FS . / ESC R (début de job uniquement).
+    Ne pas rappeler full_init entre chaque ligne — ESC @ reset l'imprimante.
+    """
+    if full_init:
+        init = _init_sequence(profile)
+        if init:
+            try:
+                dummy._raw(init)
+            except Exception:
+                logger.debug("Séquence d'init ESC/POS impossible.", exc_info=True)
+
     code = profile.escpos_codepage or "CP850"
     try:
         dummy.charcode(code)
@@ -114,14 +191,12 @@ def write_text(dummy, text: str, profile: PrinterProfile) -> None:
     """
     if not text:
         return
-    # S'assurer que le codepage est actif avant les octets.
-    configure_escpos_printer(dummy, profile)
+    # Re-sélection codepage seulement (pas ESC @ au milieu du ticket).
+    configure_escpos_printer(dummy, profile, full_init=False)
     data = encode_text(text, profile)
-    # python-escpos : _raw ajoute au buffer.
     try:
         dummy._raw(data)
     except Exception:
-        # Repli : text() après charcode forcé.
         logger.debug("Écriture _raw impossible, repli text().", exc_info=True)
         try:
             dummy.charcode(profile.escpos_codepage)
@@ -150,7 +225,7 @@ def build_escpos_document(
         from escpos.printer import Dummy
 
         dummy = Dummy()
-        configure_escpos_printer(dummy, profile)
+        configure_escpos_printer(dummy, profile, full_init=True)
 
         if include_logo and logo_path:
             try:
@@ -162,6 +237,8 @@ def build_escpos_document(
                     dummy.image(logo)
                     if profile.supports_center:
                         dummy.set(align="left")
+                    # Ré-appliquer codepage après image (sans ESC @).
+                    configure_escpos_printer(dummy, profile, full_init=False)
             except Exception:
                 logger.debug("Logo ignoré.", exc_info=True)
 
@@ -206,7 +283,8 @@ def build_escpos_document(
             text = lines_to_text(lines_or_content, profile.characters_per_line)
         else:
             text = str(lines_or_content or "")
-        data = encode_text(text + ("\n" * feed_lines), profile)
+        prefix = _init_sequence(profile)
+        data = prefix + encode_text(text + ("\n" * feed_lines), profile)
         if cut_mode != "none":
             data += b"\x1d\x56\x00"
         return data
@@ -219,4 +297,16 @@ ACCENT_TEST_SAMPLE = (
     "É È À Ç Œ œ\n"
     "Café, école, français, hôtel\n"
     "Crème brûlée — 1 000 FCFA\n"
+)
+
+# Échantillon tableau (détecte rapidement les « ? » / chinois sur Xprinter).
+TABLE_TEST_SAMPLE = (
+    "Test tableau facture\n"
+    "+----------+----+------+\n"
+    "| Article  | Qte| Mont |\n"
+    "+----------+----+------+\n"
+    "| Cafe     |  2 | 1000 |\n"
+    "| Frite    |  1 |  500 |\n"
+    "+----------+----+------+\n"
+    "TOTAL              1500\n"
 )
