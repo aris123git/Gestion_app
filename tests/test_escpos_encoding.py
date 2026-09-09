@@ -52,11 +52,12 @@ class PrinterProfileTestCase(unittest.TestCase):
 
     def test_default_resolve_by_paper(self):
         settings_service.set_setting("printer_profile_id", "")
+        settings_service.set_setting("printer_name", "")
         settings_service.set_setting("ticket_format", "58mm")
-        p58 = resolve_printer_profile(paper="58mm")
+        p58 = resolve_printer_profile(paper="58mm", printer_name="")
         self.assertEqual(p58.characters_per_line, 32)
         self.assertEqual(p58.encoding, "cp850")
-        p80 = resolve_printer_profile(paper="80mm")
+        p80 = resolve_printer_profile(paper="80mm", printer_name="")
         self.assertGreaterEqual(p80.characters_per_line, 42)
         self.assertEqual(p80.id, DEFAULT_PROFILE_ID_80)
 
@@ -89,6 +90,42 @@ class EscposEncodingTestCase(unittest.TestCase):
     def test_rounded_corners_mapped(self):
         profile = get_profile("generic_80_cp850")
         self.assertEqual(prepare_text("╭─╮", profile), "┌─┐")
+
+    def test_xprinter_ascii_box_and_chinese_cancel(self):
+        profile = get_profile("xprinter_80_cp850")
+        self.assertTrue(profile.ascii_box)
+        self.assertTrue(profile.cancel_chinese_mode)
+        prepared = prepare_text("╭─╮│┌┐", profile)
+        self.assertEqual(prepared, "+-+|++")
+        raw = encode_text("┌─┐ Café", profile)
+        self.assertNotIn(b"\xc3\xa9", raw)
+        self.assertEqual(raw.decode("cp850"), "+-+ Café")
+        out = build_escpos_document(
+            "┌──┐\nCafé\n",
+            profile,
+            feed_lines=0,
+            cut_mode="none",
+            include_logo=False,
+        )
+        self.assertIn(b"\x1b\x40", out)  # ESC @
+        self.assertIn(b"\x1c\x2e", out)  # FS .
+        self.assertIn(b"\x1b\x52\x00", out)  # ESC R 0
+        self.assertNotIn(b"\xc3\xa9", out)
+        # Pas d'octets de filets DOS (C4/B3…) — ASCII seulement.
+        self.assertNotIn(bytes([0xC4]), out)
+
+    def test_auto_detect_xprinter_name(self):
+        from app.printers.printer_profile import looks_like_xprinter
+
+        self.assertTrue(looks_like_xprinter("Xprinter XP-80C"))
+        self.assertTrue(looks_like_xprinter("XP-58"))
+        self.assertFalse(looks_like_xprinter("Epson TM-T20"))
+        settings_service.set_setting("printer_profile_id", "")
+        settings_service.set_setting("ticket_format", "80mm")
+        settings_service.set_setting("printer_name", "Xprinter XP-80C")
+        profile = resolve_printer_profile(paper="80mm")
+        self.assertTrue(profile.id.startswith("xprinter_"))
+        self.assertTrue(profile.ascii_box)
 
     def test_document_sets_codepage_and_encodes(self):
         profile = get_profile("generic_80_cp850")
