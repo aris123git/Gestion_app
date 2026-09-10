@@ -245,7 +245,7 @@ class POSPage(QWidget):
         discount_row = QHBoxLayout()
         discount_row.addWidget(QLabel("Remise :"))
         self.discount_input = QDoubleSpinBox()
-        self.discount_input.setRange(0, 1_000_000_000)
+        self.discount_input.setRange(0, 0)
         self.discount_input.setDecimals(0)
         self.discount_input.setSingleStep(100)
         self.discount_input.valueChanged.connect(self._update_total)
@@ -262,7 +262,9 @@ class POSPage(QWidget):
                 f"Plafond caissier : {pct:g} % du sous-total"
             )
         discount_row.addWidget(self.discount_input)
-        discount_row.addStretch()
+        self.discount_hint = QLabel("")
+        self.discount_hint.setStyleSheet("color: #b45309; font-size: 12px;")
+        discount_row.addWidget(self.discount_hint, 1)
         layout.addLayout(discount_row)
 
         loyalty_row = QHBoxLayout()
@@ -872,39 +874,50 @@ class POSPage(QWidget):
     def _cart_subtotal(self) -> float:
         return round(sum(line.total for line in self.cart), 2)
 
+    def _discount_ceiling(self) -> float:
+        """Plafond actuel de la remise (sous-total × éventuel % caissier)."""
+        subtotal = self._cart_subtotal()
+        from app.services.cash_controls import max_discount_amount
+
+        capped = max_discount_amount(subtotal, self.state.current_user)
+        if capped is None:
+            return max(0.0, subtotal)
+        return max(0.0, min(subtotal, float(capped)))
+
     def _discount_value(self) -> float:
-        return min(self._cart_subtotal(), float(self.discount_input.value()))
+        return min(self._discount_ceiling(), float(self.discount_input.value()))
 
     def _cart_total(self) -> float:
         return max(0.0, self._cart_subtotal() - self._discount_value())
 
     def _update_total(self) -> None:
-        subtotal = self._cart_subtotal()
-        # Plafond remise caissier (% du panier).
-        from app.services.cash_controls import max_discount_amount
+        """Met à jour total + plafond remise sans dialogue bloquant.
 
-        capped = max_discount_amount(subtotal, self.state.current_user)
-        if capped is not None and self.discount_input.value() > capped:
-            self.discount_input.blockSignals(True)
-            self.discount_input.setValue(capped)
-            self.discount_input.blockSignals(False)
-            if subtotal > 0:
-                warn(
-                    self,
-                    f"Remise plafonnée à {capped:g} pour le rôle caissier.",
-                    "Remise plafonnée",
-                )
-        if self.discount_input.value() > subtotal:
-            self.discount_input.blockSignals(True)
-            self.discount_input.setValue(subtotal)
-            self.discount_input.blockSignals(False)
-            if subtotal > 0:
-                warn(
-                    self,
-                    "La remise ne peut pas dépasser le sous-total du panier.",
-                    "Remise plafonnée",
-                )
+        Les flèches du spinbox ne doivent jamais ouvrir de QMessageBox :
+        on borne le maximum du champ et on affiche un hint non modal.
+        """
+        ceiling = self._discount_ceiling()
+        current = float(self.discount_input.value())
+        self.discount_input.blockSignals(True)
+        # Max = plafond : les flèches s'arrêtent toutes seules (pas de popup).
+        self.discount_input.setMaximum(ceiling)
+        if current > ceiling:
+            self.discount_input.setValue(ceiling)
+            hit_cap = True
+        else:
+            hit_cap = False
+        self.discount_input.blockSignals(False)
+
         currency = settings_service.get_currency()
+        if ceiling <= 0:
+            self.discount_hint.setText("")
+        elif hit_cap:
+            self.discount_hint.setText(
+                f"Max {format_money(ceiling, currency)}"
+            )
+        else:
+            self.discount_hint.setText("")
+
         self.total_label.setText(f"Total : {format_money(self._cart_total(), currency)}")
 
     def _clear_cart(self) -> None:
@@ -913,7 +926,11 @@ class POSPage(QWidget):
         if pending_id:
             SaleController.delete_pending(pending_id, user_id=self.state.user_id)
         self.cart.clear()
+        self.discount_input.blockSignals(True)
+        self.discount_input.setMaximum(0)
         self.discount_input.setValue(0)
+        self.discount_input.blockSignals(False)
+        self.discount_hint.setText("")
         self.loyalty_offer_btn.setEnabled(False)
         self.loyalty_hint.setText("")
         self.client_search.clear()
@@ -971,7 +988,11 @@ class POSPage(QWidget):
             warn(self, str(exc))
             return
         self.cart = lines
-        self.discount_input.setValue(discount)
+        # Appliquer le plafond avant setValue (sinon max=0 écrase la remise).
+        self.discount_input.blockSignals(True)
+        self.discount_input.setMaximum(self._discount_ceiling())
+        self.discount_input.setValue(min(float(discount), self.discount_input.maximum()))
+        self.discount_input.blockSignals(False)
         self._pending_sale_id = None
         if client_id is not None:
             self.client_search.set_client(client_id)
