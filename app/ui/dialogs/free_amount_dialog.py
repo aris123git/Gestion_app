@@ -84,18 +84,28 @@ class FreeAmountDialog(QDialog):
         buttons = QHBoxLayout()
         cancel = QPushButton("Annuler")
         cancel.clicked.connect(self.reject)
-        ok = QPushButton("Ajouter")
-        ok.setObjectName("Success")
-        ok.clicked.connect(self._confirm_custom)
+        self.ok = QPushButton("Ajouter")
+        self.ok.setObjectName("Success")
+        self.ok.setEnabled(False)
+        self.ok.clicked.connect(self._confirm_custom)
         buttons.addWidget(cancel)
         buttons.addStretch()
-        buttons.addWidget(ok)
+        buttons.addWidget(self.ok)
         layout.addLayout(buttons)
+        self._refresh_ok()
+
+    def _refresh_ok(self) -> None:
+        self.ok.setEnabled(float(self.custom.value()) > 0)
 
     def _update_estimate(self) -> None:
         amount = float(self.custom.value())
+        self._refresh_ok()
         if amount <= 0 or self.sale_price <= 0:
-            self.estimate.setText("")
+            self.estimate.setText(
+                "Saisissez un montant ou choisissez un raccourci ci-dessus."
+                if amount <= 0
+                else ""
+            )
             return
         qty = amount / self.sale_price
         self.estimate.setText(
@@ -111,6 +121,10 @@ class FreeAmountDialog(QDialog):
     def _confirm_custom(self) -> None:
         value = float(self.custom.value())
         if value <= 0:
+            from app.ui.widgets.helpers import warn
+
+            warn(self, "Saisissez un montant supérieur à 0 pour continuer.")
+            self.custom.setFocus()
             return
         self.amount = value
         self.accept()
