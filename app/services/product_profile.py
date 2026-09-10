@@ -2,6 +2,9 @@
 
 Sur un nouveau poste, l'utilisateur choisit le produit une fois
 (avant l'activation). Le choix est stocké localement et ne se redemande pas.
+
+Bascule démo (installateur) : 5 clics sur le libellé produit dans Paramètres
+→ clé d'activation → nouveau choix → relance de l'application.
 """
 
 from __future__ import annotations

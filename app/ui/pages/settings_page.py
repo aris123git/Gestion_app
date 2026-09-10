@@ -5,8 +5,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -17,6 +19,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -31,10 +34,12 @@ from PySide6.QtWidgets import (
 
 from app import config
 from app.services import (
+    activation_service,
     audit_service,
     backup_service,
     permissions as perms,
     portal_service,
+    product_profile,
     settings_service,
 )
 from app.ui.setup_wizard import CURRENCIES, SHOP_TYPES
@@ -60,6 +65,11 @@ class SettingsPage(QWidget):
         self.state = state
         self._logo_path = ""
         self._backup_paths: list[Path] = []
+        self._product_secret_clicks = 0
+        self._product_click_timer = QTimer(self)
+        self._product_click_timer.setSingleShot(True)
+        self._product_click_timer.setInterval(2500)
+        self._product_click_timer.timeout.connect(self._reset_product_secret_clicks)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -71,9 +81,7 @@ class SettingsPage(QWidget):
         tabs.addTab(self._build_appearance_tab(), "Apparence du ticket")
         tabs.addTab(self._build_designs_tab(), "Designs des tickets")
         tabs.addTab(self._build_controls_tab(), "Contrôles caisse")
-        from app.services import product_profile
-
-        # Fidélité bénéfices (produit offert) : Gestion App uniquement.
+        # Fidélité bénéfices (produit offert) : Gestion App et Maquis.
         if product_profile.supports_profit_loyalty():
             tabs.addTab(self._build_loyalty_tab(), "Fidélité bénéfices")
         tabs.addTab(self._build_backup_tab(), "Sauvegarde")
@@ -81,6 +89,68 @@ class SettingsPage(QWidget):
         tabs.addTab(self._build_audit_tab(), "Journal d'audit")
         tabs.currentChanged.connect(self._on_tab)
         layout.addWidget(tabs)
+
+    def _reset_product_secret_clicks(self) -> None:
+        self._product_secret_clicks = 0
+
+    def _on_product_label_clicked(self, _event=None) -> None:
+        """Geste discret : 5 clics sur le libellé produit → demande la clé."""
+        self._product_secret_clicks += 1
+        self._product_click_timer.start()
+        if self._product_secret_clicks < 5:
+            return
+        self._reset_product_secret_clicks()
+        self._product_click_timer.stop()
+        self._prompt_product_switch()
+
+    def _prompt_product_switch(self) -> None:
+        code, ok = QInputDialog.getText(
+            self,
+            "Vérification",
+            "Code :",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        if not activation_service.verify_code(code):
+            warn(self, "Code incorrect.")
+            return
+
+        from app.ui.product_choice_dialog import ProductChoiceDialog
+
+        previous = product_profile.require_product()
+        dialog = ProductChoiceDialog(parent=self, switch_mode=True)
+        if not dialog.exec() or not dialog.selected:
+            dialog.deleteLater()
+            return
+        selected = dialog.selected
+        dialog.deleteLater()
+
+        if selected == previous:
+            info(self, f"Produit inchangé : {product_profile.product_label(selected)}.")
+            return
+
+        audit_service.log_action(
+            "Changement produit",
+            "NexaGes",
+            f"{product_profile.product_label(previous)} → "
+            f"{product_profile.product_label(selected)}",
+            self.state.user_id,
+            getattr(self.state.current_user, "username", ""),
+        )
+        self.product_profile_label.setText(product_profile.product_label(selected))
+        info(
+            self,
+            f"Produit défini : {product_profile.product_label(selected)}.\n\n"
+            "L'application va se fermer. Relancez-la pour appliquer le changement "
+            "(menus Tables / Commandes selon le produit).",
+            "Produit mis à jour",
+        )
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+        else:
+            QApplication.quit()
 
     # --- Onglet commerce ---------------------------------------------------
     def _build_shop_tab(self) -> QWidget:
@@ -134,10 +204,12 @@ class SettingsPage(QWidget):
         form.addRow("TVA", self.vat)
         form.addRow("Logo", logo_row)
 
-        from app.services import product_profile
-
         self.product_profile_label = QLabel(product_profile.product_label())
         self.product_profile_label.setStyleSheet("font-weight: 600;")
+        # Pas de curseur « main » : geste connu seulement de l'installateur.
+        self.product_profile_label.mousePressEvent = (  # type: ignore[method-assign]
+            lambda event: self._on_product_label_clicked(event)
+        )
         form.addRow("Produit NexaGes (ce poste)", self.product_profile_label)
         hint = QLabel(
             "Choisi une seule fois sur un nouvel ordinateur "
