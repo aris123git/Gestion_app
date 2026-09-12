@@ -1,4 +1,4 @@
-"""Dialogue catégorie : nom + description (mercerie, rayons…)."""
+"""Dialogue catégorie : nom + description (rayons / familles de produits)."""
 
 from __future__ import annotations
 
