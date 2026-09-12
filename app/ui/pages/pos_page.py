@@ -5,12 +5,13 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDoubleSpinBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -35,7 +37,8 @@ from app.controllers.sale_controller import (
     InsufficientStockError,
     SaleController,
 )
-from app.services import audit_service, permissions as perms, settings_service
+from app.i18n import t
+from app.services import audit_service, catalog_features, permissions as perms, settings_service
 from app.ui.dialogs.free_amount_dialog import FreeAmountDialog
 from app.ui.dialogs.payment_dialog import PaymentDialog
 from app.ui.dialogs.price_change_dialog import PriceChangeDialog
@@ -60,6 +63,8 @@ class POSPage(QWidget):
         self._updating = False
         self._client_map: Dict[int, int] = {}
         self._pending_sale_id: Optional[int] = None
+        self._chip_buttons: list[QToolButton] = []
+        self._grid_product_ids: list[int] = []
 
         self._root = QHBoxLayout(self)
         self._root.setContentsMargins(12, 12, 12, 12)
@@ -156,18 +161,18 @@ class POSPage(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        layout.addWidget(page_title("Caisse"))
+        layout.addWidget(page_title(t("pos.title")))
 
         search_row = QHBoxLayout()
         self.barcode_input = QLineEdit()
-        self.barcode_input.setPlaceholderText("Scanner / saisir un code-barres puis Entrée")
+        self.barcode_input.setPlaceholderText(t("pos.barcode"))
         self.barcode_input.returnPressed.connect(self._add_by_barcode)
         search_row.addWidget(self.barcode_input)
         layout.addLayout(search_row)
 
         filter_row = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Rechercher un produit…")
+        self.search_input.setPlaceholderText(t("pos.search_product"))
         self.search_input.textChanged.connect(self._reload_products)
         self.category_filter = QComboBox()
         self.category_filter.currentIndexChanged.connect(self._reload_products)
@@ -175,8 +180,28 @@ class POSPage(QWidget):
         filter_row.addWidget(self.category_filter, 2)
         layout.addLayout(filter_row)
 
+        self.category_chips_scroll = QScrollArea()
+        self.category_chips_scroll.setWidgetResizable(True)
+        self.category_chips_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.category_chips_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.category_chips_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.category_chips_scroll.setFixedHeight(56)
+        self.category_chips_host = QWidget()
+        self.category_chips_layout = QHBoxLayout(self.category_chips_host)
+        self.category_chips_layout.setContentsMargins(0, 0, 0, 0)
+        self.category_chips_layout.setSpacing(8)
+        self.category_chips_layout.addStretch(1)
+        self.category_chips_scroll.setWidget(self.category_chips_host)
+        layout.addWidget(self.category_chips_scroll)
+
         self.product_table = QTableWidget(0, 3)
-        self.product_table.setHorizontalHeaderLabels(["Produit", "Prix", "Stock"])
+        self.product_table.setHorizontalHeaderLabels(
+            [t("pos.product"), t("pos.price"), t("pos.stock")]
+        )
         self.product_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
@@ -187,12 +212,33 @@ class POSPage(QWidget):
         self.product_table.doubleClicked.connect(self._add_selected_product)
         layout.addWidget(self.product_table)
 
-        add_button = QPushButton("Ajouter au panier")
-        add_button.setObjectName("Primary")
-        add_button.clicked.connect(self._add_selected_product)
-        layout.addWidget(add_button)
+        self.product_grid_scroll = QScrollArea()
+        self.product_grid_scroll.setWidgetResizable(True)
+        self.product_grid_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.product_grid_host = QWidget()
+        self.product_grid_layout = QGridLayout(self.product_grid_host)
+        self.product_grid_layout.setContentsMargins(4, 4, 4, 4)
+        self.product_grid_layout.setSpacing(10)
+        self.product_grid_scroll.setWidget(self.product_grid_host)
+        layout.addWidget(self.product_grid_scroll)
 
+        self.add_to_cart_btn = QPushButton(t("pos.add_to_cart"))
+        self.add_to_cart_btn.setObjectName("Primary")
+        self.add_to_cart_btn.clicked.connect(self._add_selected_product)
+        layout.addWidget(self.add_to_cart_btn)
+
+        self._apply_catalog_mode()
         return panel
+
+    def _apply_catalog_mode(self) -> None:
+        """Affiche combo/table ou chips/grille selon les options Paramètres."""
+        use_chips = catalog_features.category_browser_enabled()
+        use_images = catalog_features.product_images_enabled()
+        self.category_filter.setVisible(not use_chips)
+        self.category_chips_scroll.setVisible(use_chips)
+        self.product_table.setVisible(not use_images)
+        self.product_grid_scroll.setVisible(use_images)
+        self.add_to_cart_btn.setVisible(not use_images)
 
     # --- Panier (droite) ---------------------------------------------------
     def _build_cart(self) -> QWidget:
@@ -203,16 +249,16 @@ class POSPage(QWidget):
         layout.setSpacing(10)
 
         header = QHBoxLayout()
-        header.addWidget(page_title("Panier"))
+        header.addWidget(page_title(t("pos.cart")))
         header.addStretch()
-        clear = QPushButton("Vider")
+        clear = QPushButton(t("pos.clear_cart"))
         clear.setObjectName("Danger")
         clear.clicked.connect(self._clear_cart)
         header.addWidget(clear)
         layout.addLayout(header)
 
         client_row = QHBoxLayout()
-        client_row.addWidget(QLabel("Client :"))
+        client_row.addWidget(QLabel(t("pos.client")))
         self.client_search = ClientSearchField(
             placeholder="Tapez un nom ou un téléphone…",
         )
@@ -243,7 +289,7 @@ class POSPage(QWidget):
 
         # Remise + total
         discount_row = QHBoxLayout()
-        discount_row.addWidget(QLabel("Remise :"))
+        discount_row.addWidget(QLabel(t("pos.discount")))
         self.discount_input = QDoubleSpinBox()
         self.discount_input.setRange(0, 0)
         self.discount_input.setDecimals(0)
@@ -294,15 +340,15 @@ class POSPage(QWidget):
         layout.addWidget(self.total_label)
 
         pending_row = QHBoxLayout()
-        hold_btn = QPushButton("Mettre en attente")
+        hold_btn = QPushButton(t("pos.hold"))
         hold_btn.clicked.connect(self._hold_sale)
-        resume_btn = QPushButton("Reprendre…")
+        resume_btn = QPushButton(t("pos.resume"))
         resume_btn.clicked.connect(self._resume_pending)
         pending_row.addWidget(hold_btn)
         pending_row.addWidget(resume_btn)
         layout.addLayout(pending_row)
 
-        pay_button = QPushButton("Encaisser (Payer)")
+        pay_button = QPushButton(t("pos.checkout"))
         pay_button.setObjectName("Success")
         pay_button.setMinimumHeight(52)
         pay_button.setSizePolicy(
@@ -316,6 +362,7 @@ class POSPage(QWidget):
 
     # --- Chargement des données -------------------------------------------
     def refresh(self) -> None:
+        self._apply_catalog_mode()
         self._reload_categories()
         self._reload_products()
         self._reload_clients()
@@ -358,13 +405,15 @@ class POSPage(QWidget):
         current = self.category_filter.currentData()
         self.category_filter.blockSignals(True)
         self.category_filter.clear()
-        self.category_filter.addItem("Toutes les catégories", None)
-        for category in CategoryController.list():
+        self.category_filter.addItem(t("pos.all_categories"), None)
+        categories = CategoryController.list()
+        for category in categories:
             self.category_filter.addItem(category.name, category.id)
         index = self.category_filter.findData(current)
         if index >= 0:
             self.category_filter.setCurrentIndex(index)
         self.category_filter.blockSignals(False)
+        self._rebuild_category_chips(categories, current)
 
     def _reload_clients(self, select_id: Optional[int] = None) -> None:
         if select_id is not None:
@@ -519,6 +568,123 @@ class POSPage(QWidget):
             return "".join(ch for ch in text if ch.isdigit() or ch == "+")
         return ""
 
+    def _selected_category_id(self):
+        return self.category_filter.currentData()
+
+    def _rebuild_category_chips(self, categories, current) -> None:
+        while self.category_chips_layout.count():
+            item = self.category_chips_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._chip_buttons = []
+
+        def make_chip(label: str, cat_id):
+            btn = QToolButton()
+            btn.setText(label)
+            btn.setCheckable(True)
+            btn.setChecked(cat_id == current)
+            btn.setMinimumHeight(40)
+            btn.setStyleSheet(
+                "QToolButton { padding: 6px 14px; border-radius: 18px; "
+                "border: 1px solid #cbd5e1; background: #f8fafc; }"
+                "QToolButton:checked { background: #2563eb; color: white; "
+                "border-color: #2563eb; }"
+            )
+            btn.clicked.connect(lambda _=False, cid=cat_id: self._select_category_chip(cid))
+            self.category_chips_layout.addWidget(btn)
+            self._chip_buttons.append(btn)
+
+        make_chip(t("pos.all_categories"), None)
+        for category in categories:
+            tip = (category.description or "").strip()
+            btn_label = category.name
+            make_chip(btn_label, category.id)
+            if tip:
+                self._chip_buttons[-1].setToolTip(tip)
+        self.category_chips_layout.addStretch(1)
+
+    def _select_category_chip(self, category_id) -> None:
+        self.category_filter.blockSignals(True)
+        index = self.category_filter.findData(category_id)
+        if index >= 0:
+            self.category_filter.setCurrentIndex(index)
+        self.category_filter.blockSignals(False)
+        from app.controllers.category_controller import CategoryController
+
+        self._rebuild_category_chips(CategoryController.list(), category_id)
+        self._reload_products()
+
+    def _clear_product_grid(self) -> None:
+        while self.product_grid_layout.count():
+            item = self.product_grid_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._grid_product_ids = []
+
+    def _make_product_card(self, product, currency: str) -> QFrame:
+        card = QFrame()
+        card.setObjectName("ProductCard")
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        card.setFixedSize(148, 180)
+        card.setStyleSheet(
+            "#ProductCard { border: 1px solid #e2e8f0; border-radius: 10px; "
+            "background: #ffffff; }"
+            "#ProductCard:hover { border: 2px solid #2563eb; }"
+        )
+        box = QVBoxLayout(card)
+        box.setContentsMargins(8, 8, 8, 8)
+        box.setSpacing(4)
+
+        img = QLabel()
+        img.setFixedSize(128, 96)
+        img.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        img.setStyleSheet("background: #f1f5f9; border-radius: 6px; color: #94a3b8;")
+        path = str(getattr(product, "image_path", "") or "")
+        pix = QPixmap(path) if path else QPixmap()
+        if not pix.isNull():
+            img.setPixmap(
+                pix.scaled(
+                    128,
+                    96,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        else:
+            img.setText("•")
+        box.addWidget(img, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        name = QLabel(product.name)
+        name.setWordWrap(True)
+        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name.setStyleSheet("font-weight: 600; font-size: 12px;")
+        box.addWidget(name)
+
+        if getattr(product, "free_amount_sale", False):
+            price_txt = (
+                f"réf. {format_money(product.sale_price, currency)}"
+                if float(product.sale_price or 0) > 0
+                else "montant libre"
+            )
+        else:
+            price_txt = format_money(product.sale_price, currency)
+        price = QLabel(price_txt)
+        price.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        price.setStyleSheet("color: #0f172a; font-weight: 700;")
+        box.addWidget(price)
+
+        pid = product.id
+
+        def _click(_event=None, product_id=pid):
+            product_obj = ProductController.get(product_id)
+            if product_obj:
+                self._add_product(product_obj)
+
+        card.mousePressEvent = _click  # type: ignore[method-assign]
+        return card
+
     def _reload_products(self) -> None:
         products = ProductController.list(
             search=self.search_input.text().strip(),
@@ -548,6 +714,14 @@ class POSPage(QWidget):
             if product.is_out_of_stock:
                 stock_item.setForeground(Qt.GlobalColor.red)
             self.product_table.setItem(row, 2, stock_item)
+
+        self._clear_product_grid()
+        cols = 3
+        for index, product in enumerate(products):
+            card = self._make_product_card(product, currency)
+            self.product_grid_layout.addWidget(card, index // cols, index % cols)
+            self._grid_product_ids.append(product.id)
+        self.product_grid_layout.setRowStretch((len(products) + cols - 1) // cols, 1)
         self._apply_large_text()
 
     # --- Ajout au panier ---------------------------------------------------

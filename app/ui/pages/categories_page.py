@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
 
 from app.controllers.category_controller import CategoryController
 from app.controllers.unit_controller import UnitController
+from app.i18n import t
 from app.services import permissions as perms
+from app.ui.dialogs.category_dialog import CategoryDialog
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, make_card, page_title, section_title, warn
 
@@ -32,7 +34,7 @@ class CategoriesPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
-        layout.addWidget(page_title("Catégories & Unités"))
+        layout.addWidget(page_title(t("categories.title")))
 
         columns = QHBoxLayout()
         columns.setSpacing(16)
@@ -46,13 +48,13 @@ class CategoriesPage(QWidget):
         layout = QVBoxLayout(wrap)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        layout.addWidget(section_title("Catégories"))
+        layout.addWidget(section_title(t("categories.section")))
 
         row = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Rechercher une catégorie…")
+        self.search.setPlaceholderText(t("common.search"))
         self.search.textChanged.connect(self.refresh)
-        add = QPushButton("+ Ajouter")
+        add = QPushButton("+ " + t("common.add"))
         add.setObjectName("Primary")
         add.clicked.connect(self._add_category)
         row.addWidget(self.search)
@@ -60,7 +62,9 @@ class CategoriesPage(QWidget):
         layout.addLayout(row)
 
         self.cat_table = QTableWidget(0, 2)
-        self.cat_table.setHorizontalHeaderLabels(["Nom", "Description"])
+        self.cat_table.setHorizontalHeaderLabels(
+            [t("categories.name"), t("categories.description")]
+        )
         self.cat_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
@@ -71,9 +75,9 @@ class CategoriesPage(QWidget):
 
         actions = QHBoxLayout()
         actions.addStretch()
-        edit = QPushButton("Modifier")
+        edit = QPushButton(t("common.edit"))
         edit.clicked.connect(self._edit_category)
-        delete = QPushButton("Supprimer")
+        delete = QPushButton(t("common.delete"))
         delete.setObjectName("Danger")
         delete.clicked.connect(self._delete_category)
         actions.addWidget(edit)
@@ -82,9 +86,9 @@ class CategoriesPage(QWidget):
         return make_card(wrap)
 
     def _add_category(self) -> None:
-        name, ok = QInputDialog.getText(self, "Nouvelle catégorie", "Nom :")
-        if ok and name.strip():
-            CategoryController.create(name.strip())
+        dialog = CategoryDialog(parent=self)
+        if dialog.exec() and dialog.data:
+            CategoryController.create(dialog.data["name"], dialog.data["description"])
             self.refresh()
             self.state.notify_data_changed()
 
@@ -100,11 +104,11 @@ class CategoriesPage(QWidget):
             warn(self, "Sélectionnez une catégorie.")
             return
         category = CategoryController.get(cat_id)
-        name, ok = QInputDialog.getText(
-            self, "Modifier la catégorie", "Nom :", text=category.name
-        )
-        if ok and name.strip():
-            CategoryController.update(cat_id, name.strip(), category.description)
+        dialog = CategoryDialog(category=category, parent=self)
+        if dialog.exec() and dialog.data:
+            CategoryController.update(
+                cat_id, dialog.data["name"], dialog.data["description"]
+            )
             self.refresh()
             self.state.notify_data_changed()
 
@@ -127,15 +131,17 @@ class CategoriesPage(QWidget):
         layout = QVBoxLayout(wrap)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        layout.addWidget(section_title("Unités"))
+        layout.addWidget(section_title(t("categories.units")))
 
-        add = QPushButton("+ Nouvelle unité")
+        add = QPushButton("+ " + t("common.add"))
         add.setObjectName("Primary")
         add.clicked.connect(self._add_unit)
         layout.addWidget(add)
 
         self.unit_table = QTableWidget(0, 2)
-        self.unit_table.setHorizontalHeaderLabels(["Unité", "Type"])
+        self.unit_table.setHorizontalHeaderLabels(
+            [t("categories.units"), "Type"]
+        )
         self.unit_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
@@ -143,7 +149,7 @@ class CategoriesPage(QWidget):
         self.unit_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.unit_table)
 
-        delete = QPushButton("Supprimer l'unité")
+        delete = QPushButton(t("common.delete"))
         delete.setObjectName("Danger")
         delete.clicked.connect(self._delete_unit)
         layout.addWidget(delete)

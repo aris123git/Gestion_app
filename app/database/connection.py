@@ -107,6 +107,7 @@ def _migrate_schema() -> None:
             "is_active": "BOOLEAN DEFAULT 1",
             "free_amount_sale": "BOOLEAN DEFAULT 0",
             "pack_content": "NUMERIC(14, 3) DEFAULT 0",
+            "image_path": "VARCHAR(500) DEFAULT ''",
         },
         "purchases": {
             "status": "VARCHAR(20) DEFAULT 'completed'",

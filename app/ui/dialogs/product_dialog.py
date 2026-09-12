@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import shutil
+import uuid
+from pathlib import Path
 from typing import Optional
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -17,8 +23,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app import config
 from app.controllers.category_controller import CategoryController
 from app.controllers.unit_controller import UnitController
+from app.i18n import t
+from app.services import catalog_features
 from app.ui.widgets.helpers import warn
 
 
@@ -28,10 +37,11 @@ class ProductDialog(QDialog):
     def __init__(self, product=None, parent=None):
         super().__init__(parent)
         self.product = product
-        self.setWindowTitle("Produit")
+        self.setWindowTitle(t("pos.product"))
         self.setModal(True)
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(520)
         self.data: Optional[dict] = None
+        self._image_path = ""
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -87,12 +97,41 @@ class ProductDialog(QDialog):
         form.addRow("Mode de vente", self.free_amount_sale)
         form.addRow("", self.free_hint)
         form.addRow("Statut", self.is_active)
+
+        # Image produit (utile quand le catalogue images est activé).
+        self._image_preview = QLabel(t("product.no_image"))
+        self._image_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._image_preview.setFixedSize(120, 120)
+        self._image_preview.setStyleSheet(
+            "border: 1px dashed #cbd5e1; border-radius: 8px; color: #94a3b8;"
+        )
+        self._image_preview.setScaledContents(False)
+        img_btns = QHBoxLayout()
+        pick = QPushButton(t("product.choose_image"))
+        pick.clicked.connect(self._pick_image)
+        clear = QPushButton(t("product.clear_image"))
+        clear.clicked.connect(self._clear_image)
+        img_btns.addWidget(pick)
+        img_btns.addWidget(clear)
+        img_wrap = QVBoxLayout()
+        img_wrap.addWidget(self._image_preview, alignment=Qt.AlignmentFlag.AlignLeft)
+        img_wrap.addLayout(img_btns)
+        form.addRow(t("product.image"), img_wrap)
+        # Toujours permettre d'attacher une image ; la grille POS dépend du réglage.
+        show_images = catalog_features.product_images_enabled()
+        self._image_preview.setVisible(True)
+        pick.setToolTip(
+            t("settings.catalog_images_tip")
+            if show_images
+            else "Activez « produits avec images » dans Paramètres pour l'afficher en caisse."
+        )
+
         layout.addLayout(form)
 
         buttons = QHBoxLayout()
-        cancel = QPushButton("Annuler")
+        cancel = QPushButton(t("common.cancel"))
         cancel.clicked.connect(self.reject)
-        save = QPushButton("Enregistrer")
+        save = QPushButton(t("common.save"))
         save.setObjectName("Primary")
         save.clicked.connect(self._save)
         buttons.addWidget(cancel)
@@ -122,6 +161,47 @@ class ProductDialog(QDialog):
         self.free_hint.setVisible(bool(enabled))
         self.pack_content.setEnabled(bool(enabled) or self.pack_content.value() > 0)
 
+    def _show_image_preview(self, path: str) -> None:
+        if path and Path(path).is_file():
+            pix = QPixmap(path)
+            if not pix.isNull():
+                self._image_preview.setPixmap(
+                    pix.scaled(
+                        116,
+                        116,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                )
+                self._image_preview.setText("")
+                return
+        self._image_preview.setPixmap(QPixmap())
+        self._image_preview.setText(t("product.no_image"))
+
+    def _pick_image(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            t("product.choose_image"),
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp *.bmp)",
+        )
+        if not path:
+            return
+        config.ensure_directories()
+        src = Path(path)
+        dest = config.PRODUCT_IMAGE_DIR / f"{uuid.uuid4().hex}{src.suffix.lower()}"
+        try:
+            shutil.copy2(src, dest)
+        except OSError as exc:
+            warn(self, str(exc))
+            return
+        self._image_path = str(dest)
+        self._show_image_preview(self._image_path)
+
+    def _clear_image(self) -> None:
+        self._image_path = ""
+        self._show_image_preview("")
+
     def _fill(self, product) -> None:
         self.name.setText(product.name)
         self.barcode.setText(product.barcode)
@@ -142,6 +222,8 @@ class ProductDialog(QDialog):
         self.min_stock.setValue(float(product.min_stock))
         self.free_amount_sale.setChecked(bool(getattr(product, "free_amount_sale", False)))
         self.is_active.setChecked(bool(product.is_active))
+        self._image_path = str(getattr(product, "image_path", "") or "")
+        self._show_image_preview(self._image_path)
 
     def _save(self) -> None:
         if not self.name.text().strip():
@@ -175,6 +257,7 @@ class ProductDialog(QDialog):
             "quantity": self.quantity.value(),
             "min_stock": self.min_stock.value(),
             "free_amount_sale": self.free_amount_sale.isChecked(),
+            "image_path": self._image_path,
             "is_active": self.is_active.isChecked(),
         }
         self.accept()

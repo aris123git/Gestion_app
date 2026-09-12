@@ -43,6 +43,7 @@ ASSETS_DIR = _assets_dir()
 DATA_DIR = _default_data_dir()
 BACKUP_DIR = DATA_DIR / "backups"
 LOGO_DIR = DATA_DIR / "logos"
+PRODUCT_IMAGE_DIR = DATA_DIR / "product_images"
 TICKET_DIR = DATA_DIR / "tickets"
 EXPORT_DIR = DATA_DIR / "exports"
 
@@ -51,7 +52,14 @@ DATABASE_FILE = DATA_DIR / "gestion.db"
 
 def ensure_directories() -> None:
     """Crée l'arborescence de stockage si nécessaire (idempotent)."""
-    for directory in (DATA_DIR, BACKUP_DIR, LOGO_DIR, TICKET_DIR, EXPORT_DIR):
+    for directory in (
+        DATA_DIR,
+        BACKUP_DIR,
+        LOGO_DIR,
+        PRODUCT_IMAGE_DIR,
+        TICKET_DIR,
+        EXPORT_DIR,
+    ):
         directory.mkdir(parents=True, exist_ok=True)
 
 

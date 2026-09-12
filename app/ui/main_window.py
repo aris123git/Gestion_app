@@ -57,42 +57,44 @@ logger = logging.getLogger(__name__)
 
 def build_nav_items():
     """Navigation selon le produit NexaGes (Gestion App | Maquis Caisse)."""
+    from app.i18n import t
+
     common_tail = [
-        ("Rapports", "📈", ReportsPage, perms.VIEW_REPORTS),
-        ("Journal d'audit", "📝", AuditPage, perms.VIEW_AUDIT),
-        ("Assistant", "💡", AssistantPage, perms.VIEW_ASSISTANT),
-        ("Utilisateurs", "🔐", UsersPage, perms.MANAGE_USERS),
-        ("Paramètres", "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
+        (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
+        (t("nav.audit"), "📝", AuditPage, perms.VIEW_AUDIT),
+        (t("nav.assistant"), "💡", AssistantPage, perms.VIEW_ASSISTANT),
+        (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
+        (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
     ]
     if product_profile.is_maquis():
         return [
-            ("Caisse", "🛒", POSPage, perms.SELL),
-            ("Tables", "🪑", TablesPage, perms.SELL),
-            ("Commandes", "🍽️", OrdersPage, perms.SELL),
-            ("Tableau de bord", "📊", DashboardPage, perms.VIEW_DASHBOARD),
-            ("Produits", "📦", ProductsPage, perms.VIEW_PRODUCTS),
-            ("Catégories", "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
-            ("Stock", "📥", StockPage, perms.MANAGE_STOCK),
-            ("Achats", "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
-            ("Clients", "👥", ClientsPage, perms.MANAGE_CLIENTS),
-            ("Dettes", "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
-            ("Avoirs", "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
-            ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
-            ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
+            (t("nav.pos"), "🛒", POSPage, perms.SELL),
+            (t("nav.tables"), "🪑", TablesPage, perms.SELL),
+            (t("nav.orders"), "🍽️", OrdersPage, perms.SELL),
+            (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
+            (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
+            (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
+            (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
+            (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
+            (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
+            (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
+            (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
+            (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
+            (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
             *common_tail,
         ]
     return [
-        ("Caisse", "🛒", POSPage, perms.SELL),
-        ("Tableau de bord", "📊", DashboardPage, perms.VIEW_DASHBOARD),
-        ("Produits", "📦", ProductsPage, perms.VIEW_PRODUCTS),
-        ("Catégories", "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
-        ("Stock", "📥", StockPage, perms.MANAGE_STOCK),
-        ("Achats", "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
-        ("Clients", "👥", ClientsPage, perms.MANAGE_CLIENTS),
-        ("Dettes", "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
-        ("Avoirs", "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
-        ("Fournisseurs", "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
-        ("Dépenses", "💸", ExpensesPage, perms.MANAGE_EXPENSES),
+        (t("nav.pos"), "🛒", POSPage, perms.SELL),
+        (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
+        (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
+        (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
+        (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
+        (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
+        (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
+        (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
+        (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
+        (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
+        (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
         *common_tail,
     ]
 

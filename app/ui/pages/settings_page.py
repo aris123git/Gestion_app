@@ -204,6 +204,20 @@ class SettingsPage(QWidget):
         form.addRow("TVA", self.vat)
         form.addRow("Logo", logo_row)
 
+        from app.i18n import LANGUAGE_LABELS, get_language, t
+
+        self.ui_language = QComboBox()
+        for code, label in LANGUAGE_LABELS.items():
+            self.ui_language.addItem(label, code)
+        lang_idx = self.ui_language.findData(get_language())
+        if lang_idx >= 0:
+            self.ui_language.setCurrentIndex(lang_idx)
+        form.addRow(t("common.language"), self.ui_language)
+        lang_hint = QLabel(t("settings.language_hint"))
+        lang_hint.setWordWrap(True)
+        lang_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        form.addRow("", lang_hint)
+
         self.product_profile_label = QLabel(product_profile.product_label())
         self.product_profile_label.setStyleSheet("font-weight: 600;")
         # Pas de curseur « main » : geste connu seulement de l'installateur.
@@ -218,6 +232,21 @@ class SettingsPage(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #64748b; font-size: 12px;")
         form.addRow("", hint)
+
+        # Catalogue caisse : images + navigation catégories (mercerie…).
+        from app.services import catalog_features
+
+        catalog_title = QLabel(f"<b>{t('settings.catalog_section')}</b>")
+        form.addRow(catalog_title)
+        self.catalog_images = QCheckBox(t("settings.catalog_images"))
+        self.catalog_images.setToolTip(t("settings.catalog_images_tip"))
+        self.catalog_images.setChecked(catalog_features.product_images_enabled())
+        self.catalog_categories = QCheckBox(t("settings.catalog_categories"))
+        self.catalog_categories.setToolTip(t("settings.catalog_categories_tip"))
+        self.catalog_categories.setChecked(catalog_features.category_browser_enabled())
+        form.addRow("", self.catalog_images)
+        form.addRow("", self.catalog_categories)
+
         outer.addWidget(make_card(form_widget))
 
         save = QPushButton("Enregistrer les informations")
@@ -262,6 +291,9 @@ class SettingsPage(QWidget):
         self.logo_label.clear()
 
     def _save_shop(self) -> None:
+        from app.i18n import get_language, set_language, t
+        from app.services import catalog_features
+
         logo_stored = self.logo_label.text()
         if self._logo_path:
             config.ensure_directories()
@@ -271,6 +303,8 @@ class SettingsPage(QWidget):
                 logo_stored = str(dest)
             except OSError:
                 logo_stored = self._logo_path
+        previous_lang = get_language()
+        new_lang = self.ui_language.currentData() or previous_lang
         settings_service.save_shop_info(
             name=self.name.text().strip(),
             address=self.address.text().strip(),
@@ -283,10 +317,29 @@ class SettingsPage(QWidget):
             is_configured=True,
         )
         settings_service.set_setting("shop_fax", self.fax.text().strip())
+        catalog_features.set_product_images_enabled(self.catalog_images.isChecked())
+        catalog_features.set_category_browser_enabled(
+            self.catalog_categories.isChecked()
+        )
+        lang_changed = set_language(new_lang) != previous_lang
         audit_service.log_action(
             "Paramètres commerce", "ShopInfo", "",
             self.state.user_id, getattr(self.state.current_user, "username", ""),
         )
+        if lang_changed:
+            info(
+                self,
+                t(
+                    "settings.language_saved",
+                    restart=t("common.restart_required"),
+                ),
+            )
+            app = QApplication.instance()
+            if app is not None:
+                app.quit()
+            else:
+                QApplication.quit()
+            return
         info(self, "Informations enregistrées.")
         self.state.notify_data_changed()
 

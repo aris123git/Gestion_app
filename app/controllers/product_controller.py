@@ -143,6 +143,7 @@ class ProductController:
                 quantity=quantity,
                 min_stock=to_float(data.get("min_stock")),
                 free_amount_sale=bool(data.get("free_amount_sale", False)),
+                image_path=str(data.get("image_path") or "").strip(),
                 is_active=bool(data.get("is_active", True)),
             )
             session.add(product)
@@ -197,6 +198,8 @@ class ProductController:
             product.free_amount_sale = bool(
                 data.get("free_amount_sale", product.free_amount_sale)
             )
+            if "image_path" in data:
+                product.image_path = str(data.get("image_path") or "").strip()
             product.is_active = bool(data.get("is_active", True))
             ProductController._record_quantity_adjustment(
                 session,

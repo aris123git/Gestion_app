@@ -125,6 +125,11 @@ def run() -> int:
         except Exception:
             logger.exception("Échec de la sauvegarde automatique au démarrage.")
 
+        # Charge la langue UI (fr / en / zh) avant de construire les écrans.
+        from app.i18n import get_language
+
+        get_language()
+
         app = QApplication.instance() or QApplication([])
         app.setApplicationName(product_profile.PARENT_NAME)
         app.setOrganizationName(product_profile.PARENT_VENDOR)

@@ -42,6 +42,9 @@ class Product(Base, TimestampMixin):
     free_amount_sale: Mapped[bool] = mapped_column(Boolean, default=False)
     pack_content: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
 
+    # Chemin local de l'image produit (dossier DATA_DIR/product_images).
+    image_path: Mapped[str] = mapped_column(String(500), default="")
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     category: Mapped[Optional["Category"]] = relationship(  # noqa: F821
