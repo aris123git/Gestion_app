@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.i18n import t
 from app.services import product_profile
 from app.ui.widgets.helpers import activate_and_center
 
@@ -21,7 +22,9 @@ class ProductChoiceDialog(QDialog):
 
     def __init__(self, parent=None, *, switch_mode: bool = False):
         super().__init__(parent)
-        self.setWindowTitle(f"{product_profile.PARENT_NAME} — Choix du produit")
+        self.setWindowTitle(
+            f"{product_profile.PARENT_NAME} — {t('Choix du produit')}"
+        )
         self.setMinimumSize(720, 420)
         self.selected: str | None = None
         self.switch_mode = switch_mode
@@ -36,20 +39,24 @@ class ProductChoiceDialog(QDialog):
         brand.setStyleSheet("font-size: 28px; font-weight: 800; color: #0f172a;")
         root.addWidget(brand)
 
-        vendor = QLabel(f"Logiciel de gestion — {product_profile.PARENT_VENDOR}")
+        vendor = QLabel(f"{t('Logiciel de gestion')} — {product_profile.PARENT_VENDOR}")
         vendor.setAlignment(Qt.AlignmentFlag.AlignCenter)
         vendor.setStyleSheet("color: #64748b; font-size: 13px;")
         root.addWidget(vendor)
 
         if switch_mode:
-            intro_text = (
+            intro_text = t(
                 "Choisissez le produit à présenter sur ce poste. "
                 "Après confirmation, l'application devra être relancée."
             )
             if current:
-                intro_text += f" Produit actuel : <b>{product_profile.product_label(current)}</b>."
+                intro_text += (
+                    " "
+                    + t("Produit actuel :")
+                    + f" <b>{product_profile.product_label(current)}</b>."
+                )
         else:
-            intro_text = (
+            intro_text = t(
                 "Nouvel ordinateur détecté. Choisissez le produit à utiliser sur ce poste. "
                 "Ce choix est enregistré et ne sera plus demandé."
             )
@@ -64,25 +71,27 @@ class ProductChoiceDialog(QDialog):
         cards.addWidget(
             self._build_card(
                 product_profile.PRODUCT_GESTION,
-                product_profile.PRODUCT_LABELS[product_profile.PRODUCT_GESTION],
-                product_profile.PRODUCT_DESCRIPTIONS[product_profile.PRODUCT_GESTION],
+                t(product_profile.PRODUCT_LABELS[product_profile.PRODUCT_GESTION]),
+                t(product_profile.PRODUCT_DESCRIPTIONS[product_profile.PRODUCT_GESTION]),
                 current=current,
             )
         )
         cards.addWidget(
             self._build_card(
                 product_profile.PRODUCT_MAQUIS,
-                product_profile.PRODUCT_LABELS[product_profile.PRODUCT_MAQUIS],
-                product_profile.PRODUCT_DESCRIPTIONS[product_profile.PRODUCT_MAQUIS],
+                t(product_profile.PRODUCT_LABELS[product_profile.PRODUCT_MAQUIS]),
+                t(product_profile.PRODUCT_DESCRIPTIONS[product_profile.PRODUCT_MAQUIS]),
                 current=current,
             )
         )
         root.addLayout(cards, 1)
 
         if switch_mode:
-            hint_text = "Réservé à la démonstration. Relancez l'application après le changement."
+            hint_text = t(
+                "Réservé à la démonstration. Relancez l'application après le changement."
+            )
         else:
-            hint_text = (
+            hint_text = t(
                 "Ensuite : saisie de la clé d'activation, puis configuration du commerce."
             )
         hint = QLabel(hint_text)
@@ -115,7 +124,8 @@ class ProductChoiceDialog(QDialog):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(10)
 
-        label = QLabel(title + (" (actuel)" if is_current else ""))
+        current_bit = f" ({t('actuel')})" if is_current else ""
+        label = QLabel(title + current_bit)
         label.setStyleSheet("font-size: 20px; font-weight: 700;")
         layout.addWidget(label)
 
@@ -125,7 +135,9 @@ class ProductChoiceDialog(QDialog):
         layout.addWidget(desc, 1)
 
         btn = QPushButton(
-            f"Rester sur {title}" if is_current else f"Choisir {title}"
+            t("Rester sur {title}").format(title=title)
+            if is_current
+            else t("Choisir {title}").format(title=title)
         )
         btn.setObjectName("Primary")
         btn.setMinimumHeight(40)

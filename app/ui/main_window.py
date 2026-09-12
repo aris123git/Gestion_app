@@ -1,25 +1,11 @@
 """Fenêtre principale : barre latérale de navigation + pages empilées."""
-
 from __future__ import annotations
-
+from app.i18n import t
 import logging
 import time
 from typing import Optional
-
 from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtWidgets import (
-    QApplication,
-    QButtonGroup,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QScrollArea,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
-)
-
+from PySide6.QtWidgets import QApplication, QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 from app import __version__
 from app.services import permissions as perms
 from app.services import product_profile, settings_service
@@ -42,79 +28,30 @@ from app.ui.pages.suppliers_page import SuppliersPage
 from app.ui.pages.tables_page import TablesPage
 from app.ui.pages.users_page import UsersPage
 from app.ui.dialogs.global_search_dialog import GlobalSearchDialog
-from app.ui.responsive import (
-    SIDEBAR_DRAWER,
-    SIDEBAR_FULL,
-    SIDEBAR_ICONS,
-    SIDEBAR_WIDTH_FULL,
-    SIDEBAR_WIDTH_ICONS,
-    LayoutProfile,
-)
+from app.ui.responsive import SIDEBAR_DRAWER, SIDEBAR_FULL, SIDEBAR_ICONS, SIDEBAR_WIDTH_FULL, SIDEBAR_WIDTH_ICONS, LayoutProfile
 from app.ui.state import AppState
-
 logger = logging.getLogger(__name__)
-
 
 def build_nav_items():
     """Navigation selon le produit NexaGes (Gestion App | Maquis Caisse)."""
     from app.i18n import t
-
-    common_tail = [
-        (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
-        (t("nav.audit"), "📝", AuditPage, perms.VIEW_AUDIT),
-        (t("nav.assistant"), "💡", AssistantPage, perms.VIEW_ASSISTANT),
-        (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
-        (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
-    ]
+    common_tail = [(t('nav.reports'), '📈', ReportsPage, perms.VIEW_REPORTS), (t('nav.audit'), '📝', AuditPage, perms.VIEW_AUDIT), (t('nav.assistant'), '💡', AssistantPage, perms.VIEW_ASSISTANT), (t('nav.users'), '🔐', UsersPage, perms.MANAGE_USERS), (t('nav.settings'), '⚙️', SettingsPage, perms.MANAGE_SETTINGS)]
     if product_profile.is_maquis():
-        return [
-            (t("nav.pos"), "🛒", POSPage, perms.SELL),
-            (t("nav.tables"), "🪑", TablesPage, perms.SELL),
-            (t("nav.orders"), "🍽️", OrdersPage, perms.SELL),
-            (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
-            (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
-            (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
-            (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
-            (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
-            (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
-            (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
-            (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
-            (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
-            (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
-            *common_tail,
-        ]
-    return [
-        (t("nav.pos"), "🛒", POSPage, perms.SELL),
-        (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
-        (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
-        (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
-        (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
-        (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
-        (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
-        (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
-        (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
-        (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
-        (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
-        *common_tail,
-    ]
-
-
-# Construit au chargement du module ; MainWindow peut reconstruire si besoin.
+        return [(t('nav.pos'), '🛒', POSPage, perms.SELL), (t('nav.tables'), '🪑', TablesPage, perms.SELL), (t('nav.orders'), '🍽️', OrdersPage, perms.SELL), (t('nav.dashboard'), '📊', DashboardPage, perms.VIEW_DASHBOARD), (t('nav.products'), '📦', ProductsPage, perms.VIEW_PRODUCTS), (t('nav.categories'), '🏷️', CategoriesPage, perms.MANAGE_CATEGORIES), (t('nav.stock'), '📥', StockPage, perms.MANAGE_STOCK), (t('nav.purchases'), '🧾', PurchasesPage, perms.MANAGE_PURCHASES), (t('nav.clients'), '👥', ClientsPage, perms.MANAGE_CLIENTS), (t('nav.debts'), '💳', DebtsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.credits'), '🎟️', AvoirsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.suppliers'), '🚚', SuppliersPage, perms.MANAGE_SUPPLIERS), (t('nav.expenses'), '💸', ExpensesPage, perms.MANAGE_EXPENSES), *common_tail]
+    return [(t('nav.pos'), '🛒', POSPage, perms.SELL), (t('nav.dashboard'), '📊', DashboardPage, perms.VIEW_DASHBOARD), (t('nav.products'), '📦', ProductsPage, perms.VIEW_PRODUCTS), (t('nav.categories'), '🏷️', CategoriesPage, perms.MANAGE_CATEGORIES), (t('nav.stock'), '📥', StockPage, perms.MANAGE_STOCK), (t('nav.purchases'), '🧾', PurchasesPage, perms.MANAGE_PURCHASES), (t('nav.clients'), '👥', ClientsPage, perms.MANAGE_CLIENTS), (t('nav.debts'), '💳', DebtsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.credits'), '🎟️', AvoirsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.suppliers'), '🚚', SuppliersPage, perms.MANAGE_SUPPLIERS), (t('nav.expenses'), '💸', ExpensesPage, perms.MANAGE_EXPENSES), *common_tail]
 NAV_ITEMS = build_nav_items()
 
-
 class MainWindow(QWidget):
+
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
         global NAV_ITEMS
         NAV_ITEMS = build_nav_items()
         self.setWindowTitle(product_profile.window_title())
-        self.setObjectName("MainWindow")
-        # Compatible petits écrans ; taille initiale = écran disponible (pas 1920 forcé).
+        self.setObjectName('MainWindow')
         self.setMinimumSize(640, 480)
         from app.ui.widgets.dialog_fit import available_screen_size
-
         sw, sh = available_screen_size(self)
         self.resize(max(640, min(sw, 1600)), max(480, min(sh, 900)))
         self._idle_timeout_seconds = 120 * 60
@@ -123,77 +60,64 @@ class MainWindow(QWidget):
         self._drawer_open = False
         self._sidebar_mode = SIDEBAR_FULL
         self._applying_layout = False
-        # Coalescer les resize (animation maximize Windows = dizaines d'events).
         self._viewport_timer = QTimer(self)
         self._viewport_timer.setSingleShot(True)
         self._viewport_timer.setInterval(0)
         self._viewport_timer.timeout.connect(self._publish_viewport)
-
         self.pages: list[Optional[QWidget]] = []
         self._nav_buttons: list[Optional[QPushButton]] = []
-        self._nav_meta: list[tuple[str, str]] = []  # (label, icon) par index NAV
-
+        self._nav_meta: list[tuple[str, str]] = []
         shell = QVBoxLayout(self)
         shell.setContentsMargins(0, 0, 0, 0)
         shell.setSpacing(0)
-
         self._topbar = self._build_topbar()
         shell.addWidget(self._topbar)
-
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
         self._body_layout = body
-
         self._sidebar = self._build_sidebar()
         body.addWidget(self._sidebar)
-
         self.stack = QStackedWidget()
         body.addWidget(self.stack, 1)
         shell.addLayout(body, 1)
-
         self._build_pages()
         self.state.data_changed.connect(self._refresh_current)
         self.state.layout_changed.connect(self._apply_layout)
         self._idle_timer = QTimer(self)
-        self._idle_timer.setInterval(60_000)
+        self._idle_timer.setInterval(60000)
         self._idle_timer.timeout.connect(self._check_idle_timeout)
         self._idle_timer.timeout.connect(self._refresh_auth_user)
         self._idle_timer.start()
-        # Sauvegarde automatique périodique (vérifie l\'échéance sans bloquer).
         self._backup_timer = QTimer(self)
-        self._backup_timer.setInterval(30 * 60_000)  # toutes les 30 minutes
+        self._backup_timer.setInterval(30 * 60000)
         self._backup_timer.timeout.connect(self._run_periodic_backup)
         self._backup_timer.start()
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
         self.select_page(0)
-        # Premier calcul après affichage (resizeEvent le fera aussi).
         self._viewport_timer.start()
 
     def _build_topbar(self) -> QWidget:
         bar = QWidget()
-        bar.setObjectName("TopBar")
+        bar.setObjectName('TopBar')
         bar.setFixedHeight(48)
         bar.hide()
         row = QHBoxLayout(bar)
         row.setContentsMargins(10, 4, 12, 4)
         row.setSpacing(10)
-
-        self._menu_button = QPushButton("☰")
-        self._menu_button.setObjectName("TopBarButton")
+        self._menu_button = QPushButton(t('☰'))
+        self._menu_button.setObjectName('TopBarButton')
         self._menu_button.setFixedSize(40, 36)
-        self._menu_button.setToolTip("Menu")
+        self._menu_button.setToolTip(t('Menu'))
         self._menu_button.clicked.connect(self._toggle_drawer)
         row.addWidget(self._menu_button)
-
         self._topbar_title = QLabel(product_profile.PARENT_NAME)
-        self._topbar_title.setObjectName("TopBarTitle")
+        self._topbar_title.setObjectName('TopBarTitle')
         row.addWidget(self._topbar_title, 1)
-
-        self._topbar_user = QLabel("")
-        self._topbar_user.setObjectName("TopBarMeta")
+        self._topbar_user = QLabel('')
+        self._topbar_user.setObjectName('TopBarMeta')
         row.addWidget(self._topbar_user)
         return bar
 
@@ -206,56 +130,50 @@ class MainWindow(QWidget):
         """Déclenche une sauvegarde automatique si la fréquence est échue."""
         try:
             from app.services import backup_service
-
             backup_service.run_startup_auto_backup()
         except Exception:
-            logger.exception("Échec de la sauvegarde automatique périodique.")
+            logger.exception('Échec de la sauvegarde automatique périodique.')
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
-        sidebar.setObjectName("Sidebar")
+        sidebar.setObjectName('Sidebar')
         sidebar.setFixedWidth(SIDEBAR_WIDTH_FULL)
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(14, 18, 14, 18)
         layout.setSpacing(6)
         self._sidebar_layout = layout
-
         shop = settings_service.get_shop_info()
         title = QLabel(shop.name or product_profile.PARENT_NAME)
-        title.setObjectName("SidebarTitle")
+        title.setObjectName('SidebarTitle')
         title.setWordWrap(True)
         product_bit = product_profile.product_label()
-        subtitle = QLabel(f"{product_bit} · {shop.shop_type or 'Commerce'}")
-        subtitle.setObjectName("SidebarSubtitle")
+        subtitle = QLabel(f'{product_bit} · {shop.shop_type or 'Commerce'}')
+        subtitle.setObjectName('SidebarSubtitle')
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addSpacing(8)
         self._title_label = title
         self._subtitle_label = subtitle
-
-        # Navigation scrollable (évite le clipping sur écrans 768 px de haut).
         nav_scroll = QScrollArea()
         nav_scroll.setWidgetResizable(True)
         nav_scroll.setFrameShape(QFrame.Shape.NoFrame)
         nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        nav_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        nav_scroll.setStyleSheet('QScrollArea { background: transparent; }')
         nav_host = QWidget()
-        nav_host.setObjectName("Sidebar")
+        nav_host.setObjectName('Sidebar')
         nav_layout = QVBoxLayout(nav_host)
         nav_layout.setContentsMargins(0, 0, 0, 0)
         nav_layout.setSpacing(4)
         self._nav_layout = nav_layout
-
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
-
         for index, (label, icon, _page, permission) in enumerate(NAV_ITEMS):
             self._nav_meta.append((label, icon))
             if not self._allowed(permission):
                 self._nav_buttons.append(None)
                 continue
-            button = QPushButton(f"{icon}  {label}")
-            button.setObjectName("NavButton")
+            button = QPushButton(f'{icon}  {label}')
+            button.setObjectName('NavButton')
             button.setToolTip(label)
             button.setAccessibleName(label)
             button.setCheckable(True)
@@ -264,48 +182,40 @@ class MainWindow(QWidget):
             nav_layout.addWidget(button)
             self._nav_group.addButton(button)
             self._nav_buttons.append(button)
-
         nav_layout.addStretch()
         nav_scroll.setWidget(nav_host)
         layout.addWidget(nav_scroll, 1)
-
         self._search_btn: Optional[QPushButton] = None
         if self._can_search():
-            search_btn = QPushButton("🔎  Recherche")
-            search_btn.setObjectName("NavButton")
-            search_btn.setToolTip("Recherche")
-            search_btn.setAccessibleName("Recherche")
+            search_btn = QPushButton(t('🔎  Recherche'))
+            search_btn.setObjectName('NavButton')
+            search_btn.setToolTip(t('Recherche'))
+            search_btn.setAccessibleName(t('Recherche'))
             search_btn.clicked.connect(self._open_search)
             layout.addWidget(search_btn)
             self._search_btn = search_btn
-
         user = self.state.current_user
-        self._user_label = QLabel(
-            f"👤 {user.full_name or user.username}\n{user.role}" if user else ""
-        )
-        self._user_label.setObjectName("SidebarUser")
+        self._user_label = QLabel(f'👤 {user.full_name or user.username}\n{user.role}' if user else '')
+        self._user_label.setObjectName('SidebarUser')
         layout.addWidget(self._user_label)
-
-        logout = QPushButton("Se déconnecter")
-        logout.setObjectName("NavButton")
-        logout.setToolTip("Se déconnecter")
-        logout.setAccessibleName("Se déconnecter")
+        logout = QPushButton(t('Se déconnecter'))
+        logout.setObjectName('NavButton')
+        logout.setToolTip(t('Se déconnecter'))
+        logout.setAccessibleName(t('Se déconnecter'))
         logout.clicked.connect(self._logout)
         layout.addWidget(logout)
         self._logout_btn = logout
-
         self._close_cash_btn: Optional[QPushButton] = None
         if self.state.can(perms.SELL):
-            close_cash = QPushButton("Fermer la caisse")
-            close_cash.setObjectName("NavButton")
-            close_cash.setToolTip("Fermer la caisse")
-            close_cash.setAccessibleName("Fermer la caisse")
+            close_cash = QPushButton(t('Fermer la caisse'))
+            close_cash.setObjectName('NavButton')
+            close_cash.setToolTip(t('Fermer la caisse'))
+            close_cash.setAccessibleName(t('Fermer la caisse'))
             close_cash.clicked.connect(self._close_cash_session)
             layout.addWidget(close_cash)
             self._close_cash_btn = close_cash
-
-        version = QLabel(f"v{__version__}")
-        version.setObjectName("SidebarVersion")
+        version = QLabel(f'v{__version__}')
+        version.setObjectName('SidebarVersion')
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
         self._version_label = version
@@ -329,9 +239,8 @@ class MainWindow(QWidget):
             return
         self.state.update_viewport(self.width(), self.height())
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        # Coalesce : une seule publication après la rafale d'events resize.
         self._viewport_timer.start()
 
     def _apply_layout(self, profile: LayoutProfile) -> None:
@@ -341,11 +250,10 @@ class MainWindow(QWidget):
         try:
             mode = profile.sidebar_mode
             self._sidebar_mode = mode
-            self.setProperty("widthMode", profile.width_mode)
-            self.setProperty("heightMode", profile.height_mode)
-            self.setProperty("density", profile.density)
-            self.setProperty("sidebarMode", mode)
-
+            self.setProperty('widthMode', profile.width_mode)
+            self.setProperty('heightMode', profile.height_mode)
+            self.setProperty('density', profile.density)
+            self.setProperty('sidebarMode', mode)
             if mode == SIDEBAR_DRAWER:
                 self._topbar.show()
                 shop = settings_service.get_shop_info()
@@ -365,19 +273,18 @@ class MainWindow(QWidget):
                 self._sidebar.show()
                 self._sidebar.setFixedWidth(SIDEBAR_WIDTH_ICONS)
                 self._set_nav_labels(full=False)
-                margins = 6 if profile.density == "compact" else 8
+                margins = 6 if profile.density == 'compact' else 8
                 self._sidebar_layout.setContentsMargins(margins, 10, margins, 10)
-                # Largeur forcée ; alignement via QSS `#MainWindow[sidebarMode=icons]`.
                 for button in self._nav_buttons:
                     if button is not None:
                         button.setFixedHeight(40)
                         button.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
-                        button.setStyleSheet("")
+                        button.setStyleSheet('')
                 for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
                     if extra is not None:
                         extra.setFixedHeight(40)
                         extra.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
-                        extra.setStyleSheet("")
+                        extra.setStyleSheet('')
             else:
                 self._topbar.hide()
                 self._drawer_open = False
@@ -390,17 +297,14 @@ class MainWindow(QWidget):
                         button.setMinimumWidth(0)
                         button.setMaximumWidth(16777215)
                         button.setFixedHeight(40)
-                        button.setStyleSheet("")
+                        button.setStyleSheet('')
                 for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
                     if extra is not None:
                         extra.setMinimumWidth(0)
                         extra.setMaximumWidth(16777215)
-                        extra.setStyleSheet("")
-
+                        extra.setStyleSheet('')
             self.style().unpolish(self)
             self.style().polish(self)
-
-            # Densité : réduire un peu les marges sidebar en écran court.
             if profile.is_short and mode != SIDEBAR_DRAWER:
                 self._sidebar_layout.setSpacing(4)
         finally:
@@ -416,28 +320,28 @@ class MainWindow(QWidget):
                 continue
             label, icon = self._nav_meta[index]
             if full:
-                button.setText(f"{icon}  {label}")
+                button.setText(f'{icon}  {label}')
                 button.setToolTip(label)
             else:
                 button.setText(icon)
                 button.setToolTip(label)
         if self._search_btn is not None:
             if full:
-                self._search_btn.setText("🔎  Recherche")
+                self._search_btn.setText('🔎  Recherche')
             else:
-                self._search_btn.setText("🔎")
-                self._search_btn.setToolTip("Recherche")
+                self._search_btn.setText('🔎')
+                self._search_btn.setToolTip(t('Recherche'))
         if full:
-            self._logout_btn.setText("Se déconnecter")
+            self._logout_btn.setText('Se déconnecter')
         else:
-            self._logout_btn.setText("🚪")
-            self._logout_btn.setToolTip("Se déconnecter")
+            self._logout_btn.setText('🚪')
+            self._logout_btn.setToolTip(t('Se déconnecter'))
         if self._close_cash_btn is not None:
             if full:
-                self._close_cash_btn.setText("Fermer la caisse")
+                self._close_cash_btn.setText('Fermer la caisse')
             else:
-                self._close_cash_btn.setText("🧾")
-                self._close_cash_btn.setToolTip("Fermer la caisse")
+                self._close_cash_btn.setText('🧾')
+                self._close_cash_btn.setToolTip(t('Fermer la caisse'))
 
     def _build_pages(self) -> None:
         for label, _icon, page_class, permission in NAV_ITEMS:
@@ -448,8 +352,8 @@ class MainWindow(QWidget):
             self.pages.append(page)
             self.stack.addWidget(page)
 
-    def select_page(self, index: int, refresh_auth: bool = True) -> Optional[QWidget]:
-        if refresh_auth and not self._refresh_auth_user():
+    def select_page(self, index: int, refresh_auth: bool=True) -> Optional[QWidget]:
+        if refresh_auth and (not self._refresh_auth_user()):
             return None
         if index >= len(NAV_ITEMS):
             return None
@@ -464,7 +368,7 @@ class MainWindow(QWidget):
             button.setChecked(True)
         label = NAV_ITEMS[index][0]
         self._topbar_title.setText(label)
-        if hasattr(page, "refresh"):
+        if hasattr(page, 'refresh'):
             page.refresh()
         return page
 
@@ -478,13 +382,11 @@ class MainWindow(QWidget):
         if not self._refresh_auth_user():
             return
         current = self.stack.currentWidget()
-        if current and hasattr(current, "refresh"):
+        if current and hasattr(current, 'refresh'):
             current.refresh()
         shop = settings_service.get_shop_info()
         self._title_label.setText(shop.name or product_profile.PARENT_NAME)
-        self._subtitle_label.setText(
-            f"{product_profile.product_label()} · {shop.shop_type or 'Commerce'}"
-        )
+        self._subtitle_label.setText(f'{product_profile.product_label()} · {shop.shop_type or 'Commerce'}')
         if self._topbar.isVisible():
             self._topbar_title.setText(shop.name or product_profile.PARENT_NAME)
 
@@ -496,41 +398,21 @@ class MainWindow(QWidget):
             self._navigate_search_hit(dialog.selected_hit)
 
     def _navigate_search_hit(self, hit) -> None:
-        page_label_by_kind = {
-            "client": "Clients",
-            "dette": "Clients",
-            "produit": "Produits",
-            "facture": "Rapports",
-            "fournisseur": "Fournisseurs",
-        }
-        page = self._select_page_by_label(page_label_by_kind.get(hit.kind, ""))
+        page_label_by_kind = {'client': 'Clients', 'dette': 'Clients', 'produit': 'Produits', 'facture': 'Rapports', 'fournisseur': 'Fournisseurs'}
+        page = self._select_page_by_label(page_label_by_kind.get(hit.kind, ''))
         if page is None:
             return
-        selector_by_kind = {
-            "client": "select_client",
-            "produit": "select_product",
-            "facture": "select_sale",
-            "fournisseur": "select_supplier",
-        }
+        selector_by_kind = {'client': 'select_client', 'produit': 'select_product', 'facture': 'select_sale', 'fournisseur': 'select_supplier'}
         selector_name = selector_by_kind.get(hit.kind)
         selector = getattr(page, selector_name, None) if selector_name else None
         if selector:
             selector(hit.entity_id)
 
     def _can_search(self) -> bool:
-        return any(
-            self.state.can(permission)
-            for permission in (
-                perms.VIEW_REPORTS,
-                perms.VIEW_PRODUCTS,
-                perms.MANAGE_PRODUCTS,
-                perms.MANAGE_CLIENTS,
-                perms.MANAGE_SUPPLIERS,
-            )
-        )
+        return any((self.state.can(permission) for permission in (perms.VIEW_REPORTS, perms.VIEW_PRODUCTS, perms.MANAGE_PRODUCTS, perms.MANAGE_CLIENTS, perms.MANAGE_SUPPLIERS)))
 
     def _refresh_auth_user(self) -> bool:
-        """Recharge l\'utilisateur courant et invalide les accès retirés."""
+        """Recharge l'utilisateur courant et invalide les accès retirés."""
         if self._idle_logging_out:
             return False
         had_user = self.state.current_user is not None
@@ -539,33 +421,24 @@ class MainWindow(QWidget):
             self._idle_logging_out = True
             self._logout()
             return False
-        if user and hasattr(self, "_user_label"):
-            self._user_label.setText(f"👤 {user.full_name or user.username}\n{user.role}")
-            if hasattr(self, "_topbar_user"):
+        if user and hasattr(self, '_user_label'):
+            self._user_label.setText(f'👤 {user.full_name or user.username}\n{user.role}')
+            if hasattr(self, '_topbar_user'):
                 self._topbar_user.setText(user.full_name or user.username)
         for index, button in enumerate(self._nav_buttons):
             if button is not None:
                 button.setEnabled(self._allowed(NAV_ITEMS[index][3]))
         current = self.stack.currentWidget()
-        current_index = next(
-            (i for i, page in enumerate(self.pages) if page is current),
-            None,
-        )
-        if current_index is not None and not self._allowed(NAV_ITEMS[current_index][3]):
+        current_index = next((i for i, page in enumerate(self.pages) if page is current), None)
+        if current_index is not None and (not self._allowed(NAV_ITEMS[current_index][3])):
             for index, page in enumerate(self.pages):
                 if page is not None and self._allowed(NAV_ITEMS[index][3]):
                     self.select_page(index, refresh_auth=False)
                     break
         return True
 
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802
-        if event.type() in {
-            QEvent.Type.KeyPress,
-            QEvent.Type.MouseButtonPress,
-            QEvent.Type.MouseButtonDblClick,
-            QEvent.Type.Wheel,
-            QEvent.Type.TouchBegin,
-        }:
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() in {QEvent.Type.KeyPress, QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick, QEvent.Type.Wheel, QEvent.Type.TouchBegin}:
             self._last_activity = time.monotonic()
         return super().eventFilter(obj, event)
 
@@ -580,36 +453,29 @@ class MainWindow(QWidget):
         if self.state.can(perms.SELL) and self.state.current_user:
             from app.services.cash_session_service import CashSessionService
             from app.ui.dialogs.cash_session_dialog import close_cash_session_flow
-
             if CashSessionService.get_open(self.state.current_user.id):
                 if not close_cash_session_flow(self, self.state):
-                    # Refus de fermer → rester connecté.
                     self._idle_logging_out = False
                     return
         self.state.auth.logout()
         self.close()
-        # Redémarrage du flux de connexion géré par l\'application principale.
         from app.ui.app import restart_login
-
         restart_login()
 
     def _close_cash_session(self) -> None:
         from app.ui.dialogs.cash_session_dialog import close_cash_session_flow
-
         close_cash_session_flow(self, self.state)
 
-    def showEvent(self, event) -> None:  # noqa: N802
+    def showEvent(self, event) -> None:
         super().showEvent(event)
-        # Recalcule le layout dès que la taille réelle est connue.
         self._viewport_timer.start()
-        if not getattr(self, "_cash_session_prompted", False):
+        if not getattr(self, '_cash_session_prompted', False):
             self._cash_session_prompted = True
             QTimer.singleShot(50, self._ensure_cash_session)
 
     def _windowed_size(self) -> None:
         """Repasse en fenêtre à ~90 % de l'écran disponible."""
         from app.ui.widgets.dialog_fit import available_screen_size
-
         sw, sh = available_screen_size(self)
         self.resize(max(800, int(sw * 0.9)), max(560, int(sh * 0.9)))
 
@@ -617,17 +483,14 @@ class MainWindow(QWidget):
         if not self.state.can(perms.SELL) or not self.state.current_user:
             return
         from app.ui.dialogs.cash_session_dialog import ensure_cash_session_open
-
         if not ensure_cash_session_open(self, self.state):
             self._idle_logging_out = True
             self.state.auth.logout()
             self.close()
             from app.ui.app import restart_login
-
             restart_login()
 
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        # F11 : bascule plein écran / fenêtre. Échap : quitte le plein écran.
+    def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_F11:
             if self.isFullScreen():
                 self.showNormal()
@@ -645,7 +508,7 @@ class MainWindow(QWidget):
             return
         super().keyPressEvent(event)
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event) -> None:
         self._idle_timer.stop()
         app = QApplication.instance()
         if app is not None:

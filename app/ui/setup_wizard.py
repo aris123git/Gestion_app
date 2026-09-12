@@ -1,85 +1,39 @@
 """Assistant de premier démarrage : saisie des informations du commerce."""
-
 from __future__ import annotations
-
+from app.i18n import t
 import shutil
 from pathlib import Path
-
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QComboBox,
-    QDialog,
-    QFileDialog,
-    QFormLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QVBoxLayout,
-)
-
+from PySide6.QtWidgets import QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
 from app import config
 from app.services import settings_service
 from app.ui.widgets.helpers import activate_and_center
-
-SHOP_TYPES = [
-    "Boutique",
-    "Maquis / Restaurant",
-    "Buvette / Bar",
-    "Poissonnerie",
-    "Pharmacie",
-    "Quincaillerie",
-    "Boucherie",
-    "Boulangerie",
-    "Supérette",
-    "Magasin d'électronique",
-    "Autre commerce",
-]
-
-CURRENCIES = [
-    "FCFA",
-    "XOF (UEMOA)",
-    "XAF (CEMAC)",
-    "EUR",
-    "USD",
-    "MAD",
-    "DZD",
-    "TND",
-    "GNF",
-]
-
+SHOP_TYPES = ['Boutique', 'Maquis / Restaurant', 'Buvette / Bar', 'Poissonnerie', 'Pharmacie', 'Quincaillerie', 'Boucherie', 'Boulangerie', 'Supérette', "Magasin d'électronique", 'Autre commerce']
+CURRENCIES = ['FCFA', 'XOF (UEMOA)', 'XAF (CEMAC)', 'EUR', 'USD', 'MAD', 'DZD', 'TND', 'GNF']
 
 class SetupWizard(QDialog):
     """Recueille les informations de base du commerce au tout premier lancement."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Bienvenue - Configuration du commerce")
+        self.setWindowTitle(t('Bienvenue - Configuration du commerce'))
         self.setModal(True)
         self.setMinimumWidth(520)
-        self._logo_path = ""
-
+        self._logo_path = ''
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(14)
-
-        title = QLabel("Configuration initiale")
-        title.setObjectName("PageTitle")
-        subtitle = QLabel(
-            "Renseignez les informations de votre commerce. "
-            "Elles seront modifiables à tout moment dans les paramètres."
-        )
+        title = QLabel(t('Configuration initiale'))
+        title.setObjectName('PageTitle')
+        subtitle = QLabel(t('Renseignez les informations de votre commerce. Elles seront modifiables à tout moment dans les paramètres.'))
         subtitle.setWordWrap(True)
-        subtitle.setStyleSheet("color: #64748b;")
+        subtitle.setStyleSheet('color: #64748b;')
         layout.addWidget(title)
         layout.addWidget(subtitle)
-
         form = QFormLayout()
         form.setSpacing(10)
-
         self.name = QLineEdit()
-        self.name.setPlaceholderText("Nom du commerce")
+        self.name.setPlaceholderText(t('Nom du commerce'))
         self.address = QLineEdit()
         self.phone = QLineEdit()
         self.currency = QComboBox()
@@ -87,88 +41,65 @@ class SetupWizard(QDialog):
         self.currency.setEditable(True)
         self.shop_type = QComboBox()
         self.shop_type.addItems(SHOP_TYPES)
-
         logo_row = QHBoxLayout()
-        self.logo_label = QLabel("Aucun logo sélectionné")
-        self.logo_label.setStyleSheet("color: #94a3b8;")
-        logo_button = QPushButton("Choisir un logo…")
+        self.logo_label = QLabel(t('Aucun logo sélectionné'))
+        self.logo_label.setStyleSheet('color: #94a3b8;')
+        logo_button = QPushButton(t('Choisir un logo…'))
         logo_button.clicked.connect(self._pick_logo)
-        logo_type_btn = QPushButton("Logo du type")
-        logo_type_btn.setToolTip(
-            "Pictogramme fourni selon le type (poissonnerie, pharmacie…)."
-        )
+        logo_type_btn = QPushButton(t('Logo du type'))
+        logo_type_btn.setToolTip(t('Pictogramme fourni selon le type (poissonnerie, pharmacie…).'))
         logo_type_btn.clicked.connect(self._apply_type_logo)
         logo_row.addWidget(self.logo_label, 1)
         logo_row.addWidget(logo_button)
         logo_row.addWidget(logo_type_btn)
-        form.addRow("Nom du commerce *", self.name)
-        form.addRow("Adresse", self.address)
-        form.addRow("Téléphone", self.phone)
-        form.addRow("Devise", self.currency)
-        form.addRow("Type de commerce", self.shop_type)
-        form.addRow("Logo", logo_row)
+        form.addRow(t('Nom du commerce *'), self.name)
+        form.addRow(t('Adresse'), self.address)
+        form.addRow(t('Téléphone'), self.phone)
+        form.addRow(t('Devise'), self.currency)
+        form.addRow(t('Type de commerce'), self.shop_type)
+        form.addRow(t('Logo'), logo_row)
         layout.addLayout(form)
-
         buttons = QHBoxLayout()
         buttons.addStretch()
-        save = QPushButton("Enregistrer et démarrer")
-        save.setObjectName("Primary")
+        save = QPushButton(t('Enregistrer et démarrer'))
+        save.setObjectName('Primary')
         save.clicked.connect(self._save)
         buttons.addWidget(save)
         layout.addLayout(buttons)
 
-    def showEvent(self, event) -> None:  # noqa: N802 - signature Qt
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         activate_and_center(self)
 
     def _pick_logo(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Choisir un logo", "", "Images (*.png *.jpg *.jpeg *.bmp)"
-        )
+        path, _ = QFileDialog.getOpenFileName(self, 'Choisir un logo', '', 'Images (*.png *.jpg *.jpeg *.bmp)')
         if path:
             self._logo_path = path
             self.logo_label.setText(Path(path).name)
-            self.logo_label.setStyleSheet("color: #16a34a;")
+            self.logo_label.setStyleSheet('color: #16a34a;')
 
     def _apply_type_logo(self) -> None:
         from app.printers.shop_logos import default_logo_path
-
         path = default_logo_path(self.shop_type.currentText())
         if path is None:
-            QMessageBox.warning(
-                self,
-                "Logo",
-                f"Aucun logo fourni pour « {self.shop_type.currentText()} ».",
-            )
+            QMessageBox.warning(self, 'Logo', f'Aucun logo fourni pour « {self.shop_type.currentText()} ».')
             return
         self._logo_path = str(path)
-        self.logo_label.setText(f"Logo type : {self.shop_type.currentText()}")
-        self.logo_label.setStyleSheet("color: #16a34a;")
+        self.logo_label.setText(f'Logo type : {self.shop_type.currentText()}')
+        self.logo_label.setStyleSheet('color: #16a34a;')
 
     def _save(self) -> None:
         if not self.name.text().strip():
-            QMessageBox.warning(
-                self, "Configuration", "Le nom du commerce est obligatoire."
-            )
+            QMessageBox.warning(self, 'Configuration', 'Le nom du commerce est obligatoire.')
             return
-
-        logo_stored = ""
+        logo_stored = ''
         if self._logo_path:
             config.ensure_directories()
-            dest = config.LOGO_DIR / f"logo{Path(self._logo_path).suffix}"
+            dest = config.LOGO_DIR / f'logo{Path(self._logo_path).suffix}'
             try:
                 shutil.copy2(self._logo_path, dest)
                 logo_stored = str(dest)
             except OSError:
                 logo_stored = self._logo_path
-
-        settings_service.save_shop_info(
-            name=self.name.text().strip(),
-            address=self.address.text().strip(),
-            phone=self.phone.text().strip(),
-            currency=self.currency.currentText().strip() or "FCFA",
-            shop_type=self.shop_type.currentText(),
-            logo_path=logo_stored,
-            is_configured=True,
-        )
+        settings_service.save_shop_info(name=self.name.text().strip(), address=self.address.text().strip(), phone=self.phone.text().strip(), currency=self.currency.currentText().strip() or 'FCFA', shop_type=self.shop_type.currentText(), logo_path=logo_stored, is_configured=True)
         self.accept()

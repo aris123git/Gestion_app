@@ -1,21 +1,8 @@
 """Page de gestion des clients (CRUD, dettes, historique)."""
-
 from __future__ import annotations
-
+from app.i18n import t
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QComboBox,
-    QHBoxLayout,
-    QHeaderView,
-    QLineEdit,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
-
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.client_controller import ClientController
 from app.services import permissions as perms, settings_service
 from app.services.debt_service import DebtService
@@ -28,85 +15,59 @@ from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
 from app.utils.helpers import format_money, format_quantity
 
-
 class ClientsPage(QWidget):
-    HEADERS = [
-        "Nom",
-        "Téléphone",
-        "Adresse",
-        "Dette",
-        "Dettes actives",
-        "Points",
-        "Dernière visite",
-        "Achats",
-    ]
+    HEADERS = ['Nom', 'Téléphone', 'Adresse', 'Dette', 'Dettes actives', 'Points', 'Dernière visite', 'Achats']
 
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
         self._ids: list[int] = []
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
-
         header = QHBoxLayout()
-        header.addWidget(page_title("Clients"))
+        header.addWidget(page_title(t('Clients')))
         header.addStretch()
-        add = QPushButton("+ Nouveau client")
-        add.setObjectName("Primary")
+        add = QPushButton(t('+ Nouveau client'))
+        add.setObjectName('Primary')
         add.clicked.connect(self._add)
         header.addWidget(add)
         layout.addLayout(header)
-
         filters = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Rechercher (nom, téléphone, note de dette)…")
+        self.search.setPlaceholderText(t('Rechercher (nom, téléphone, note de dette)…'))
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
         self._search_timer.timeout.connect(self.refresh)
-        self.search.textChanged.connect(lambda _text="": self._search_timer.start())
+        self.search.textChanged.connect(lambda _text='': self._search_timer.start())
         self.debt_filter = QComboBox()
-        self.debt_filter.addItem("Tous les clients", "all")
-        self.debt_filter.addItem("Avec dette", "with_debt")
-        self.debt_filter.addItem("Dettes échues", "overdue")
+        self.debt_filter.addItem(t('Tous les clients'), 'all')
+        self.debt_filter.addItem(t('Avec dette'), 'with_debt')
+        self.debt_filter.addItem(t('Dettes échues'), 'overdue')
         self.debt_filter.currentIndexChanged.connect(self.refresh)
         filters.addWidget(self.search, 3)
         filters.addWidget(self.debt_filter, 1)
         layout.addLayout(filters)
-
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
         self._columns = TableColumnController(self.table, CLIENT_COLUMNS)
-
         actions = QHBoxLayout()
         actions.addStretch()
-        for label, handler, obj in [
-            ("Modifier", self._edit, ""),
-            ("+ Dette", self._add_debt, "Primary"),
-            ("Payé", self._settle, "Success"),
-            ("Échanger points", self._redeem_points, "Primary"),
-            ("Historique dettes", self._history, "Primary"),
-            ("Supprimer", self._delete, "Danger"),
-        ]:
+        for label, handler, obj in [('Modifier', self._edit, ''), ('+ Dette', self._add_debt, 'Primary'), ('Payé', self._settle, 'Success'), ('Échanger points', self._redeem_points, 'Primary'), ('Historique dettes', self._history, 'Primary'), ('Supprimer', self._delete, 'Danger')]:
             button = QPushButton(label)
             if obj:
                 button.setObjectName(obj)
             button.clicked.connect(handler)
-            if label == "+ Dette":
+            if label == '+ Dette':
                 self.add_debt_btn = button
                 button.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
-                button.setToolTip(
-                    "Saisie libre hors caisse — réservée à l'administrateur"
-                )
+                button.setToolTip(t("Saisie libre hors caisse — réservée à l'administrateur"))
             actions.addWidget(button)
         layout.addLayout(actions)
         self.state.layout_changed.connect(self._on_layout_changed)
@@ -117,34 +78,21 @@ class ClientsPage(QWidget):
         self._columns.apply(profile.content_width)
 
     def refresh(self) -> None:
-        if hasattr(self, "add_debt_btn"):
-            self.add_debt_btn.setVisible(
-                self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT)
-            )
+        if hasattr(self, 'add_debt_btn'):
+            self.add_debt_btn.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
         clients = ClientController.list(self.search.text().strip())
         mode = self.debt_filter.currentData()
         currency = settings_service.get_currency()
         client_ids = [client.id for client in clients]
         debt_summaries = DebtService.summaries_for_clients(client_ids)
-
         rows_data = []
         for client in clients:
-            summary = debt_summaries.get(
-                client.id,
-                {
-                    "total_remaining": 0.0,
-                    "active_count": 0,
-                    "overdue_count": 0,
-                    "debts": [],
-                },
-            )
-            if mode == "with_debt" and summary["total_remaining"] <= 0:
+            summary = debt_summaries.get(client.id, {'total_remaining': 0.0, 'active_count': 0, 'overdue_count': 0, 'debts': []})
+            if mode == 'with_debt' and summary['total_remaining'] <= 0:
                 continue
-            if mode == "overdue" and summary["overdue_count"] <= 0:
+            if mode == 'overdue' and summary['overdue_count'] <= 0:
                 continue
             rows_data.append((client, summary))
-
-        # Recherche étendue via notes / statut de dette.
         search = self.search.text().strip()
         if search:
             seen = {c.id for c, _ in rows_data}
@@ -157,25 +105,14 @@ class ClientsPage(QWidget):
                     continue
                 extra_clients.append(client)
                 seen.add(client.id)
-            extra_summaries = DebtService.summaries_for_clients(
-                [client.id for client in extra_clients]
-            )
+            extra_summaries = DebtService.summaries_for_clients([client.id for client in extra_clients])
             for client in extra_clients:
-                summary = extra_summaries.get(
-                    client.id,
-                    {
-                        "total_remaining": 0.0,
-                        "active_count": 0,
-                        "overdue_count": 0,
-                        "debts": [],
-                    },
-                )
-                if mode == "with_debt" and summary["total_remaining"] <= 0:
+                summary = extra_summaries.get(client.id, {'total_remaining': 0.0, 'active_count': 0, 'overdue_count': 0, 'debts': []})
+                if mode == 'with_debt' and summary['total_remaining'] <= 0:
                     continue
-                if mode == "overdue" and summary["overdue_count"] <= 0:
+                if mode == 'overdue' and summary['overdue_count'] <= 0:
                     continue
                 rows_data.append((client, summary))
-
         self._ids = [c.id for c, _ in rows_data]
         loyalty_balances = LoyaltyService.balances_for_clients(self._ids)
         self.table.setRowCount(len(rows_data))
@@ -183,21 +120,13 @@ class ClientsPage(QWidget):
             self.table.setItem(row, 0, QTableWidgetItem(client.name))
             self.table.setItem(row, 1, QTableWidgetItem(client.phone))
             self.table.setItem(row, 2, QTableWidgetItem(client.address))
-            debt_item = QTableWidgetItem(
-                format_money(summary["total_remaining"], currency)
-            )
-            if summary["overdue_count"] > 0:
+            debt_item = QTableWidgetItem(format_money(summary['total_remaining'], currency))
+            if summary['overdue_count'] > 0:
                 debt_item.setForeground(Qt.GlobalColor.red)
             self.table.setItem(row, 3, debt_item)
-            self.table.setItem(
-                row, 4, QTableWidgetItem(str(summary["active_count"]))
-            )
-            self.table.setItem(
-                row,
-                5,
-                QTableWidgetItem(format_quantity(loyalty_balances.get(client.id, 0.0))),
-            )
-            self.table.setItem(row, 6, QTableWidgetItem(client.last_visit or ""))
+            self.table.setItem(row, 4, QTableWidgetItem(str(summary['active_count'])))
+            self.table.setItem(row, 5, QTableWidgetItem(format_quantity(loyalty_balances.get(client.id, 0.0))))
+            self.table.setItem(row, 6, QTableWidgetItem(client.last_visit or ''))
             self.table.setItem(row, 7, QTableWidgetItem(str(client.purchase_count or 0)))
 
     def _selected_id(self):
@@ -221,31 +150,21 @@ class ClientsPage(QWidget):
                 self.table.scrollToItem(item)
 
     def _add(self) -> None:
-        # Solde d'ouverture = dette manuelle → admin uniquement.
         can_open_debt = self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT)
-        dialog = ContactDialog(
-            "Nouveau client", with_debt=can_open_debt, parent=self
-        )
+        dialog = ContactDialog('Nouveau client', with_debt=can_open_debt, parent=self)
         if dialog.exec() and dialog.data:
-            ClientController.create(
-                dialog.data,
-                user_id=self.state.user_id,
-                username=getattr(self.state.current_user, "username", ""),
-            )
+            ClientController.create(dialog.data, user_id=self.state.user_id, username=getattr(self.state.current_user, 'username', ''))
             self.refresh()
             self.state.notify_data_changed()
 
     def _edit(self) -> None:
         client_id = self._selected_id()
         if not client_id:
-            warn(self, "Sélectionnez un client.")
+            warn(self, t('Sélectionnez un client.'))
             return
         client = ClientController.get(client_id)
-        # En modification le solde est en lecture seule ; visible si dettes gérées.
         can_see_debt = self.state.can(perms.MANAGE_CLIENT_DEBTS)
-        dialog = ContactDialog(
-            "Modifier le client", client, with_debt=can_see_debt, parent=self
-        )
+        dialog = ContactDialog('Modifier le client', client, with_debt=can_see_debt, parent=self)
         if dialog.exec() and dialog.data:
             ClientController.update(client_id, dialog.data)
             self.refresh()
@@ -253,154 +172,93 @@ class ClientsPage(QWidget):
 
     def _add_debt(self) -> None:
         if not self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT):
-            warn(
-                self,
-                "Seul un administrateur peut saisir une dette hors caisse.",
-            )
+            warn(self, t('Seul un administrateur peut saisir une dette hors caisse.'))
             return
         client_id = self._selected_id()
         if not client_id:
-            warn(self, "Sélectionnez un client.")
+            warn(self, t('Sélectionnez un client.'))
             return
         from app.ui.dialogs.manual_debt_dialog import ManualDebtDialog
-
         dialog = ManualDebtDialog(parent=self)
         dialog.client_search.set_client(client_id)
         if not dialog.exec() or not dialog.result_data:
             return
         data = dialog.result_data
         try:
-            ClientController.add_debt(
-                data["client_id"],
-                data["amount"],
-                note=data["note"],
-                due_date=data.get("due_date"),
-                user_id=self.state.user_id,
-                username=getattr(self.state.current_user, "username", ""),
-            )
+            ClientController.add_debt(data['client_id'], data['amount'], note=data['note'], due_date=data.get('due_date'), user_id=self.state.user_id, username=getattr(self.state.current_user, 'username', ''))
         except ValueError as exc:
             warn(self, str(exc))
             return
         self.refresh()
         self.state.notify_data_changed()
-        info(self, "Dette enregistrée.")
+        info(self, t('Dette enregistrée.'))
 
     def _settle(self) -> None:
-        # Payé : tous les rôles pouvant gérer les dettes clients.
-        if not self.state.can(perms.MANAGE_CLIENT_DEBTS) and not self.state.can(
-            perms.MANAGE_CLIENTS
-        ):
-            warn(self, "Vous n'avez pas l'autorisation de régler une dette.")
+        if not self.state.can(perms.MANAGE_CLIENT_DEBTS) and (not self.state.can(perms.MANAGE_CLIENTS)):
+            warn(self, t("Vous n'avez pas l'autorisation de régler une dette."))
             return
         client_id = self._selected_id()
         if not client_id:
-            warn(self, "Sélectionnez un client.")
+            warn(self, t('Sélectionnez un client.'))
             return
         client = ClientController.get(client_id)
         if not client:
             return
         summary = DebtService.client_summary(client_id)
-        if summary["total_remaining"] <= 0:
-            warn(self, "Ce client n'a aucune dette active.")
+        if summary['total_remaining'] <= 0:
+            warn(self, t("Ce client n'a aucune dette active."))
             return
-        dialog = DebtPaymentDialog(
-            client.name, summary["total_remaining"], parent=self
-        )
+        dialog = DebtPaymentDialog(client.name, summary['total_remaining'], parent=self)
         if not dialog.exec() or not dialog.result_data:
             return
         try:
-            ClientController.settle_debt(
-                client_id,
-                dialog.result_data["amount"],
-                payment_method=dialog.result_data["payment_method"],
-                note=dialog.result_data["note"],
-                user_id=self.state.user_id,
-                username=getattr(self.state.current_user, "username", ""),
-            )
+            ClientController.settle_debt(client_id, dialog.result_data['amount'], payment_method=dialog.result_data['payment_method'], note=dialog.result_data['note'], user_id=self.state.user_id, username=getattr(self.state.current_user, 'username', ''))
         except ValueError as exc:
             warn(self, str(exc))
             return
         after = DebtService.client_summary(client_id)
-        from app.ui.dialogs.debt_payment_receipt_dialog import (
-            DebtPaymentReceiptDialog,
-        )
-
-        DebtPaymentReceiptDialog(
-            client_name=client.name,
-            amount=dialog.result_data["amount"],
-            payment_method=dialog.result_data["payment_method"],
-            remaining_after=after["total_remaining"],
-            note=dialog.result_data["note"],
-            cashier=getattr(self.state.current_user, "username", "") or "",
-            parent=self,
-        ).exec()
+        from app.ui.dialogs.debt_payment_receipt_dialog import DebtPaymentReceiptDialog
+        DebtPaymentReceiptDialog(client_name=client.name, amount=dialog.result_data['amount'], payment_method=dialog.result_data['payment_method'], remaining_after=after['total_remaining'], note=dialog.result_data['note'], cashier=getattr(self.state.current_user, 'username', '') or '', parent=self).exec()
         self.refresh()
         self.state.notify_data_changed()
 
     def _redeem_points(self) -> None:
         client_id = self._selected_id()
         if not client_id:
-            warn(self, "Sélectionnez un client.")
+            warn(self, t('Sélectionnez un client.'))
             return
         client = ClientController.get(client_id)
         if not client:
             return
         balance = LoyaltyService.get_balance(client_id)
         if balance <= 0:
-            warn(self, "Ce client n'a aucun point de fidélité.")
+            warn(self, t("Ce client n'a aucun point de fidélité."))
             return
-        # Caissier : autorisation admin obligatoire (évite cadeaux non contrôlés).
-        if getattr(self.state.current_user, "role", "") == perms.ROLE_CASHIER:
+        if getattr(self.state.current_user, 'role', '') == perms.ROLE_CASHIER:
             from app.ui.dialogs.authorize_dialog import require_admin_authorization
-
-            ok, admin_name = require_admin_authorization(
-                self,
-                "L'échange de points nécessite l'autorisation d'un administrateur.",
-            )
+            ok, admin_name = require_admin_authorization(self, "L'échange de points nécessite l'autorisation d'un administrateur.")
             if not ok:
                 return
         else:
-            admin_name = ""
+            admin_name = ''
         from PySide6.QtWidgets import QInputDialog
-
-        points, ok = QInputDialog.getDouble(
-            self,
-            "Échanger des points",
-            f"Points disponibles : {balance:g}\nNombre à échanger :",
-            min(balance, 100.0),
-            0.01,
-            balance,
-            2,
-        )
+        points, ok = QInputDialog.getDouble(self, 'Échanger des points', f'Points disponibles : {balance:g}\nNombre à échanger :', min(balance, 100.0), 0.01, balance, 2)
         if not ok or points <= 0:
             return
         try:
-            remaining = LoyaltyService.redeem(
-                client_id,
-                points,
-                user_id=self.state.user_id,
-                username=getattr(self.state.current_user, "username", ""),
-            )
+            remaining = LoyaltyService.redeem(client_id, points, user_id=self.state.user_id, username=getattr(self.state.current_user, 'username', ''))
         except ValueError as exc:
             warn(self, str(exc))
             return
         from app.services import audit_service
-
-        audit_service.log_action(
-            "Échange points",
-            "Loyalty",
-            f"client={client_id} points={points}"
-            + (f" autorisé_par={admin_name}" if admin_name else ""),
-            self.state.user_id,
-            getattr(self.state.current_user, "username", ""),
-        )
+        audit_service.log_action('Échange points', 'Loyalty', f'client={client_id} points={points}' + (f' autorisé_par={admin_name}' if admin_name else ''), self.state.user_id, getattr(self.state.current_user, 'username', ''))
         self.refresh()
-        info(self, f"Échange enregistré. Solde restant : {remaining:g} pts.")
+        info(self, f'Échange enregistré. Solde restant : {remaining:g} pts.')
 
     def _history(self) -> None:
         client_id = self._selected_id()
         if not client_id:
-            warn(self, "Sélectionnez un client.")
+            warn(self, t('Sélectionnez un client.'))
             return
         client = ClientController.get(client_id)
         if not client:
@@ -410,26 +268,18 @@ class ClientsPage(QWidget):
     def _delete(self) -> None:
         client_id = self._selected_id()
         if not client_id:
-            warn(self, "Sélectionnez un client.")
+            warn(self, t('Sélectionnez un client.'))
             return
         if not self.state.can(perms.MANAGE_CLIENTS):
-            warn(self, "Vous n'avez pas l'autorisation de supprimer un client.")
+            warn(self, t("Vous n'avez pas l'autorisation de supprimer un client."))
             return
         if DebtService.list_debts(client_id=client_id, limit=1):
-            warn(
-                self,
-                "Impossible de supprimer un client ayant un historique de dettes. "
-                "Réglez ou conservez la fiche pour la traçabilité.",
-            )
+            warn(self, t('Impossible de supprimer un client ayant un historique de dettes. Réglez ou conservez la fiche pour la traçabilité.'))
             return
         if ClientController.has_sales(client_id):
-            warn(
-                self,
-                "Impossible de supprimer un client ayant un historique de ventes. "
-                "Conservez la fiche pour la traçabilité.",
-            )
+            warn(self, t('Impossible de supprimer un client ayant un historique de ventes. Conservez la fiche pour la traçabilité.'))
             return
-        if confirm(self, "Supprimer ce client ?"):
+        if confirm(self, t('Supprimer ce client ?')):
             try:
                 ClientController.delete(client_id)
             except ValueError as exc:

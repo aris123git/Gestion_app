@@ -4,13 +4,15 @@ Usage ::
 
     from app.i18n import t, get_language, set_language
 
-    label = t("nav.pos")
+    label = t("nav.pos")           # clé
+    label = t("Enregistrer")       # texte source français
 """
 
 from __future__ import annotations
 
 from typing import Dict
 
+from app.i18n.fr_map import FR_MAP
 from app.services import settings_service
 
 SETTING_LANGUAGE = "ui_language"
@@ -25,9 +27,8 @@ LANGUAGE_LABELS = {
     LANG_ZH: "中文",
 }
 
-# Clé → {lang: texte}. Langue absente → français → clé.
+# Clés structurées (nav, common, …). Le français source est aussi accepté via FR_MAP.
 _STRINGS: Dict[str, Dict[str, str]] = {
-    # --- Navigation --------------------------------------------------------
     "nav.pos": {"fr": "Caisse", "en": "POS", "zh": "收银"},
     "nav.tables": {"fr": "Tables", "en": "Tables", "zh": "桌台"},
     "nav.orders": {"fr": "Commandes", "en": "Orders", "zh": "订单"},
@@ -46,7 +47,6 @@ _STRINGS: Dict[str, Dict[str, str]] = {
     "nav.assistant": {"fr": "Assistant", "en": "Assistant", "zh": "助手"},
     "nav.users": {"fr": "Utilisateurs", "en": "Users", "zh": "用户"},
     "nav.settings": {"fr": "Paramètres", "en": "Settings", "zh": "设置"},
-    # --- Commun ------------------------------------------------------------
     "common.save": {"fr": "Enregistrer", "en": "Save", "zh": "保存"},
     "common.cancel": {"fr": "Annuler", "en": "Cancel", "zh": "取消"},
     "common.delete": {"fr": "Supprimer", "en": "Delete", "zh": "删除"},
@@ -58,17 +58,19 @@ _STRINGS: Dict[str, Dict[str, str]] = {
     "common.no": {"fr": "Non", "en": "No", "zh": "否"},
     "common.close": {"fr": "Fermer", "en": "Close", "zh": "关闭"},
     "common.language": {"fr": "Langue", "en": "Language", "zh": "语言"},
+    "common.info": {"fr": "Information", "en": "Information", "zh": "信息"},
+    "common.warning": {"fr": "Attention", "en": "Warning", "zh": "注意"},
+    "common.error": {"fr": "Erreur", "en": "Error", "zh": "错误"},
+    "common.confirm": {"fr": "Confirmation", "en": "Confirmation", "zh": "确认"},
     "common.restart_required": {
         "fr": "L'application va se fermer. Relancez-la pour appliquer le changement.",
         "en": "The application will close. Relaunch it to apply the change.",
         "zh": "应用即将关闭。请重新启动以应用更改。",
     },
-    # --- Login -------------------------------------------------------------
     "login.title": {"fr": "Connexion", "en": "Sign in", "zh": "登录"},
     "login.username": {"fr": "Identifiant", "en": "Username", "zh": "用户名"},
     "login.password": {"fr": "Mot de passe", "en": "Password", "zh": "密码"},
     "login.submit": {"fr": "Se connecter", "en": "Sign in", "zh": "登录"},
-    # --- Caisse ------------------------------------------------------------
     "pos.title": {"fr": "Caisse", "en": "POS", "zh": "收银"},
     "pos.cart": {"fr": "Panier", "en": "Cart", "zh": "购物车"},
     "pos.barcode": {
@@ -115,7 +117,6 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "en": "← Categories",
         "zh": "← 分类",
     },
-    # --- Produits / catégories --------------------------------------------
     "products.title": {"fr": "Produits", "en": "Products", "zh": "商品"},
     "categories.title": {
         "fr": "Catégories & Unités",
@@ -156,7 +157,6 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "en": "No image",
         "zh": "无图片",
     },
-    # --- Paramètres --------------------------------------------------------
     "settings.title": {"fr": "Paramètres", "en": "Settings", "zh": "设置"},
     "settings.tab.shop": {"fr": "Commerce", "en": "Business", "zh": "店铺"},
     "settings.tab.appearance": {
@@ -241,10 +241,30 @@ def language_label(code: str | None = None) -> str:
 
 
 def t(key: str, default: str | None = None, **kwargs) -> str:
-    """Traduit une clé. Fallback : français → default → clé."""
+    """Traduit une clé structurée ou un texte source français.
+
+    Ordre : clé ``_STRINGS`` → ``FR_MAP`` (texte FR) → default → clé.
+    """
     lang = get_language()
-    entry = _STRINGS.get(key) or {}
-    text = entry.get(lang) or entry.get(LANG_FR) or default or key
+    text: str | None = None
+
+    entry = _STRINGS.get(key)
+    if entry:
+        text = entry.get(lang) or entry.get(LANG_FR)
+
+    if text is None and key in FR_MAP:
+        if lang == LANG_FR:
+            text = key
+        else:
+            text = FR_MAP[key].get(lang) or key
+
+    if text is None:
+        # Si la clé est déjà du français et langue = fr
+        if lang == LANG_FR:
+            text = default or key
+        else:
+            text = default or key
+
     if kwargs:
         try:
             return text.format(**kwargs)

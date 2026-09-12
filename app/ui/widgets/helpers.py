@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QFrame, QLabel, QMessageBox, QVBoxLayout, QWidget
 
+from app.i18n import t
+
 
 def activate_and_center(widget: QWidget) -> None:
     """Place une fenêtre au centre de l'écran et lui donne le focus.
@@ -45,22 +47,22 @@ def section_title(text: str) -> QLabel:
     return label
 
 
-def info(parent, message: str, title: str = "Information") -> None:
-    QMessageBox.information(parent, title, message)
+def info(parent, message: str, title: str | None = None) -> None:
+    QMessageBox.information(parent, title or t("common.info"), message)
 
 
-def warn(parent, message: str, title: str = "Attention") -> None:
-    QMessageBox.warning(parent, title, message)
+def warn(parent, message: str, title: str | None = None) -> None:
+    QMessageBox.warning(parent, title or t("common.warning"), message)
 
 
-def error(parent, message: str, title: str = "Erreur") -> None:
-    QMessageBox.critical(parent, title, message)
+def error(parent, message: str, title: str | None = None) -> None:
+    QMessageBox.critical(parent, title or t("common.error"), message)
 
 
-def confirm(parent, message: str, title: str = "Confirmation") -> bool:
+def confirm(parent, message: str, title: str | None = None) -> bool:
     reply = QMessageBox.question(
         parent,
-        title,
+        title or t("common.confirm"),
         message,
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         QMessageBox.StandardButton.No,

@@ -1,28 +1,9 @@
 """Dialogue de paiement : modes multiples, monnaie, dette via téléphone client."""
-
 from __future__ import annotations
-
+from app.i18n import t
 from typing import List, Optional
-
 from PySide6.QtCore import QDate, Qt
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QDateEdit,
-    QDialog,
-    QDoubleSpinBox,
-    QFormLayout,
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QInputDialog,
-    QLabel,
-    QMessageBox,
-    QPushButton,
-    QScrollArea,
-    QVBoxLayout,
-    QWidget,
-)
-
+from PySide6.QtWidgets import QCheckBox, QDateEdit, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget
 from app import config
 from app.controllers.client_controller import ClientController
 from app.controllers.sale_controller import PaymentLine
@@ -31,7 +12,6 @@ from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.utils.helpers import format_money
 
-
 class PaymentDialog(QDialog):
     """Recueille les paiements (éventuellement mixtes) pour une vente.
 
@@ -39,54 +19,35 @@ class PaymentDialog(QDialog):
     est identifié (sélection préalable ou saisie du téléphone).
     """
 
-    def __init__(
-        self,
-        total: float,
-        client_id: Optional[int] = None,
-        client_phone: str = "",
-        allow_credit: bool = True,
-        max_credit: Optional[float] = None,
-        parent=None,
-    ):
+    def __init__(self, total: float, client_id: Optional[int]=None, client_phone: str='', allow_credit: bool=True, max_credit: Optional[float]=None, parent=None):
         super().__init__(parent)
         self.total = float(total)
         self.currency = settings_service.get_currency()
-        self.setWindowTitle("Paiement / Facture")
+        self.setWindowTitle(t('Paiement / Facture'))
         self.setModal(True)
-        fit_dialog_to_screen(
-            self,
-            min_width=400,
-            min_height=320,
-            preferred_width=700,
-            preferred_height=620,
-        )
-
+        fit_dialog_to_screen(self, min_width=400, min_height=320, preferred_width=700, preferred_height=620)
         self.result_payments: List[PaymentLine] = []
         self.amount_received = 0.0
         self.change_due = 0.0
         self.use_credit = False
         self.credit_due_date = None
         self.result_client_id: Optional[int] = client_id
-        self._resolved_client_name = ""
+        self._resolved_client_name = ''
         self.allow_credit = allow_credit
         self.max_credit = max_credit
-
         if client_id:
             client = ClientController.get(client_id)
             if client:
                 self._resolved_client_name = client.name
                 if not client_phone:
-                    client_phone = client.phone or client.phone2 or ""
-
+                    client_phone = client.phone or client.phone2 or ''
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
         outer.setSpacing(8)
-
-        header = QLabel(f"Total à payer : {format_money(self.total, self.currency)}")
-        header.setObjectName("PageTitle")
+        header = QLabel(f'Total à payer : {format_money(self.total, self.currency)}')
+        header.setObjectName('PageTitle')
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         outer.addWidget(header)
-
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -95,48 +56,37 @@ class PaymentDialog(QDialog):
         layout = QVBoxLayout(body)
         layout.setContentsMargins(4, 4, 8, 4)
         layout.setSpacing(10)
-
-        # --- Client (nom / téléphone) : suggestions progressives ----------------
         client_card = QFrame()
-        client_card.setObjectName("Card")
+        client_card.setObjectName('Card')
         client_form = QFormLayout(client_card)
         client_form.setContentsMargins(12, 12, 12, 12)
         client_form.setSpacing(8)
-
-        self.client_search = ClientSearchField(
-            placeholder="Tapez un nom ou un téléphone…",
-        )
+        self.client_search = ClientSearchField(placeholder='Tapez un nom ou un téléphone…')
         self.client_search.client_selected.connect(self._on_client_picked)
-        client_form.addRow("Client", self.client_search)
-
+        client_form.addRow(t('Client'), self.client_search)
         self.client_status = QLabel()
         self.client_status.setWordWrap(True)
-        client_form.addRow("", self.client_status)
+        client_form.addRow('', self.client_status)
         layout.addWidget(client_card)
-
         if client_id:
             self.client_search.set_client(client_id)
         elif client_phone:
             self.client_search.input.setText(str(client_phone).strip())
             self.client_search._refresh_suggestions()
-
-        hint = QLabel("Saisissez un ou plusieurs modes de paiement (paiement mixte).")
-        hint.setStyleSheet("color: #64748b;")
+        hint = QLabel(t('Saisissez un ou plusieurs modes de paiement (paiement mixte).'))
+        hint.setStyleSheet('color: #64748b;')
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(hint)
-
         methods_card = QFrame()
-        methods_card.setObjectName("Card")
+        methods_card.setObjectName('Card')
         form = QGridLayout(methods_card)
         form.setContentsMargins(12, 12, 12, 12)
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(8)
         form.setColumnStretch(1, 1)
         form.setColumnStretch(3, 1)
-
         self.credit_method = config.PAYMENT_METHOD_CREDIT
         self.method_inputs = {}
-        # 2 colonnes explicites : (libellé | montant) × 2.
         for index, method in enumerate(config.PAYMENT_METHODS):
             spin = self._make_spin()
             self.method_inputs[method] = spin
@@ -146,33 +96,23 @@ class PaymentDialog(QDialog):
             label.setMinimumWidth(90)
             form.addWidget(label, row, base)
             form.addWidget(spin, row, base + 1)
-
         next_row = (len(config.PAYMENT_METHODS) + 1) // 2
-
-        # Dette affichée à l'établissement du ticket, activée selon le rôle.
         self.credit_input = self._make_spin()
         if self.max_credit is not None:
             self.credit_input.setMaximum(min(self.total, float(self.max_credit)))
-            self.credit_input.setToolTip(
-                f"Plafond caissier : {format_money(self.max_credit, self.currency)}"
-            )
+            self.credit_input.setToolTip(f'Plafond caissier : {format_money(self.max_credit, self.currency)}')
         self.method_inputs[self.credit_method] = self.credit_input
         self.credit_label = QLabel(self.credit_method)
         form.addWidget(self.credit_label, next_row, 0)
         form.addWidget(self.credit_input, next_row, 1, 1, 3)
-        hint = (
-            "Pour porter le montant en dette, indiquez le téléphone du client ci-dessus."
-        )
+        hint = 'Pour porter le montant en dette, indiquez le téléphone du client ci-dessus.'
         if self.max_credit is not None:
-            hint += (
-                f" Plafond caissier : "
-                f"{format_money(self.max_credit, self.currency)}."
-            )
+            hint += f' Plafond caissier : {format_money(self.max_credit, self.currency)}.'
         self.credit_hint = QLabel(hint)
         self.credit_hint.setWordWrap(True)
-        self.credit_hint.setStyleSheet("color: #b45309; font-size: 12px;")
+        self.credit_hint.setStyleSheet('color: #b45309; font-size: 12px;')
         form.addWidget(self.credit_hint, next_row + 1, 0, 1, 4)
-        self.credit_due_enabled = QCheckBox("Définir une échéance")
+        self.credit_due_enabled = QCheckBox('Définir une échéance')
         self.credit_due_date_edit = QDateEdit(QDate.currentDate())
         self.credit_due_date_edit.setCalendarPopup(True)
         self.credit_due_date_edit.setEnabled(False)
@@ -180,17 +120,16 @@ class PaymentDialog(QDialog):
         due_row = QHBoxLayout()
         due_row.addWidget(self.credit_due_enabled)
         due_row.addWidget(self.credit_due_date_edit)
-        self.credit_due_label = QLabel("Échéance dette")
+        self.credit_due_label = QLabel(t('Échéance dette'))
         form.addWidget(self.credit_due_label, next_row + 2, 0)
         form.addLayout(due_row, next_row + 2, 1, 1, 3)
         layout.addWidget(methods_card)
-
         quick_row = QHBoxLayout()
-        quick_cash = QPushButton("Payer le total en espèces")
+        quick_cash = QPushButton(t('Payer le total en espèces'))
         quick_cash.clicked.connect(self._pay_all_cash)
         quick_row.addWidget(quick_cash)
-        self.quick_debt = QPushButton("Mettre tout en dette")
-        self.quick_debt.setObjectName("Primary")
+        self.quick_debt = QPushButton(t('Mettre tout en dette'))
+        self.quick_debt.setObjectName('Primary')
         self.quick_debt.clicked.connect(self._pay_all_credit)
         quick_row.addWidget(self.quick_debt)
         if not self.allow_credit:
@@ -202,63 +141,57 @@ class PaymentDialog(QDialog):
             self.credit_due_date_edit.setVisible(False)
             self.quick_debt.setVisible(False)
         layout.addLayout(quick_row)
-
         received_row = QFormLayout()
         self.received_input = QDoubleSpinBox()
-        self.received_input.setRange(0, 1_000_000_000)
+        self.received_input.setRange(0, 1000000000)
         self.received_input.setDecimals(0)
         self.received_input.setSingleStep(500)
-        self.received_input.setSuffix(f" {self.currency}")
+        self.received_input.setSuffix(f' {self.currency}')
         self.received_input.valueChanged.connect(self._recalculate)
-        received_row.addRow("Argent reçu (espèces)", self.received_input)
+        received_row.addRow(t('Argent reçu (espèces)'), self.received_input)
         layout.addLayout(received_row)
-
         self.summary = QLabel()
-        self.summary.setStyleSheet("font-size: 15px;")
+        self.summary.setStyleSheet('font-size: 15px;')
         layout.addWidget(self.summary)
         layout.addStretch(1)
-
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
-
         buttons = QHBoxLayout()
-        cancel = QPushButton("Annuler")
+        cancel = QPushButton(t('Annuler'))
         cancel.clicked.connect(self.reject)
-        self.validate = QPushButton("Valider le paiement")
-        self.validate.setObjectName("Success")
+        self.validate = QPushButton(t('Valider le paiement'))
+        self.validate.setObjectName('Success')
         self.validate.clicked.connect(self._confirm)
         buttons.addWidget(cancel)
         buttons.addStretch()
         buttons.addWidget(self.validate)
         outer.addLayout(buttons)
-
         self._refresh_client_status()
         self._recalculate()
 
     def _make_spin(self) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
-        spin.setRange(0, 1_000_000_000)
+        spin.setRange(0, 1000000000)
         spin.setDecimals(0)
         spin.setSingleStep(500)
-        spin.setSuffix(f" {self.currency}")
+        spin.setSuffix(f' {self.currency}')
         spin.valueChanged.connect(self._recalculate)
         return spin
 
-    # --- Client / téléphone ------------------------------------------------
     def _on_client_picked(self, client_id) -> None:
         if client_id:
             client = ClientController.get(int(client_id))
             self.result_client_id = int(client_id)
-            self._resolved_client_name = client.name if client else ""
+            self._resolved_client_name = client.name if client else ''
         else:
             self.result_client_id = None
-            self._resolved_client_name = ""
+            self._resolved_client_name = ''
         self._refresh_client_status()
         self._recalculate()
 
     def _typed_phone(self) -> str:
         text = self.client_search.text()
-        return "".join(ch for ch in text if ch.isdigit() or ch == "+")
+        return ''.join((ch for ch in text if ch.isdigit() or ch == '+'))
 
     def _resolve_client_from_typed(self) -> None:
         if self.client_search.client_id:
@@ -267,7 +200,7 @@ class PaymentDialog(QDialog):
         typed = self.client_search.text()
         if not typed:
             self.result_client_id = None
-            self._resolved_client_name = ""
+            self._resolved_client_name = ''
             self._refresh_client_status()
             self._recalculate()
             return
@@ -284,7 +217,6 @@ class PaymentDialog(QDialog):
                     self.result_client_id = client.id
                     self._resolved_client_name = client.name
         else:
-            # Texte alphabétique → recherche / création par nom.
             client = self._confirm_create_client(name_hint=typed)
             if client:
                 self.result_client_id = client.id
@@ -292,44 +224,30 @@ class PaymentDialog(QDialog):
         self._refresh_client_status()
         self._recalculate()
 
-    def _confirm_create_client(self, phone: str = "", name_hint: str = ""):
+    def _confirm_create_client(self, phone: str='', name_hint: str=''):
         """Ouvre un formulaire complet (nom + téléphone) pour créer un nouveau client.
 
         Pré-remplit les champs avec ce qui a déjà été saisi dans le champ client,
         afin que le premier enregistrement capture toujours les deux informations.
         """
         from app.ui.dialogs.contact_dialog import ContactDialog
-
         display = phone or name_hint
-        answer = QMessageBox.question(
-            self,
-            "Nouveau client",
-            f"Aucun client trouvé pour « {display} ».\n\n"
-            "Créer une fiche client ? (nom et téléphone recommandés)",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
+        answer = QMessageBox.question(self, 'Nouveau client', f'Aucun client trouvé pour « {display} ».\n\nCréer une fiche client ? (nom et téléphone recommandés)', QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:
             return None
-
-        # Ouvre le formulaire complet pré-rempli avec ce qui a été saisi.
-        dialog = ContactDialog("Nouveau client", with_debt=False, parent=self)
+        dialog = ContactDialog('Nouveau client', with_debt=False, parent=self)
         if name_hint:
             dialog.name.setText(name_hint)
         if phone:
             dialog.phone.setText(phone)
-
         if not dialog.exec() or not dialog.data:
             return None
-
-        final_phone = dialog.data.get("phone", "").strip()
-        # Si un téléphone est fourni, vérifie d'abord qu'il n'existe pas déjà.
+        final_phone = dialog.data.get('phone', '').strip()
         if final_phone:
             existing = ClientController.find_by_phone(final_phone)
             if existing:
                 self.client_search.set_client(existing.id)
                 return existing
-
         client = ClientController.create(dialog.data)
         if client:
             self.client_search.set_client(client.id)
@@ -342,7 +260,7 @@ class PaymentDialog(QDialog):
         if self.client_search.client_id:
             self.result_client_id = self.client_search.client_id
             client = ClientController.get(self.result_client_id)
-            self._resolved_client_name = client.name if client else ""
+            self._resolved_client_name = client.name if client else ''
             self._refresh_client_status()
             return self.result_client_id
         typed = self.client_search.text()
@@ -354,7 +272,6 @@ class PaymentDialog(QDialog):
             if not client:
                 client = self._confirm_create_client(phone=phone)
         else:
-            # Texte alphabétique → recherche / création par nom.
             client = self._confirm_create_client(name_hint=typed)
         if client:
             self.result_client_id = client.id
@@ -369,39 +286,23 @@ class PaymentDialog(QDialog):
             self.quick_debt.setEnabled(False)
             self.credit_input.setValue(0)
             self.credit_input.setEnabled(False)
-            self.client_status.setText(
-                "<span style='color:#64748b;'>Client facultatif pour la facture.</span>"
-            )
+            self.client_status.setText("<span style='color:#64748b;'>Client facultatif pour la facture.</span>")
             return
         if self.result_client_id and self._resolved_client_name:
-            self.client_status.setText(
-                f"<span style='color:#16a34a;'>Client sélectionné : "
-                f"{self._resolved_client_name}</span>"
-            )
-            self.credit_hint.setText(
-                "Choisissez « Dette » pour porter le montant sur le compte client."
-            )
+            self.client_status.setText(f"<span style='color:#16a34a;'>Client sélectionné : {self._resolved_client_name}</span>")
+            self.credit_hint.setText('Choisissez « Dette » pour porter le montant sur le compte client.')
             self.quick_debt.setEnabled(True)
             self.credit_input.setEnabled(True)
         else:
             typed = self.client_search.text()
             if typed:
-                self.client_status.setText(
-                    "<span style='color:#b45309;'>Sélectionnez une suggestion "
-                    "ou validez pour créer le client (téléphone).</span>"
-                )
+                self.client_status.setText("<span style='color:#b45309;'>Sélectionnez une suggestion ou validez pour créer le client (téléphone).</span>")
             else:
-                self.client_status.setText(
-                    "<span style='color:#64748b;'>Tapez un nom ou un téléphone — "
-                    "les suggestions s'affichent au fur et à mesure.</span>"
-                )
-            self.credit_hint.setText(
-                "Pour une dette, sélectionnez (ou créez) d'abord le client."
-            )
+                self.client_status.setText("<span style='color:#64748b;'>Tapez un nom ou un téléphone — les suggestions s'affichent au fur et à mesure.</span>")
+            self.credit_hint.setText("Pour une dette, sélectionnez (ou créez) d'abord le client.")
             self.quick_debt.setEnabled(True)
             self.credit_input.setEnabled(True)
 
-    # --- Calculs -----------------------------------------------------------
     def _credit_amount(self) -> float:
         return float(self.credit_input.value())
 
@@ -416,7 +317,7 @@ class PaymentDialog(QDialog):
     def _pay_all_cash(self) -> None:
         for method, spin in self.method_inputs.items():
             spin.blockSignals(True)
-            spin.setValue(self.total if method == "Espèces" else 0)
+            spin.setValue(self.total if method == 'Espèces' else 0)
             spin.blockSignals(False)
         self.received_input.setValue(self.total)
         self._recalculate()
@@ -436,15 +337,11 @@ class PaymentDialog(QDialog):
         self.received_input.setValue(0)
         self._recalculate()
         if self.max_credit is not None and self.total > float(self.max_credit):
-            self.summary.setText(
-                f"<span style='color:#b45309;'>Plafond dette caissier : "
-                f"{format_money(self.max_credit, self.currency)} "
-                f"(reste à encaisser autrement).</span>"
-            )
+            self.summary.setText(f"<span style='color:#b45309;'>Plafond dette caissier : {format_money(self.max_credit, self.currency)} (reste à encaisser autrement).</span>")
 
     def _cash_method_amount(self) -> float:
         """Montant réglé en espèces (base du calcul de la monnaie rendue)."""
-        spin = self.method_inputs.get("Espèces")
+        spin = self.method_inputs.get('Espèces')
         return float(spin.value()) if spin else 0.0
 
     def _recalculate(self) -> None:
@@ -452,83 +349,44 @@ class PaymentDialog(QDialog):
         credit = self._credit_amount()
         covered = cash_paid + credit
         received = self.received_input.value()
-        # La monnaie se calcule sur la part ESPÈCES (pas sur le total), afin de
-        # rester correcte en cas de paiement mixte (Orange Money + espèces, ...).
         cash_due = self._cash_method_amount()
         change = max(0.0, received - cash_due) if received > 0 else 0.0
         remaining = max(0.0, self.total - covered)
-
-        parts = [
-            f"Encaissé : {format_money(cash_paid, self.currency)}",
-            f"Monnaie à rendre : {format_money(change, self.currency)}",
-        ]
+        parts = [f'Encaissé : {format_money(cash_paid, self.currency)}', f'Monnaie à rendre : {format_money(change, self.currency)}']
         if credit > 0:
-            parts.append(
-                f"<span style='color:#f59e0b;'>Dette client : "
-                f"{format_money(credit, self.currency)}</span>"
-            )
-            if not self.result_client_id and not self.client_search.text().strip():
-                parts.append(
-                    "<span style='color:#dc2626;'>Sélectionnez un client "
-                    "pour valider une dette.</span>"
-                )
+            parts.append(f"<span style='color:#f59e0b;'>Dette client : {format_money(credit, self.currency)}</span>")
+            if not self.result_client_id and (not self.client_search.text().strip()):
+                parts.append("<span style='color:#dc2626;'>Sélectionnez un client pour valider une dette.</span>")
         if remaining > 0:
-            parts.append(
-                f"<span style='color:#dc2626;'>Montant insuffisant "
-                f"({format_money(remaining, self.currency)} manquant)</span>"
-            )
-        elif credit > 0 and cash_paid <= 0 and (
-            self.result_client_id or self.client_search.text().strip()
-        ):
-            parts.append(
-                "<span style='color:#f59e0b;'>Vente entièrement portée en dette</span>"
-            )
+            parts.append(f"<span style='color:#dc2626;'>Montant insuffisant ({format_money(remaining, self.currency)} manquant)</span>")
+        elif credit > 0 and cash_paid <= 0 and (self.result_client_id or self.client_search.text().strip()):
+            parts.append("<span style='color:#f59e0b;'>Vente entièrement portée en dette</span>")
         elif remaining <= 0 and credit <= 0:
             parts.append("<span style='color:#16a34a;'>Paiement suffisant</span>")
         elif remaining <= 0:
             parts.append("<span style='color:#16a34a;'>Paiement suffisant</span>")
-
-        self.summary.setText("<br>".join(parts))
-
-        credit_ok = credit <= 0 or bool(
-            self.result_client_id or self.client_search.text().strip()
-        )
+        self.summary.setText('<br>'.join(parts))
+        credit_ok = credit <= 0 or bool(self.result_client_id or self.client_search.text().strip())
         self.validate.setEnabled(covered >= self.total and credit_ok)
 
     def _confirm(self) -> None:
         cash_paid = self._cash_paid_total()
         credit = self._credit_amount()
-        if credit > 0 and not self.allow_credit:
+        if credit > 0 and (not self.allow_credit):
             return
-        if (
-            self.max_credit is not None
-            and credit > float(self.max_credit) + 0.009
-        ):
-            self.summary.setText(
-                f"<span style='color:#dc2626;'>Dette plafonnée à "
-                f"{format_money(self.max_credit, self.currency)} "
-                f"pour un caissier.</span>"
-            )
+        if self.max_credit is not None and credit > float(self.max_credit) + 0.009:
+            self.summary.setText(f"<span style='color:#dc2626;'>Dette plafonnée à {format_money(self.max_credit, self.currency)} pour un caissier.</span>")
             return
         if cash_paid + credit < self.total:
             return
         if credit > 0:
             client_id = self._ensure_client_for_credit()
             if not client_id:
-                self.summary.setText(
-                    "<span style='color:#dc2626;'>Sélectionnez un client "
-                    "pour valider une dette.</span>"
-                )
+                self.summary.setText("<span style='color:#dc2626;'>Sélectionnez un client pour valider une dette.</span>")
                 return
-        elif self.client_search.text().strip() and not self.result_client_id:
-            # Facture nominative même sans dette.
+        elif self.client_search.text().strip() and (not self.result_client_id):
             self._resolve_client_from_typed()
-
-        self.result_payments = [
-            PaymentLine(method=method, amount=spin.value())
-            for method, spin in self.method_inputs.items()
-            if spin.value() > 0
-        ]
+        self.result_payments = [PaymentLine(method=method, amount=spin.value()) for method, spin in self.method_inputs.items() if spin.value() > 0]
         cash_due = self._cash_method_amount()
         self.amount_received = self.received_input.value() or cash_due
         self.change_due = max(0.0, self.amount_received - cash_due)

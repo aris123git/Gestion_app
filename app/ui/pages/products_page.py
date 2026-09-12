@@ -1,22 +1,8 @@
 """Page de gestion des produits (liste, ajout, modification, suppression)."""
-
 from __future__ import annotations
-
+from app.i18n import t
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QComboBox,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
-
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.category_controller import CategoryController
 from app.controllers.product_controller import ProductController
 from app.reports.excel_report import export_products_excel
@@ -27,64 +13,55 @@ from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
 from app.utils.helpers import format_money, format_quantity
 
-
 class ProductsPage(QWidget):
-    HEADERS = ["Nom", "Catégorie", "Code-barres", "Prix vente", "Stock", "Unité"]
+    HEADERS = ['Nom', 'Catégorie', 'Code-barres', 'Prix vente', 'Stock', 'Unité']
     LIST_LIMIT = 5000
 
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
         self._ids: list[int] = []
-
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
-
         header = QHBoxLayout()
-        header.addWidget(page_title("Produits"))
+        header.addWidget(page_title(t('Produits')))
         header.addStretch()
-        self.export_button = QPushButton("Exporter Excel")
+        self.export_button = QPushButton(t('Exporter Excel'))
         self.export_button.clicked.connect(self._export)
-        self.add_button = QPushButton("+ Nouveau produit")
-        self.add_button.setObjectName("Primary")
+        self.add_button = QPushButton(t('+ Nouveau produit'))
+        self.add_button.setObjectName('Primary')
         self.add_button.clicked.connect(self._add)
         header.addWidget(self.export_button)
         header.addWidget(self.add_button)
         layout.addLayout(header)
-
         filters = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Rechercher (nom, code-barres, référence)…")
+        self.search.setPlaceholderText(t('Rechercher (nom, code-barres, référence)…'))
         self.search.textChanged.connect(self.refresh)
         self.category_filter = QComboBox()
         self.category_filter.currentIndexChanged.connect(self.refresh)
         filters.addWidget(self.search, 3)
         filters.addWidget(self.category_filter, 1)
         layout.addLayout(filters)
-
-        self.limit_note = QLabel("")
-        self.limit_note.setStyleSheet("color: #b45309; font-size: 12px;")
+        self.limit_note = QLabel('')
+        self.limit_note.setStyleSheet('color: #b45309; font-size: 12px;')
         self.limit_note.setWordWrap(True)
         layout.addWidget(self.limit_note)
-
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
         self._columns = TableColumnController(self.table, PRODUCT_COLUMNS)
-
         actions = QHBoxLayout()
         actions.addStretch()
-        self.edit_button = QPushButton("Modifier")
+        self.edit_button = QPushButton(t('Modifier'))
         self.edit_button.clicked.connect(self._edit)
-        self.delete_button = QPushButton("Supprimer")
-        self.delete_button.setObjectName("Danger")
+        self.delete_button = QPushButton(t('Supprimer'))
+        self.delete_button.setObjectName('Danger')
         self.delete_button.clicked.connect(self._delete)
         actions.addWidget(self.edit_button)
         actions.addWidget(self.delete_button)
@@ -96,7 +73,7 @@ class ProductsPage(QWidget):
 
     def _on_layout_changed(self, profile: LayoutProfile) -> None:
         self._columns.apply(profile.content_width)
-        margins = 12 if profile.density == "compact" else 24
+        margins = 12 if profile.density == 'compact' else 24
         self.layout().setContentsMargins(margins, margins, margins, margins)
 
     def _apply_permissions(self) -> None:
@@ -110,29 +87,20 @@ class ProductsPage(QWidget):
     def refresh(self) -> None:
         self._apply_permissions()
         self._reload_categories()
-        products = ProductController.list(
-            search=self.search.text().strip(),
-            category_id=self.category_filter.currentData(),
-            limit=self.LIST_LIMIT,
-        )
-        self.limit_note.setText(
-            f"Affichage limité aux {self.LIST_LIMIT} premiers produits. "
-            "Affinez la recherche ou la catégorie si le produit recherché n'apparaît pas."
-            if len(products) == self.LIST_LIMIT
-            else ""
-        )
+        products = ProductController.list(search=self.search.text().strip(), category_id=self.category_filter.currentData(), limit=self.LIST_LIMIT)
+        self.limit_note.setText(f"Affichage limité aux {self.LIST_LIMIT} premiers produits. Affinez la recherche ou la catégorie si le produit recherché n'apparaît pas." if len(products) == self.LIST_LIMIT else '')
         currency = settings_service.get_currency()
         self._ids = [p.id for p in products]
         self.table.setRowCount(len(products))
         for row, product in enumerate(products):
             name = product.name
-            if getattr(product, "free_amount_sale", False):
-                name = f"{product.name} · montant libre"
+            if getattr(product, 'free_amount_sale', False):
+                name = f'{product.name} · montant libre'
             self.table.setItem(row, 0, QTableWidgetItem(name))
             self.table.setItem(row, 1, QTableWidgetItem(product.category_name))
             self.table.setItem(row, 2, QTableWidgetItem(product.barcode))
-            if getattr(product, "free_amount_sale", False):
-                price_txt = f"réf. {format_money(product.sale_price, currency)}/kg"
+            if getattr(product, 'free_amount_sale', False):
+                price_txt = f'réf. {format_money(product.sale_price, currency)}/kg'
             else:
                 price_txt = format_money(product.sale_price, currency)
             self.table.setItem(row, 3, QTableWidgetItem(price_txt))
@@ -148,7 +116,7 @@ class ProductsPage(QWidget):
         current = self.category_filter.currentData()
         self.category_filter.blockSignals(True)
         self.category_filter.clear()
-        self.category_filter.addItem("Toutes", None)
+        self.category_filter.addItem(t('Toutes'), None)
         for category in CategoryController.list():
             self.category_filter.addItem(category.name, category.id)
         index = self.category_filter.findData(current)
@@ -178,15 +146,12 @@ class ProductsPage(QWidget):
 
     def _add(self) -> None:
         if not self.state.can(perms.MANAGE_PRODUCTS):
-            warn(self, "Vous n'avez pas l'autorisation d'ajouter un produit.")
+            warn(self, t("Vous n'avez pas l'autorisation d'ajouter un produit."))
             return
         dialog = ProductDialog(parent=self)
         if dialog.exec() and dialog.data:
             product = ProductController.create(dialog.data)
-            audit_service.log_action(
-                "Création produit", "Product", product.name,
-                self.state.user_id, getattr(self.state.current_user, "username", ""),
-            )
+            audit_service.log_action('Création produit', 'Product', product.name, self.state.user_id, getattr(self.state.current_user, 'username', ''))
             self.refresh()
             self.state.notify_data_changed()
 
@@ -195,44 +160,33 @@ class ProductsPage(QWidget):
             return
         product_id = self._selected_id()
         if not product_id:
-            warn(self, "Veuillez sélectionner un produit.")
+            warn(self, t('Veuillez sélectionner un produit.'))
             return
         product = ProductController.get(product_id)
         dialog = ProductDialog(product=product, parent=self)
         if dialog.exec() and dialog.data:
             ProductController.update(product_id, dialog.data)
-            audit_service.log_action(
-                "Modification produit", "Product", dialog.data["name"],
-                self.state.user_id, getattr(self.state.current_user, "username", ""),
-            )
+            audit_service.log_action('Modification produit', 'Product', dialog.data['name'], self.state.user_id, getattr(self.state.current_user, 'username', ''))
             self.refresh()
             self.state.notify_data_changed()
 
     def _delete(self) -> None:
         product_id = self._selected_id()
         if not product_id:
-            warn(self, "Veuillez sélectionner un produit.")
+            warn(self, t('Veuillez sélectionner un produit.'))
             return
         if not self.state.can(perms.DELETE_PRODUCTS):
-            warn(self, "Vous n'avez pas l'autorisation de supprimer un produit.")
+            warn(self, t("Vous n'avez pas l'autorisation de supprimer un produit."))
             return
-        if confirm(
-            self,
-            "Supprimer ce produit ?\n\n"
-            "S'il existe dans des ventes, il sera simplement désactivé pour "
-            "conserver l'historique.",
-        ):
+        if confirm(self, t("Supprimer ce produit ?\n\nS'il existe dans des ventes, il sera simplement désactivé pour conserver l'historique.")):
             result = ProductController.delete(product_id)
-            audit_service.log_action(
-                "Suppression produit", "Product", str(product_id),
-                self.state.user_id, getattr(self.state.current_user, "username", ""),
-            )
+            audit_service.log_action('Suppression produit', 'Product', str(product_id), self.state.user_id, getattr(self.state.current_user, 'username', ''))
             self.refresh()
             self.state.notify_data_changed()
-            if result == "deactivated":
-                info(self, "Produit désactivé : il n'apparaît plus en caisse.")
+            if result == 'deactivated':
+                info(self, t("Produit désactivé : il n'apparaît plus en caisse."))
 
     def _export(self) -> None:
-        products = ProductController.list(only_active=False, limit=100_000)
+        products = ProductController.list(only_active=False, limit=100000)
         path = export_products_excel(products)
-        info(self, f"Export réalisé :\n{path}")
+        info(self, f'Export réalisé :\n{path}')

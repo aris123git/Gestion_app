@@ -126,15 +126,38 @@ def run() -> int:
             logger.exception("Échec de la sauvegarde automatique au démarrage.")
 
         # Charge la langue UI (fr / en / zh) avant de construire les écrans.
-        from app.i18n import get_language
+        from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
 
-        get_language()
+        from app.i18n import LANG_EN, LANG_ZH, get_language
+
+        lang = get_language()
+        if lang == LANG_ZH:
+            QLocale.setDefault(
+                QLocale(QLocale.Language.Chinese, QLocale.Country.China)
+            )
+        elif lang == LANG_EN:
+            QLocale.setDefault(
+                QLocale(QLocale.Language.English, QLocale.Country.UnitedStates)
+            )
+        else:
+            QLocale.setDefault(
+                QLocale(QLocale.Language.French, QLocale.Country.France)
+            )
 
         app = QApplication.instance() or QApplication([])
         app.setApplicationName(product_profile.PARENT_NAME)
         app.setOrganizationName(product_profile.PARENT_VENDOR)
 
+        # Boutons système Qt (Oui / Non…) dans la langue choisie si disponible.
+        qt_translator = QTranslator(app)
+        translations_path = QLibraryInfo.path(
+            QLibraryInfo.LibraryPath.TranslationsPath
+        )
+        if qt_translator.load(QLocale(), "qtbase", "_", translations_path):
+            app.installTranslator(qt_translator)
+
         _controller = AppController(app)
+        _controller._qt_translator = qt_translator
 
         # 1) Nouveau PC → choix produit  2) Activation  3) Commerce  4) Login
         if not _controller.ensure_product_chosen():
