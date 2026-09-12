@@ -233,7 +233,7 @@ class SettingsPage(QWidget):
         hint.setStyleSheet("color: #64748b; font-size: 12px;")
         form.addRow("", hint)
 
-        # Catalogue caisse : images + navigation catégories (mercerie…).
+        # Catalogue caisse : images + navigation par catégories (tous commerces).
         from app.services import catalog_features
 
         catalog_title = QLabel(f"<b>{t('settings.catalog_section')}</b>")

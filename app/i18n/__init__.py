@@ -180,11 +180,11 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "zh": "在收银界面显示商品图片",
     },
     "settings.catalog_images_tip": {
-        "fr": "Grille visuelle : idéal mercerie, boutique, cosmétique… "
-        "Ajoutez une image sur chaque fiche produit.",
-        "en": "Visual grid: ideal for haberdashery, retail, cosmetics… "
-        "Add an image on each product form.",
-        "zh": "可视化网格：适合服饰辅料店、零售、化妆品等。请在商品资料中添加图片。",
+        "fr": "Grille visuelle en caisse : idéal pour boissons, boutique, cosmétique, "
+        "mercerie… Ajoutez une image sur chaque fiche produit.",
+        "en": "Visual grid at the POS: ideal for drinks, retail, cosmetics, "
+        "haberdashery… Add an image on each product form.",
+        "zh": "收银可视化网格：适合饮料店、零售、化妆品、辅料店等。请在商品资料中添加图片。",
     },
     "settings.catalog_categories": {
         "fr": "Navigation par catégories (sélection visuelle)",
@@ -192,11 +192,11 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "zh": "按分类浏览（可视化选择）",
     },
     "settings.catalog_categories_tip": {
-        "fr": "En caisse : d'abord les catégories (ex. fils, boutons, tissus), "
-        "puis les produits de la catégorie choisie — plus fluide pour une mercerie.",
-        "en": "At POS: first pick a category (e.g. threads, buttons, fabrics), "
-        "then the products — smoother for a haberdashery.",
-        "zh": "收银时先选分类（如线材、纽扣、布料），再选商品——更适合辅料店。",
+        "fr": "En caisse : d'abord les catégories (ex. Sodas, Jus, Bières — "
+        "ou Fils, Boutons…), puis les produits de la catégorie choisie.",
+        "en": "At POS: first pick a category (e.g. Sodas, Juices, Beers — "
+        "or Threads, Buttons…), then the products in that category.",
+        "zh": "收银时先选分类（如汽水、果汁、啤酒，或线材、纽扣等），再选该分类下的商品。",
     },
     "settings.language_saved": {
         "fr": "Langue enregistrée.\n\n{restart}",
