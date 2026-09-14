@@ -3,8 +3,8 @@
 Le contenu du ticket reste indépendant de l'imprimante : seul le profil
 adapte la largeur (caractères/ligne) et l'encodage ESC/POS.
 
-Xprinter : mode chinois annulé (FS .) + tableaux ASCII pour éviter
-les « ? » et caractères chinois sur les filets de facture.
+Xprinter : mode chinois annulé (FS .) ; filets de tableau continus
+via CP850/CP437 (─ │ ┌). Le mode ASCII (+ - |) reste pour CP1252.
 """
 
 from __future__ import annotations
@@ -39,7 +39,8 @@ class PrinterProfile:
     supports_qr: bool = False
     # Remplacer les glyphes impossibles (œ, coins arrondis, …).
     transliterate: bool = True
-    # Tableaux en + - | (obligatoire Xprinter : évite « ? » et chinois).
+    # Tableaux en + - | : uniquement si le codepage n'a pas les filets DOS
+    # (ex. CP1252). CP850/CP437 → filets continus ─ │ ┌.
     ascii_box: bool = False
     # FS . — annule le mode caractère chinois (Xprinter / clones).
     cancel_chinese_mode: bool = False
@@ -127,48 +128,48 @@ PRINTER_PROFILES: dict[str, PrinterProfile] = {
     ),
     "xprinter_80_cp850": PrinterProfile(
         id="xprinter_80_cp850",
-        label="Xprinter 80 mm — CP850 + tableau ASCII (recommandé)",
+        label="Xprinter 80 mm — CP850 (traits continus)",
         paper_width="80mm",
         characters_per_line=CPL_80,
         encoding="cp850",
         escpos_codepage="CP850",
-        ascii_box=True,
+        ascii_box=False,
         cancel_chinese_mode=True,
         reset_before_print=True,
         set_international_usa=True,
     ),
     "xprinter_58_cp850": PrinterProfile(
         id="xprinter_58_cp850",
-        label="Xprinter 58 mm — CP850 + tableau ASCII (recommandé)",
+        label="Xprinter 58 mm — CP850 (traits continus)",
         paper_width="58mm",
         characters_per_line=CPL_58,
         encoding="cp850",
         escpos_codepage="CP850",
-        ascii_box=True,
+        ascii_box=False,
         cancel_chinese_mode=True,
         reset_before_print=True,
         set_international_usa=True,
     ),
     "xprinter_80_cp437": PrinterProfile(
         id="xprinter_80_cp437",
-        label="Xprinter 80 mm — CP437 + tableau ASCII",
+        label="Xprinter 80 mm — CP437 (traits continus)",
         paper_width="80mm",
         characters_per_line=CPL_80,
         encoding="cp437",
         escpos_codepage="CP437",
-        ascii_box=True,
+        ascii_box=False,
         cancel_chinese_mode=True,
         reset_before_print=True,
         set_international_usa=True,
     ),
     "xprinter_58_cp437": PrinterProfile(
         id="xprinter_58_cp437",
-        label="Xprinter 58 mm — CP437 + tableau ASCII",
+        label="Xprinter 58 mm — CP437 (traits continus)",
         paper_width="58mm",
         characters_per_line=CPL_58,
         encoding="cp437",
         escpos_codepage="CP437",
-        ascii_box=True,
+        ascii_box=False,
         cancel_chinese_mode=True,
         reset_before_print=True,
         set_international_usa=True,
@@ -265,7 +266,8 @@ def resolve_printer_profile(
             profile = _clone_profile(
                 profile, paper=paper, characters_per_line=cpl
             )
-        # Profil générique + imprimante Xprinter : activer les garde-fous chinois.
+        # Profil générique + imprimante Xprinter : annuler le mode chinois,
+        # sans forcer ASCII (filets continus CP850/CP437).
         if looks_like_xprinter(printer_name or "") and not profile.cancel_chinese_mode:
             return PrinterProfile(
                 id=profile.id,
@@ -279,7 +281,7 @@ def resolve_printer_profile(
                 supports_cut=profile.supports_cut,
                 supports_qr=profile.supports_qr,
                 transliterate=profile.transliterate,
-                ascii_box=True,
+                ascii_box=bool(profile.ascii_box),
                 cancel_chinese_mode=True,
                 reset_before_print=True,
                 set_international_usa=True,

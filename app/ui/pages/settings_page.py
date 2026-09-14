@@ -243,7 +243,7 @@ class SettingsPage(QWidget):
         self.printer_profile.setMinimumWidth(320)
         for profile in list_profiles():
             self.printer_profile.addItem(t(profile.label), profile.id)
-        self.printer_profile.setToolTip(t("Profil de l'imprimante thermique : largeur (58/80 mm) et codepage (CP850 recommandé pour le français). Xprinter : choisissez « Xprinter … tableau ASCII » si le tableau affiche des « ? » ou des caractères chinois."))
+        self.printer_profile.setToolTip(t("Profil de l'imprimante thermique : largeur (58/80 mm) et codepage (CP850 recommandé pour le français, filets de tableau continus). Xprinter : profil « Xprinter … CP850 » (annule le mode chinois, traits continus)."))
         self.printer_profile.currentIndexChanged.connect(self._on_printer_profile_changed)
         self.pos_large_text = QCheckBox('Agrandir produits et prix en caisse (lecture rapide)')
         self.pos_large_text.setToolTip(t('Utile pour le serveur : voir rapidement quoi servir (noms et prix plus gros dans le catalogue et le panier).'))
@@ -297,7 +297,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Après vente'), self.auto_print)
         form.addRow(t('Message du ticket'), self.footer)
         outer.addWidget(make_card(form_widget))
-        designs_hint = QLabel(t("Les designs visuels (Classique, Moderne, Bon serveur…) se choisissent dans l'onglet <b>Designs des tickets</b>. Le <b>profil imprimante</b> fixe le codepage ESC/POS (accents français) et la largeur en caractères. Sur <b>Xprinter</b>, utilisez le profil « Xprinter … tableau ASCII » : annule le mode chinois et dessine les filets du tableau en + - | (plus de « ? »)."))
+        designs_hint = QLabel(t("Les designs visuels (Classique, Moderne, Bon serveur…) se choisissent dans l'onglet <b>Designs des tickets</b>. Le <b>profil imprimante</b> fixe le codepage ESC/POS (accents français) et la largeur en caractères. Sur <b>Xprinter</b>, utilisez le profil « Xprinter … CP850 » : annule le mode chinois et garde les filets de tableau continus (─ │)."))
         designs_hint.setWordWrap(True)
         designs_hint.setStyleSheet('color: #64748b;')
         outer.addWidget(designs_hint)
@@ -592,7 +592,7 @@ class SettingsPage(QWidget):
         from app.printers import thermal_printer
         result = thermal_printer.print_encoding_test_page()
         if result.printed:
-            info(self, f'Test accents envoyé.\n{result.message}\n\nVérifiez é è à ç œ sur le ticket. Si caractères chinois ou « ? » sur le tableau : profil « Xprinter … tableau ASCII » (ou CP850), puis réessayez.', t('Test accents FR'))
+            info(self, f'Test accents envoyé.\n{result.message}\n\nVérifiez é è à ç œ sur le ticket. Si caractères chinois : profil « Xprinter … CP850 », puis réessayez. Les filets restent continus avec CP850.', t('Test accents FR'))
         else:
             warn(self, f"Test accents impossible.\n{result.message}\n\nVérifiez l'imprimante et le profil ESC/POS.", t('Test accents FR'))
 
