@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+import json
+from typing import List, Optional, Tuple
 
 from app.services import permissions as perms, settings_service
 
@@ -11,6 +12,8 @@ DEFAULT_MAX_DISCOUNT_PERCENT = 10.0  # % du sous-total
 DEFAULT_MAX_CREDIT_AMOUNT = 100_000.0  # devise du commerce
 DEFAULT_MAX_FREE_AMOUNT = 50_000.0  # montant libre max par ligne (caissier)
 DEFAULT_VARIANCE_NOTE_THRESHOLD = 500.0  # écart caisse → note obligatoire
+DEFAULT_FREE_AMOUNT_PRESETS: tuple[float, ...] = (100, 200, 300, 500, 1000, 3600)
+SETTING_FREE_AMOUNT_PRESETS = "free_amount_presets"
 
 
 def get_max_discount_percent() -> float:
@@ -51,6 +54,48 @@ def get_variance_note_threshold() -> float:
         return max(0.0, float(raw))
     except (TypeError, ValueError):
         return DEFAULT_VARIANCE_NOTE_THRESHOLD
+
+
+def get_free_amount_presets() -> List[float]:
+    """Raccourcis montant libre affichés en caisse (triés, uniques, > 0)."""
+    raw = settings_service.get_setting(SETTING_FREE_AMOUNT_PRESETS, "")
+    values: list[float] = []
+    if raw.strip():
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                for item in data:
+                    try:
+                        amount = float(item)
+                    except (TypeError, ValueError):
+                        continue
+                    if amount > 0:
+                        values.append(round(amount, 2))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            values = []
+    if not values:
+        values = [float(v) for v in DEFAULT_FREE_AMOUNT_PRESETS]
+    return sorted({float(v) for v in values})
+
+
+def set_free_amount_presets(amounts: list) -> List[float]:
+    """Enregistre les raccourcis ; retourne la liste normalisée."""
+    cleaned: list[float] = []
+    for item in amounts or []:
+        try:
+            amount = float(item)
+        except (TypeError, ValueError):
+            continue
+        if amount > 0:
+            cleaned.append(round(amount, 2))
+    unique = sorted({float(v) for v in cleaned})
+    if not unique:
+        unique = [float(v) for v in DEFAULT_FREE_AMOUNT_PRESETS]
+    settings_service.set_setting(
+        SETTING_FREE_AMOUNT_PRESETS,
+        json.dumps(unique, ensure_ascii=False),
+    )
+    return unique
 
 
 def set_limits(

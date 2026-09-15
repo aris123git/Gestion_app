@@ -30,9 +30,10 @@ séparé de l'UI : `models/` (ORM) → `controllers/` (logique) → `ui/` (PySid
   (`source .venv/bin/activate`).
 - **Packaging Windows** (`pyinstaller gestion_app.spec`, `installer.iss`) est
   prévu pour être exécuté **sous Windows**, pas dans le VM Linux.
-- Pas de suite de tests automatisés pour l'instant ; la validation se fait en
-  lançant l'app et en déroulant un flux caisse (créer un produit, encaisser une
-  vente, vérifier le tableau de bord).
+- **Tests automatisés** : suite unitaire dans `tests/` (lancer avec
+  `python -m unittest discover -s tests -v`). La CI Windows build l'exe ; la
+  validation métier complète reste un flux caisse manuel (créer un produit,
+  encaisser une vente, vérifier le tableau de bord).
 - **Activation au premier démarrage** : l'app exige un code d'activation maître
   (voir `app/services/activation_service.py`, constante `MASTER_KEY`, surchargée
   par la variable d'env `NEXAPOS_ACTIVATION_KEY`). Un fichier `activation.dat`
