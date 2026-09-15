@@ -101,6 +101,21 @@ class CashControlsTestCase(unittest.TestCase):
         )
         self.assertTrue(result.sale_id)
 
+    def test_free_amount_presets_defaults_and_persist(self) -> None:
+        defaults = cash_controls.get_free_amount_presets()
+        self.assertEqual(
+            defaults,
+            [100.0, 200.0, 300.0, 500.0, 1000.0, 3600.0],
+        )
+        saved = cash_controls.set_free_amount_presets([100, 250, 250, 0, -1, 750])
+        self.assertEqual(saved, [100.0, 250.0, 750.0])
+        self.assertEqual(cash_controls.get_free_amount_presets(), [100.0, 250.0, 750.0])
+        # Liste vide → restauration des défauts
+        restored = cash_controls.set_free_amount_presets([])
+        self.assertEqual(
+            restored,
+            [float(v) for v in cash_controls.DEFAULT_FREE_AMOUNT_PRESETS],
+        )
 
 if __name__ == "__main__":
     unittest.main()
