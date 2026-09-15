@@ -124,12 +124,11 @@ class IntegrityTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             ClientController.delete(client.id)
 
-    def test_cashier_credit_without_stock_permission(self) -> None:
+    def test_cashier_credit_and_stock_permission(self) -> None:
         cashier_permissions = perms.permissions_for(perms.ROLE_CASHIER)
 
         self.assertIn(perms.SELL_ON_CREDIT, cashier_permissions)
-        self.assertNotIn(perms.MANAGE_STOCK, cashier_permissions)
-        # Stock réservé admin / gestionnaire.
+        self.assertIn(perms.MANAGE_STOCK, cashier_permissions)
         self.assertIn(
             perms.MANAGE_STOCK, perms.permissions_for(perms.ROLE_MANAGER)
         )

@@ -809,21 +809,11 @@ class SettingsPage(QWidget):
         self.max_discount_pct.setDecimals(0)
         self.max_discount_pct.setSuffix(t(' %'))
         self.max_discount_pct.setValue(cash_controls.get_max_discount_percent())
-        self.max_credit_amount = QDoubleSpinBox()
-        self.max_credit_amount.setRange(0, 1000000000)
-        self.max_credit_amount.setDecimals(0)
-        self.max_credit_amount.setValue(cash_controls.get_max_credit_amount())
-        self.max_free_amount = QDoubleSpinBox()
-        self.max_free_amount.setRange(0, 1000000000)
-        self.max_free_amount.setDecimals(0)
-        self.max_free_amount.setValue(cash_controls.get_max_free_amount())
         self.variance_threshold = QDoubleSpinBox()
         self.variance_threshold.setRange(0, 1000000000)
         self.variance_threshold.setDecimals(0)
         self.variance_threshold.setValue(cash_controls.get_variance_note_threshold())
         form.addRow(t('Remise max caissier'), self.max_discount_pct)
-        form.addRow(t('Dette max caissier (par vente)'), self.max_credit_amount)
-        form.addRow(t('Montant libre max (par ligne)'), self.max_free_amount)
         form.addRow(t('Écart caisse → note obligatoire'), self.variance_threshold)
         outer.addWidget(make_card(form_widget))
 
@@ -911,10 +901,10 @@ class SettingsPage(QWidget):
 
     def _save_controls(self) -> None:
         from app.services import cash_controls
-        cash_controls.set_limits(self.max_discount_pct.value(), self.max_credit_amount.value(), free_amount=self.max_free_amount.value(), variance_threshold=self.variance_threshold.value())
+        cash_controls.set_limits(self.max_discount_pct.value(), variance_threshold=self.variance_threshold.value())
         saved_presets = cash_controls.set_free_amount_presets(self._current_free_presets())
         self._reload_free_presets_list(saved_presets)
-        audit_service.log_action('Plafonds caisse', 'Setting', f'remise={self.max_discount_pct.value()}% crédit={self.max_credit_amount.value()} libre={self.max_free_amount.value()} écart_note={self.variance_threshold.value()} raccourcis={saved_presets}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
+        audit_service.log_action('Plafonds caisse', 'Setting', f'remise={self.max_discount_pct.value()}% écart_note={self.variance_threshold.value()} raccourcis={saved_presets}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         info(self, t('Plafonds caissier enregistrés.'))
 
     def _build_loyalty_tab(self) -> QWidget:

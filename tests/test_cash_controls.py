@@ -33,7 +33,7 @@ class CashControlsTestCase(unittest.TestCase):
     def setUpClass(cls) -> None:
         init_database()
         seed_all()
-        cash_controls.set_limits(10, 5_000)
+        cash_controls.set_limits(10)
         cats = CategoryController.list()
         cls.product = ProductController.create(
             {
@@ -72,22 +72,18 @@ class CashControlsTestCase(unittest.TestCase):
             user=user, subtotal=10_000, discount=9_000, credit_amount=50_000
         )
 
-    def test_create_sale_rejects_cashier_over_credit(self) -> None:
-        with self.assertRaises(ValueError) as ctx:
-            SaleController.create_sale(
-                [CartLine(self.product.id, self.product.name, 10_000, 1)],
-                [PaymentLine(config.PAYMENT_METHOD_CREDIT, 10_000)],
-                client_id=self.client.id,
-                user_id=self.cashier.id,
-                allow_credit=True,
-            )
-        self.assertIn("Dette trop élevée", str(ctx.exception))
+    def test_create_sale_allows_cashier_full_credit(self) -> None:
+        """Plus de plafond dette caissier : crédit total autorisé."""
+        result = SaleController.create_sale(
+            [CartLine(self.product.id, self.product.name, 10_000, 1)],
+            [PaymentLine(config.PAYMENT_METHOD_CREDIT, 10_000)],
+            client_id=self.client.id,
+            user_id=self.cashier.id,
+            allow_credit=True,
+        )
+        self.assertTrue(result.sale_id)
 
-    def test_create_sale_accepts_cashier_within_credit(self) -> None:
-        # Produit 1000, crédit 4000 max wait - use partial: need cheaper or lower credit
-        # Limit is 5000; sell 4000 worth... product is 10000. Use quantity fraction?
-        # Create smaller sale via amount: 1 unit at 10000 is over. Use discount? 
-        # Better: pay 6000 cash + 4000 credit = within 5000 credit.
+    def test_create_sale_accepts_cashier_mixed_payment(self) -> None:
         result = SaleController.create_sale(
             [CartLine(self.product.id, self.product.name, 10_000, 1)],
             [

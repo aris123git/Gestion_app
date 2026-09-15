@@ -99,7 +99,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             SELL,
             PRINT_TICKET,
             VIEW_PRODUCTS,
-            # Pas de MANAGE_STOCK : sorties/pertes/inventaire = patron/gestionnaire.
+            MANAGE_STOCK,  # entrées / sorties / inventaire
             MANAGE_CLIENTS,
             MANAGE_CLIENT_DEBTS,  # régler (Payé)
             VIEW_DASHBOARD,
