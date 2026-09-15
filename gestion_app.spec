@@ -13,10 +13,25 @@ elles ne sont donc pas embarquées dans l'exécutable.
 
 from PyInstaller.utils.hooks import collect_submodules
 
-hidden_imports = (
-    collect_submodules("app")
-    + collect_submodules("escpos")
-    + ["reportlab.graphics.barcode", "win32print", "win32ui"]
+# Modules UI critiques : forcer l'inclusion même si l'analyse rate un import.
+_CRITICAL_UI = [
+    "app.ui.app",
+    "app.ui.main_window",
+    "app.ui.login_dialog",
+    "app.ui.activation_dialog",
+    "app.ui.setup_wizard",
+    "app.ui.product_choice_dialog",
+    "app.ui.state",
+    "app.ui.theme",
+]
+
+hidden_imports = sorted(
+    set(
+        collect_submodules("app")
+        + collect_submodules("escpos")
+        + _CRITICAL_UI
+        + ["reportlab.graphics.barcode", "win32print", "win32ui"]
+    )
 )
 
 block_cipher = None
@@ -53,7 +68,9 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX désactivé : compression souvent refusée / partiellement décompressée
+    # par antivirus Windows → ModuleNotFoundError (ex. app.ui.main_window).
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,  # Application graphique : pas de console.

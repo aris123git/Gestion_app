@@ -17,7 +17,15 @@ from app.services import activation_service, backup_service, product_profile
 from app.startup_log import install_startup_excepthook, write_startup_error
 from app.ui.activation_dialog import ActivationDialog
 from app.ui.login_dialog import LoginDialog
-from app.ui.main_window import MainWindow
+
+try:
+    from app.ui.main_window import MainWindow
+except ModuleNotFoundError as exc:  # pragma: no cover - garde EXE corrompu
+    raise ModuleNotFoundError(
+        "Module app.ui.main_window introuvable. "
+        "Réinstallez GestionCommerciale.exe depuis GitHub Actions "
+        "(build sans UPX). Fichier souvent altéré par un antivirus."
+    ) from exc
 from app.ui.product_choice_dialog import ProductChoiceDialog
 from app.ui.setup_wizard import SetupWizard
 from app.ui.state import AppState
