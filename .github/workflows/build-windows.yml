@@ -30,6 +30,9 @@ jobs:
       - name: Générer l'exécutable avec PyInstaller
         run: pyinstaller gestion_app.spec --noconfirm
 
+      - name: Vérifier les modules critiques dans l'EXE
+        run: python scripts/verify_exe_modules.py dist/GestionCommerciale.exe
+
       - name: Publier l'exécutable (artefact téléchargeable)
         uses: actions/upload-artifact@v4
         with:
