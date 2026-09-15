@@ -5,8 +5,10 @@ Ne jamais envoyer d'UTF-8 brut à l'imprimante : on fixe un codepage
 Les glyphes impossibles sont translittérés (é→e en dernier recours).
 
 Xprinter / clones chinois : annuler le mode chinois (FS .) avant le
-codepage, et dessiner les tableaux en ASCII (+ - |) pour éviter les
-« ? » et les caractères chinois sur les bordures.
+codepage. Les filets de tableau restent en glyphes DOS continus
+(─ │ ┌…) via CP850/CP437. Le mode ``ascii_box`` (+ - |) n'est utilisé
+que si le codepage ne gère pas les filets (ex. CP1252) ou en secours
+d'encodage.
 """
 
 from __future__ import annotations

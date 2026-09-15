@@ -91,15 +91,16 @@ class EscposEncodingTestCase(unittest.TestCase):
         profile = get_profile("generic_80_cp850")
         self.assertEqual(prepare_text("╭─╮", profile), "┌─┐")
 
-    def test_xprinter_ascii_box_and_chinese_cancel(self):
+    def test_xprinter_continuous_box_and_chinese_cancel(self):
         profile = get_profile("xprinter_80_cp850")
-        self.assertTrue(profile.ascii_box)
+        self.assertFalse(profile.ascii_box)
         self.assertTrue(profile.cancel_chinese_mode)
+        # Coins arrondis → droits ; filets Unicode conservés (continus).
         prepared = prepare_text("╭─╮│┌┐", profile)
-        self.assertEqual(prepared, "+-+|++")
+        self.assertEqual(prepared, "┌─┐│┌┐")
         raw = encode_text("┌─┐ Café", profile)
         self.assertNotIn(b"\xc3\xa9", raw)
-        self.assertEqual(raw.decode("cp850"), "+-+ Café")
+        self.assertEqual(raw.decode("cp850"), "┌─┐ Café")
         out = build_escpos_document(
             "┌──┐\nCafé\n",
             profile,
@@ -111,8 +112,14 @@ class EscposEncodingTestCase(unittest.TestCase):
         self.assertIn(b"\x1c\x2e", out)  # FS .
         self.assertIn(b"\x1b\x52\x00", out)  # ESC R 0
         self.assertNotIn(b"\xc3\xa9", out)
-        # Pas d'octets de filets DOS (C4/B3…) — ASCII seulement.
-        self.assertNotIn(bytes([0xC4]), out)
+        # Filets DOS continus (CP850) : ─ = 0xC4, │ = 0xB3, ┌ = 0xDA.
+        self.assertIn(bytes([0xC4]), out)
+        self.assertIn(bytes([0xDA]), out)
+
+    def test_cp1252_falls_back_to_ascii_box(self):
+        profile = get_profile("generic_80_cp1252")
+        self.assertTrue(profile.ascii_box)
+        self.assertEqual(prepare_text("┌─┐", profile), "+-+")
 
     def test_auto_detect_xprinter_name(self):
         from app.printers.printer_profile import looks_like_xprinter
@@ -125,7 +132,8 @@ class EscposEncodingTestCase(unittest.TestCase):
         settings_service.set_setting("printer_name", "Xprinter XP-80C")
         profile = resolve_printer_profile(paper="80mm")
         self.assertTrue(profile.id.startswith("xprinter_"))
-        self.assertTrue(profile.ascii_box)
+        self.assertFalse(profile.ascii_box)
+        self.assertTrue(profile.cancel_chinese_mode)
 
     def test_document_sets_codepage_and_encodes(self):
         profile = get_profile("generic_80_cp850")
