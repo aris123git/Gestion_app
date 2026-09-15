@@ -1,7 +1,7 @@
 ; ===================================================================
 ;  Script Inno Setup pour créer l'installateur Windows.
 ;  Prérequis :
-;    1. Générer l'exécutable : voir build_windows.bat (dist\GestionCommerciale.exe)
+;    1. Générer le bundle : voir build_windows.bat (dist\GestionCommerciale\)
 ;    2. Installer Inno Setup (https://jrsoftware.org/isinfo.php)
 ;    3. Compiler ce fichier avec Inno Setup pour obtenir l'installateur.
 ; ===================================================================
@@ -32,7 +32,8 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer une icône sur le bureau"; GroupDescription: "Icônes supplémentaires:"
 
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; Bundle onedir complet (exe + _internal + DLL).
+Source: "dist\GestionCommerciale\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

@@ -30,12 +30,12 @@ jobs:
       - name: Générer l'exécutable avec PyInstaller
         run: pyinstaller gestion_app.spec --noconfirm
 
-      - name: Vérifier les modules critiques dans l'EXE
-        run: python scripts/verify_exe_modules.py dist/GestionCommerciale.exe
+      - name: Vérifier les modules critiques dans le bundle
+        run: python scripts/verify_exe_modules.py dist/GestionCommerciale
 
-      - name: Publier l'exécutable (artefact téléchargeable)
+      - name: Publier le dossier Windows (artefact téléchargeable)
         uses: actions/upload-artifact@v4
         with:
           name: GestionCommerciale-Windows
-          path: dist/GestionCommerciale.exe
+          path: dist/GestionCommerciale/
           if-no-files-found: error
