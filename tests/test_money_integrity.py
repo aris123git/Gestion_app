@@ -37,7 +37,7 @@ class MoneyIntegrityTestCase(unittest.TestCase):
     def setUpClass(cls) -> None:
         init_database()
         seed_all()
-        cash_controls.set_limits(10, 5_000, free_amount=1_000, variance_threshold=200)
+        cash_controls.set_limits(10, variance_threshold=200)
         cls.admin = next(
             u for u in AuthService.list_users() if u.role == perms.ROLE_ADMIN
         )
@@ -94,34 +94,31 @@ class MoneyIntegrityTestCase(unittest.TestCase):
         )
         self.assertTrue(expense.id)
 
-    def test_stock_cashier_blocked(self) -> None:
-        with self.assertRaises(ValueError):
-            StockController.stock_out(
-                self.product.id, 1, reason="perte", user_id=self.cashier.id
-            )
-        with self.assertRaises(ValueError):
-            StockController.set_inventory(
-                self.product.id, 1, user_id=self.cashier.id
-            )
+    def test_stock_cashier_allowed(self) -> None:
+        StockController.stock_in(
+            self.product.id, 2, unit_cost=100, reason="réassort", user_id=self.cashier.id
+        )
+        StockController.set_inventory(
+            self.product.id, 5, user_id=self.cashier.id
+        )
 
-    def test_free_amount_cashier_cap(self) -> None:
-        with self.assertRaises(ValueError) as ctx:
-            SaleController.create_sale(
-                [
-                    CartLine(
-                        self.product.id,
-                        self.product.name,
-                        500,
-                        4,
-                        free_amount=True,
-                        amount=2_000,
-                    )
-                ],
-                [PaymentLine("Espèces", 2_000)],
-                amount_received=2_000,
-                user_id=self.cashier.id,
-            )
-        self.assertIn("Montant libre", str(ctx.exception))
+    def test_free_amount_cashier_unlimited(self) -> None:
+        result = SaleController.create_sale(
+            [
+                CartLine(
+                    self.product.id,
+                    self.product.name,
+                    500,
+                    4,
+                    free_amount=True,
+                    amount=2_000,
+                )
+            ],
+            [PaymentLine("Espèces", 2_000)],
+            amount_received=2_000,
+            user_id=self.cashier.id,
+        )
+        self.assertTrue(result.sale_id)
 
     def test_cancel_age_window(self) -> None:
         result = SaleController.create_sale(

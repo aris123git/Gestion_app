@@ -26,7 +26,7 @@ class RemiseSpinCeilingTestCase(unittest.TestCase):
     def setUpClass(cls) -> None:
         init_database()
         seed_all()
-        cash_controls.set_limits(10, 5_000)
+        cash_controls.set_limits(10)
         cls.app = QApplication.instance() or QApplication([])
 
     @classmethod

@@ -1,4 +1,7 @@
-"""Plafonds caisse (remise / crédit) pour limiter les écarts caissier ↔ patron."""
+"""Plafonds caisse (remise) pour le rôle Caissier.
+
+Dette et montant libre : sans plafond. Stock : autorisé via permissions.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +12,6 @@ from app.services import permissions as perms, settings_service
 
 # Défauts raisonnables (surchargeables via Paramètres).
 DEFAULT_MAX_DISCOUNT_PERCENT = 10.0  # % du sous-total
-DEFAULT_MAX_CREDIT_AMOUNT = 100_000.0  # devise du commerce
-DEFAULT_MAX_FREE_AMOUNT = 50_000.0  # montant libre max par ligne (caissier)
 DEFAULT_VARIANCE_NOTE_THRESHOLD = 500.0  # écart caisse → note obligatoire
 DEFAULT_FREE_AMOUNT_PRESETS: tuple[float, ...] = (100, 200, 300, 500, 1000, 3600)
 SETTING_FREE_AMOUNT_PRESETS = "free_amount_presets"
@@ -24,26 +25,6 @@ def get_max_discount_percent() -> float:
         return max(0.0, min(100.0, float(raw)))
     except (TypeError, ValueError):
         return DEFAULT_MAX_DISCOUNT_PERCENT
-
-
-def get_max_credit_amount() -> float:
-    raw = settings_service.get_setting(
-        "cashier_max_credit_amount", str(int(DEFAULT_MAX_CREDIT_AMOUNT))
-    )
-    try:
-        return max(0.0, float(raw))
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_CREDIT_AMOUNT
-
-
-def get_max_free_amount() -> float:
-    raw = settings_service.get_setting(
-        "cashier_max_free_amount", str(int(DEFAULT_MAX_FREE_AMOUNT))
-    )
-    try:
-        return max(0.0, float(raw))
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_FREE_AMOUNT
 
 
 def get_variance_note_threshold() -> float:
@@ -100,21 +81,12 @@ def set_free_amount_presets(amounts: list) -> List[float]:
 
 def set_limits(
     discount_percent: float,
-    credit_amount: float,
     *,
-    free_amount: Optional[float] = None,
     variance_threshold: Optional[float] = None,
 ) -> None:
     settings_service.set_setting(
         "cashier_max_discount_percent", str(round(float(discount_percent), 2))
     )
-    settings_service.set_setting(
-        "cashier_max_credit_amount", str(round(float(credit_amount), 2))
-    )
-    if free_amount is not None:
-        settings_service.set_setting(
-            "cashier_max_free_amount", str(round(float(free_amount), 2))
-        )
     if variance_threshold is not None:
         settings_service.set_setting(
             "cash_variance_note_threshold",
@@ -128,10 +100,14 @@ def is_cashier_user(user) -> bool:
 
 
 def limits_for_user(user) -> Tuple[Optional[float], Optional[float]]:
-    """Retourne (max_discount_percent, max_credit_amount) ou (None, None) si illimité."""
+    """Retourne (max_discount_percent, max_credit_amount).
+
+    Crédit / montant libre : toujours illimités (None).
+    Seule la remise % reste plafonnée pour le caissier.
+    """
     if not is_cashier_user(user):
         return None, None
-    return get_max_discount_percent(), get_max_credit_amount()
+    return get_max_discount_percent(), None
 
 
 def max_discount_amount(subtotal: float, user) -> Optional[float]:
@@ -150,27 +126,14 @@ def assert_cashier_sale_limits(
     credit_amount: float,
     free_amount_lines: Optional[list] = None,
 ) -> None:
-    """Lève ValueError si le caissier dépasse les plafonds configurés."""
+    """Lève ValueError si le caissier dépasse le plafond de remise."""
+    del credit_amount, free_amount_lines  # plus de plafond dette / montant libre
     max_disc = max_discount_amount(subtotal, user)
-    _, max_credit = limits_for_user(user)
     if max_disc is not None and float(discount) > max_disc + 0.009:
         raise ValueError(
             f"Remise trop élevée pour un caissier "
             f"(max {max_disc:g}, soit {get_max_discount_percent():g} % du panier)."
         )
-    if max_credit is not None and float(credit_amount) > max_credit + 0.009:
-        raise ValueError(
-            f"Dette trop élevée pour un caissier "
-            f"(max {max_credit:g} {settings_service.get_currency()})."
-        )
-    if is_cashier_user(user) and free_amount_lines:
-        ceiling = get_max_free_amount()
-        for amount in free_amount_lines:
-            if float(amount) > ceiling + 0.009:
-                raise ValueError(
-                    f"Montant libre trop élevé pour un caissier "
-                    f"(max {ceiling:g} {settings_service.get_currency()} par ligne)."
-                )
 
 
 def assert_sale_permissions(

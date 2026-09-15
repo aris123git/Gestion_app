@@ -607,10 +607,6 @@ class POSPage(QWidget):
         if not dialog.exec() or not dialog.amount:
             return
         amount = float(dialog.amount)
-        from app.services import cash_controls
-        if getattr(self.state.current_user, 'role', '') == perms.ROLE_CASHIER and amount > cash_controls.get_max_free_amount() + 0.009:
-            warn(self, f'Montant libre trop élevé pour un caissier (max {cash_controls.get_max_free_amount():g} {settings_service.get_currency()}).')
-            return
         estimated_qty = amount / sale_price
         pack = float(getattr(product, 'pack_content', 0) or 0)
         cost_per_unit = float(product.cost_per_sale_unit)
