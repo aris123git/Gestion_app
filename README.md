@@ -138,7 +138,9 @@ ou manuellement :
 pyinstaller gestion_app.spec --noconfirm
 ```
 
-L'exécutable est généré dans `dist/GestionCommerciale.exe`.
+L'application est générée dans le dossier `dist/GestionCommerciale/`
+(mode **onedir** : `GestionCommerciale.exe` + dossier `_internal`).
+Téléchargez / copiez **tout le dossier**, pas seulement le `.exe`.
 
 ## Génération de l'installateur Windows
 

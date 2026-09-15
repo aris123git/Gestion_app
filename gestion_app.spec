@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 """Spécification PyInstaller pour générer l'exécutable Windows.
 
-Génère un exécutable autonome (un seul fichier) nommé ``GestionCommerciale``.
+Mode **onedir** (dossier ``dist/GestionCommerciale/``) : plus robuste que
+onefile face aux antivirus qui altèrent l'extraction dans ``%TEMP%``
+(symptôme fréquent : ``ModuleNotFoundError: app.ui.main_window``).
 
 Usage :
     pyinstaller gestion_app.spec
 
-Les données de l'application (base SQLite, sauvegardes, tickets) sont créées au
-runtime dans le dossier de données de l'utilisateur (``%APPDATA%`` sur Windows),
-elles ne sont donc pas embarquées dans l'exécutable.
+Les données métier (SQLite, sauvegardes, tickets) restent dans ``%APPDATA%``.
 """
 
 from PyInstaller.utils.hooks import collect_submodules
@@ -52,7 +52,9 @@ a = Analysis(
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    noarchive=False,
+    # Modules en fichiers (pas dans un seul PYZ) → un antivirus qui bloque
+    # un fichier n'efface pas tout le package d'un coup.
+    noarchive=True,
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
@@ -60,23 +62,28 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="GestionCommerciale",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    # UPX désactivé : compression souvent refusée / partiellement décompressée
-    # par antivirus Windows → ModuleNotFoundError (ex. app.ui.main_window).
     upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,  # Application graphique : pas de console.
+    console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon="app/assets/icon.ico" if __import__("os").path.exists("app/assets/icon.ico") else None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="GestionCommerciale",
 )

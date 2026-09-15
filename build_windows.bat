@@ -16,5 +16,6 @@ echo [3/4] Generation de l'executable avec PyInstaller...
 pyinstaller gestion_app.spec --noconfirm
 
 echo [4/4] Termine.
-echo L'executable se trouve dans : dist\GestionCommerciale.exe
+echo Le bundle se trouve dans : dist\GestionCommerciale\
+echo (lancez GestionCommerciale.exe depuis ce dossier, avec _internal a cote)
 pause

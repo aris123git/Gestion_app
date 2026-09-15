@@ -20,11 +20,13 @@ from app.ui.login_dialog import LoginDialog
 
 try:
     from app.ui.main_window import MainWindow
-except ModuleNotFoundError as exc:  # pragma: no cover - garde EXE corrompu
+except ModuleNotFoundError as exc:  # pragma: no cover - garde bundle incomplet
     raise ModuleNotFoundError(
         "Module app.ui.main_window introuvable. "
-        "Réinstallez GestionCommerciale.exe depuis GitHub Actions "
-        "(build sans UPX). Fichier souvent altéré par un antivirus."
+        "Utilisez le dossier complet dist/GestionCommerciale/ "
+        "(GestionCommerciale.exe + _internal), pas un .exe isolé. "
+        "Téléchargez l'artefact GitHub Actions le plus récent et "
+        "ajoutez une exclusion antivirus sur ce dossier si besoin."
     ) from exc
 from app.ui.product_choice_dialog import ProductChoiceDialog
 from app.ui.setup_wizard import SetupWizard
