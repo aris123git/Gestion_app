@@ -4,13 +4,13 @@ from app.i18n import LANGUAGE_LABELS, get_language, set_language, t
 import shutil
 from pathlib import Path
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
 from app import config
 from app.services import activation_service, audit_service, backup_service, permissions as perms, portal_service, product_profile, settings_service
 from app.ui.setup_wizard import CURRENCIES, SHOP_TYPES
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, error, info, make_card, page_title, section_title, warn
-from app.utils.helpers import format_datetime
+from app.utils.helpers import format_datetime, format_money
 DEFAULT_PRINTER_LABEL = '(Imprimante par défaut)'
 
 class SettingsPage(QWidget):
@@ -826,6 +826,40 @@ class SettingsPage(QWidget):
         form.addRow(t('Montant libre max (par ligne)'), self.max_free_amount)
         form.addRow(t('Écart caisse → note obligatoire'), self.variance_threshold)
         outer.addWidget(make_card(form_widget))
+
+        presets_box = QWidget()
+        presets_layout = QVBoxLayout(presets_box)
+        presets_layout.setContentsMargins(0, 0, 0, 0)
+        presets_layout.setSpacing(8)
+        presets_title = section_title(t('Raccourcis montant libre (caisse)'))
+        presets_layout.addWidget(presets_title)
+        presets_hint = QLabel(t('Ces boutons apparaissent quand on vend un produit en montant libre. Ajoutez les montants que vos clients demandent le plus souvent.'))
+        presets_hint.setWordWrap(True)
+        presets_hint.setStyleSheet('color: #64748b;')
+        presets_layout.addWidget(presets_hint)
+        self.free_presets_list = QListWidget()
+        self.free_presets_list.setMinimumHeight(140)
+        self.free_presets_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        presets_layout.addWidget(self.free_presets_list)
+        add_row = QHBoxLayout()
+        currency = settings_service.get_currency()
+        self.free_preset_input = QDoubleSpinBox()
+        self.free_preset_input.setRange(1, 1000000000)
+        self.free_preset_input.setDecimals(0)
+        self.free_preset_input.setSingleStep(50)
+        self.free_preset_input.setSuffix(f' {currency}')
+        self.free_preset_input.setValue(250)
+        add_btn = QPushButton(t('Ajouter'))
+        add_btn.clicked.connect(self._add_free_preset)
+        remove_btn = QPushButton(t('Retirer'))
+        remove_btn.clicked.connect(self._remove_free_preset)
+        add_row.addWidget(self.free_preset_input, 1)
+        add_row.addWidget(add_btn)
+        add_row.addWidget(remove_btn)
+        presets_layout.addLayout(add_row)
+        outer.addWidget(make_card(presets_box))
+        self._reload_free_presets_list(cash_controls.get_free_amount_presets())
+
         save = QPushButton(t('Enregistrer les plafonds'))
         save.setObjectName('Primary')
         save.clicked.connect(self._save_controls)
@@ -833,10 +867,54 @@ class SettingsPage(QWidget):
         outer.addStretch()
         return wrap
 
+    def _reload_free_presets_list(self, amounts) -> None:
+        currency = settings_service.get_currency()
+        self.free_presets_list.clear()
+        for value in amounts:
+            item = QListWidgetItem(format_money(value, currency))
+            item.setData(Qt.ItemDataRole.UserRole, float(value))
+            self.free_presets_list.addItem(item)
+
+    def _current_free_presets(self) -> list[float]:
+        values: list[float] = []
+        for index in range(self.free_presets_list.count()):
+            item = self.free_presets_list.item(index)
+            raw = item.data(Qt.ItemDataRole.UserRole)
+            try:
+                amount = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if amount > 0:
+                values.append(amount)
+        return values
+
+    def _add_free_preset(self) -> None:
+        amount = float(self.free_preset_input.value())
+        if amount <= 0:
+            warn(self, t('Saisissez un montant supérieur à 0.'))
+            return
+        current = self._current_free_presets()
+        if any(abs(existing - amount) < 0.009 for existing in current):
+            warn(self, t('Ce montant est déjà dans la liste.'))
+            return
+        current.append(amount)
+        self._reload_free_presets_list(sorted(current))
+        self.free_preset_input.setValue(250)
+
+    def _remove_free_preset(self) -> None:
+        item = self.free_presets_list.currentItem()
+        if item is None:
+            warn(self, t('Sélectionnez un montant à retirer.'))
+            return
+        row = self.free_presets_list.row(item)
+        self.free_presets_list.takeItem(row)
+
     def _save_controls(self) -> None:
         from app.services import cash_controls
         cash_controls.set_limits(self.max_discount_pct.value(), self.max_credit_amount.value(), free_amount=self.max_free_amount.value(), variance_threshold=self.variance_threshold.value())
-        audit_service.log_action('Plafonds caisse', 'Setting', f'remise={self.max_discount_pct.value()}% crédit={self.max_credit_amount.value()} libre={self.max_free_amount.value()} écart_note={self.variance_threshold.value()}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
+        saved_presets = cash_controls.set_free_amount_presets(self._current_free_presets())
+        self._reload_free_presets_list(saved_presets)
+        audit_service.log_action('Plafonds caisse', 'Setting', f'remise={self.max_discount_pct.value()}% crédit={self.max_credit_amount.value()} libre={self.max_free_amount.value()} écart_note={self.variance_threshold.value()} raccourcis={saved_presets}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         info(self, t('Plafonds caissier enregistrés.'))
 
     def _build_loyalty_tab(self) -> QWidget:
