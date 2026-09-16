@@ -10,6 +10,7 @@ from app.models.dining_table import DiningTable
 from app.models.expense import Expense
 from app.models.loyalty import CustomerPoints, CustomerPointsHistory
 from app.models.open_order import OpenOrder, OpenOrderItem
+from app.models.open_order_payment import OpenOrderPayment
 from app.models.price_history import PriceHistory
 from app.models.product import Product
 from app.models.profit_loyalty import ClientProfitLoyalty
@@ -38,6 +39,7 @@ __all__ = [
     "Expense",
     "OpenOrder",
     "OpenOrderItem",
+    "OpenOrderPayment",
     "Payment",
     "PriceHistory",
     "Product",

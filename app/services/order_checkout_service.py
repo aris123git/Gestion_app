@@ -95,7 +95,14 @@ def checkout_open_order(
     except ValueError as exc:
         warn(parent, str(exc))
         return False
-    OrderService.mark_paid(order_id)
+    user = getattr(state.current_user, "username", "") or ""
+    OrderService.attach_sale_payment(
+        order_id,
+        result.sale_id,
+        dialog.result_payments,
+        user_id=state.user_id,
+        user_name=user,
+    )
     currency = settings_service.get_currency()
     from app.utils.helpers import format_money
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.i18n import t
 from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
-from app.services import permissions as perms
+from app.services import permissions as perms, product_profile
 from app.services.auth_service import AuthService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, page_title, warn
@@ -32,12 +32,16 @@ class UserDialog(QDialog):
         self.role.addItems(config.ROLES)
         self.active = QCheckBox('Compte actif')
         self.active.setChecked(True)
+        self.waitress = QCheckBox(t('Serveuse (caisse Maquis)'))
+        self.waitress.setVisible(product_profile.is_maquis())
         form.addRow(t("Nom d'utilisateur *"), self.username)
         form.addRow(t('Nom complet'), self.full_name)
         password_label = 'Mot de passe *' if not user else 'Nouveau mot de passe'
         form.addRow(password_label, self.password)
         form.addRow(t('Rôle'), self.role)
         form.addRow('', self.active)
+        if product_profile.is_maquis():
+            form.addRow('', self.waitress)
         layout.addLayout(form)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('Annuler'))
@@ -55,6 +59,7 @@ class UserDialog(QDialog):
             self.full_name.setText(user.full_name)
             self.role.setCurrentText(user.role)
             self.active.setChecked(user.is_active)
+            self.waitress.setChecked(bool(getattr(user, 'is_waitress', False)))
             self.password.setPlaceholderText(t('Laisser vide pour ne pas changer'))
 
     def _save(self) -> None:
@@ -70,7 +75,14 @@ class UserDialog(QDialog):
             except ValueError as exc:
                 warn(self, str(exc))
                 return
-        self.data = {'username': self.username.text().strip(), 'full_name': self.full_name.text().strip(), 'password': self.password.text(), 'role': self.role.currentText(), 'is_active': self.active.isChecked()}
+        self.data = {
+            'username': self.username.text().strip(),
+            'full_name': self.full_name.text().strip(),
+            'password': self.password.text(),
+            'role': self.role.currentText(),
+            'is_active': self.active.isChecked(),
+            'is_waitress': self.waitress.isChecked(),
+        }
         self.accept()
 
 class UsersPage(QWidget):
@@ -137,7 +149,15 @@ class UsersPage(QWidget):
         dialog = UserDialog(parent=self)
         if dialog.exec() and dialog.data:
             try:
-                AuthService.create_user(dialog.data['username'], dialog.data['password'], dialog.data['full_name'], dialog.data['role'], audit_user_id=self.state.user_id, audit_username=getattr(self.state.current_user, 'username', ''))
+                AuthService.create_user(
+                    dialog.data['username'],
+                    dialog.data['password'],
+                    dialog.data['full_name'],
+                    dialog.data['role'],
+                    is_waitress=dialog.data.get('is_waitress', False),
+                    audit_user_id=self.state.user_id,
+                    audit_username=getattr(self.state.current_user, 'username', ''),
+                )
             except ValueError as exc:
                 warn(self, str(exc))
                 return
@@ -154,7 +174,16 @@ class UsersPage(QWidget):
         dialog = UserDialog(user=user, parent=self)
         if dialog.exec() and dialog.data:
             try:
-                AuthService.update_user(user_id, full_name=dialog.data['full_name'], role=dialog.data['role'], is_active=dialog.data['is_active'], password=dialog.data['password'] or None, audit_user_id=self.state.user_id, audit_username=getattr(self.state.current_user, 'username', ''))
+                AuthService.update_user(
+                    user_id,
+                    full_name=dialog.data['full_name'],
+                    role=dialog.data['role'],
+                    is_active=dialog.data['is_active'],
+                    is_waitress=dialog.data.get('is_waitress', False),
+                    password=dialog.data['password'] or None,
+                    audit_user_id=self.state.user_id,
+                    audit_username=getattr(self.state.current_user, 'username', ''),
+                )
             except ValueError as exc:
                 warn(self, str(exc))
                 return

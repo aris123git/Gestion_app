@@ -34,6 +34,7 @@ class OrderService:
                 .options(
                     joinedload(OpenOrder.table),
                     joinedload(OpenOrder.items),
+                    joinedload(OpenOrder.payments),
                 )
                 .where(OpenOrder.id == order_id)
             ).first()
@@ -236,6 +237,90 @@ class OrderService:
                 raise ValueError("Commande non modifiable.")
             order.total = float(order.total or 0) - float(line.line_total or 0)
             session.delete(line)
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
+    def attach_sale_payment(
+        order_id: int,
+        sale_id: int,
+        payments: list,
+        *,
+        user_id: Optional[int] = None,
+        user_name: str = "",
+    ) -> OpenOrder:
+        from app.models.open_order_payment import OpenOrderPayment
+
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order:
+                raise ValueError("Commande introuvable.")
+            paid = 0.0
+            for pay in payments or []:
+                amt = float(getattr(pay, "amount", 0) or 0)
+                paid += amt
+                session.add(
+                    OpenOrderPayment(
+                        order_id=order.id,
+                        payment_mode=str(getattr(pay, "method", "Espèces") or "Espèces"),
+                        amount=amt,
+                        amount_tendered=float(getattr(pay, "amount_tendered", amt) or amt),
+                        change_amount=0.0,
+                        user_id=user_id,
+                        user_name=user_name or "",
+                    )
+                )
+            order.sale_id = sale_id
+            order.paid_amount = float(order.total or 0)
+            order.status = STATUS_PAID
+            order.closed_at = datetime.utcnow()
+            if order.table_id:
+                from app.models.dining_table import DiningTable
+
+                table = session.get(DiningTable, order.table_id)
+                if table:
+                    others = session.scalars(
+                        select(OpenOrder).where(
+                            OpenOrder.table_id == table.id,
+                            OpenOrder.status == STATUS_OPEN,
+                            OpenOrder.id != order.id,
+                        )
+                    ).first()
+                    if others is None:
+                        table.status = STATUS_FREE
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
+    def replace_items(order_id: int, lines: list) -> OpenOrder:
+        """Remplace les lignes (admin) — comme updateOrderItems tablette."""
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order or order.status not in (STATUS_OPEN, STATUS_UNPAID):
+                raise ValueError("Commande non modifiable.")
+            for old in list(order.items):
+                session.delete(old)
+            total = 0.0
+            for line in lines:
+                qty = float(line.get("quantity", 1))
+                price = float(line.get("unit_price", 0))
+                lt = round(qty * price, 2)
+                session.add(
+                    OpenOrderItem(
+                        order_id=order.id,
+                        product_id=line.get("product_id"),
+                        product_name=str(line.get("product_name", "")),
+                        quantity=qty,
+                        unit_price=price,
+                        line_total=lt,
+                    )
+                )
+                total += lt
+            order.total = total
             session.flush()
             session.refresh(order)
             session.expunge(order)

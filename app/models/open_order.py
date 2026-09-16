@@ -12,6 +12,7 @@ from app.database.connection import Base
 from app.models.mixins import TimestampMixin
 
 STATUS_OPEN = "ouverte"
+STATUS_UNPAID = "non_payée"
 STATUS_SERVED = "servie"
 STATUS_PAID = "payée"
 STATUS_CANCELLED = "annulée"
@@ -43,6 +44,13 @@ class OpenOrder(Base, TimestampMixin):
     items: Mapped[List["OpenOrderItem"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
+    payments: Mapped[List["OpenOrderPayment"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan"
+    )
+
+    @property
+    def remaining_amount(self) -> float:
+        return max(0.0, float(self.total or 0) - float(self.paid_amount or 0))
 
 
 class OpenOrderItem(Base):
