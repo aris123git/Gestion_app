@@ -57,7 +57,8 @@ class DashboardPage(QWidget):
         top_wrap = QWidget()
         top_layout = QVBoxLayout(top_wrap)
         top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.addWidget(section_title(t('Produits les plus vendus (30 j)')))
+        self._top_section = section_title(t('Produits les plus vendus (30 j)'))
+        top_layout.addWidget(self._top_section)
         self.top_table = QTableWidget(0, 3)
         self.top_table.setHorizontalHeaderLabels([t('Produit'), t('Quantité'), t('Total ventes')])
         self.top_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -68,7 +69,8 @@ class DashboardPage(QWidget):
         alert_wrap = QWidget()
         alert_layout = QVBoxLayout(alert_wrap)
         alert_layout.setContentsMargins(0, 0, 0, 0)
-        alert_layout.addWidget(section_title(t('Alertes de stock / prévisions')))
+        self._alert_section = section_title(t('Alertes de stock / prévisions'))
+        alert_layout.addWidget(self._alert_section)
         self.alert_table = QTableWidget(0, 4)
         self.alert_table.setHorizontalHeaderLabels([t('Produit'), t('Stock'), t('Seuil'), t('Rupture estimée')])
         self.alert_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -107,6 +109,82 @@ class DashboardPage(QWidget):
         for card in self._cards:
             card.setMinimumHeight(72 if profile.density == 'compact' else 120)
 
+    def _refresh_maquis(self) -> None:
+        from app.services.maquis_dashboard_service import month_stats, today_stats
+
+        currency = settings_service.get_currency()
+        uid = getattr(self.state, "user_id", None)
+        day = today_stats(user_id=uid)
+        month = month_stats(user_id=uid)
+        self.card_revenue_today.set_title(t("CA généré (jour)"))
+        self.card_revenue_today.set_value(format_money(day.ca_generated, currency))
+        self.card_revenue_month.set_title(t("CA encaissé (mois)"))
+        self.card_revenue_month.set_value(format_money(month.ca_collected, currency))
+        self.card_sales.set_title(t("Commandes (jour)"))
+        self.card_sales.set_value(str(day.orders_count))
+        self.card_profit.set_title(t("Bénéfice (jour)"))
+        self.card_profit.set_value(format_money(day.benefice, currency))
+        self.card_expenses.set_title(t("Dépenses (jour)"))
+        self.card_expenses.set_value(format_money(day.expenses_total, currency))
+        self.card_treasury.set_title(t("À encaisser"))
+        self.card_treasury.set_value(format_money(day.to_collect, currency))
+        self.card_net.set_title(t("Commandes ouvertes"))
+        self.card_net.set_value(str(day.open_orders))
+        self.card_low.set_title(t("Espèces (jour)"))
+        self.card_low.set_value(format_money(day.caisse_du_jour.cash_today, currency))
+        self.card_out.set_title(t("Mobile (jour)"))
+        self.card_out.set_value(format_money(day.caisse_du_jour.mobile_today, currency))
+        self.card_products.set_title(t("Dettes créées (jour)"))
+        self.card_products.set_value(format_money(day.caisse_du_jour.debt_today, currency))
+        if day.caisse_du_jour.especes_theoriques is not None:
+            self.card_debt.set_title(t("Espèces théoriques"))
+            self.card_debt.set_value(
+                format_money(day.caisse_du_jour.especes_theoriques, currency)
+            )
+            hint = ""
+            if day.caisse_du_jour.ecart is not None:
+                hint = f"Écart : {format_money(day.caisse_du_jour.ecart, currency)}"
+            self.card_debt.set_hint(hint or t("Session caisse ouverte"))
+        if hasattr(self, "_top_section"):
+            self._top_section.setText(t("Serveuses (jour)"))
+        if hasattr(self, "_alert_section"):
+            self._alert_section.setText(t("Top produits (commandes payées)"))
+        self.top_table.setHorizontalHeaderLabels(
+            [t("Serveuse"), t("Commandes"), t("CA généré"), t("À encaisser")]
+        )
+        ws = day.waitress_stats
+        self.top_table.setRowCount(len(ws))
+        for row, w in enumerate(ws):
+            self.top_table.setItem(row, 0, QTableWidgetItem(w.waitress_name))
+            self.top_table.setItem(row, 1, QTableWidgetItem(str(w.order_count)))
+            self.top_table.setItem(
+                row, 2, QTableWidgetItem(format_money(w.ca_generated, currency))
+            )
+            self.top_table.setItem(
+                row, 3, QTableWidgetItem(format_money(w.to_collect, currency))
+            )
+        prods = day.top_products
+        self.alert_table.setHorizontalHeaderLabels(
+            [t("Produit"), t("Qté"), t("CA"), t("Marge")]
+        )
+        self.alert_table.setRowCount(len(prods))
+        for row, p in enumerate(prods):
+            self.alert_table.setItem(row, 0, QTableWidgetItem(p.product_name))
+            self.alert_table.setItem(row, 1, QTableWidgetItem(format_quantity(p.quantity)))
+            self.alert_table.setItem(row, 2, QTableWidgetItem(format_money(p.revenue, currency)))
+            self.alert_table.setItem(
+                row, 3, QTableWidgetItem(format_money(p.benefice, currency))
+            )
+        lines = [
+            f"{t('Coût marchandises')} : {format_money(day.cost_of_goods, currency)}",
+            f"{t('CA encaissé jour')} : {format_money(day.ca_collected, currency)}",
+        ]
+        if day.caisse_du_jour.fond_de_caisse is not None:
+            lines.append(
+                f"{t('Fond de caisse')} : {format_money(day.caisse_du_jour.fond_de_caisse, currency)}"
+            )
+        self.insights_label.setText("\n".join(lines))
+
     def _open_debts(self) -> None:
         """Ouvre la page Dettes (onglet non payées) depuis la carte Dette total."""
         window = self.window()
@@ -131,6 +209,11 @@ class DashboardPage(QWidget):
 
     def refresh(self) -> None:
         self._apply_permissions()
+        from app.services import product_profile
+
+        if product_profile.is_maquis():
+            self._refresh_maquis()
+            return
         currency = settings_service.get_currency()
         data = DashboardController.summary()
         fin = DashboardService.financial_summary()

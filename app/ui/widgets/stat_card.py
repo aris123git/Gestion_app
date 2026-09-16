@@ -18,8 +18,10 @@ class StatCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(6)
+        self._icon = icon
         header = QLabel(f'{icon}  {title}'.strip())
         header.setObjectName('StatTitle')
+        self._title_label = header
         self.value_label = QLabel(value)
         self.value_label.setObjectName('StatValue')
         self.value_label.setStyleSheet('font-size: 26px; font-weight: 700;')
@@ -34,6 +36,10 @@ class StatCard(QFrame):
         if on_click is not None:
             self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             self.setToolTip(t('Cliquer pour voir le détail'))
+
+    def set_title(self, title: str) -> None:
+        prefix = f'{self._icon}  ' if self._icon else ''
+        self._title_label.setText(f'{prefix}{title}'.strip())
 
     def set_value(self, value: str) -> None:
         self.value_label.setText(value)
