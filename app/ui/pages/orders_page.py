@@ -1,10 +1,34 @@
-"""Commandes ouvertes — Maquis Caisse PC."""
+"""Commandes ouvertes — Maquis Caisse PC.
+
+Liste les commandes en cours sur les tables, avec :
+
+* **Ouvrir / Modifier** → ouvre la caisse tablette (ajout produits, quantités,
+  encaissement) — le double-clic sur une ligne fait la même chose ;
+* **Marquer payée** → passe la commande en payée **sans imprimer** de ticket
+  (l'utilisateur peut toujours imprimer manuellement depuis l'aperçu s'il le
+  souhaite un jour) ;
+* **Annuler** → annule la commande et libère la table.
+"""
+
 from __future__ import annotations
+
 from app.i18n import t
-from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 from app.services import order_service, settings_service
 from app.ui.widgets.helpers import confirm, info, warn
 from app.utils.helpers import format_money
+
 
 class OrdersPage(QWidget):
 
@@ -16,21 +40,40 @@ class OrdersPage(QWidget):
         title = QLabel(t('Commandes ouvertes'))
         title.setObjectName('PageTitle')
         layout.addWidget(title)
-        layout.addWidget(QLabel(t('Commandes en cours sur les tables. Encaissement via « Marquer payée ».')))
+        layout.addWidget(
+            QLabel(
+                t(
+                    "Commandes en cours sur les tables. Ouvrez-en une pour ajouter des produits, ou marquez-la payée (sans impression)."
+                )
+            )
+        )
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels([t('N°'), t('Table'), t('Client'), t('Total'), t('Statut')])
+        self.table.setHorizontalHeaderLabels(
+            [t('N°'), t('Table'), t('Client'), t('Total'), t('Statut')]
+        )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.doubleClicked.connect(self._open_register)
         layout.addWidget(self.table, 1)
         actions = QHBoxLayout()
+        open_btn = QPushButton(t('Ouvrir / Modifier'))
+        open_btn.setObjectName('Primary')
+        open_btn.setToolTip(
+            t("Ouvre la caisse tablette pour ajouter des produits ou encaisser la commande.")
+        )
+        open_btn.clicked.connect(self._open_register)
         pay = QPushButton(t('Marquer payée'))
-        pay.setObjectName('Primary')
+        pay.setObjectName('Success')
+        pay.setToolTip(
+            t("Passe la commande en payée et libère la table. Aucun ticket n'est imprimé.")
+        )
         pay.clicked.connect(self._pay)
         cancel = QPushButton(t('Annuler'))
         cancel.clicked.connect(self._cancel)
         refresh = QPushButton(t('Actualiser'))
         refresh.clicked.connect(self.refresh)
+        actions.addWidget(open_btn)
         actions.addWidget(pay)
         actions.addWidget(cancel)
         actions.addStretch()
@@ -60,12 +103,32 @@ class OrdersPage(QWidget):
             return None
         return self._ids[row]
 
+    def _open_register(self, *_args) -> None:
+        oid = self._selected_id()
+        if not oid:
+            warn(self, t('Sélectionnez une commande.'))
+            return
+        from app.ui.dialogs.table_register_dialog import TableRegisterDialog
+
+        try:
+            dialog = TableRegisterDialog(oid, parent=self)
+        except ValueError as exc:
+            warn(self, str(exc))
+            self.refresh()
+            return
+        dialog.exec()
+        self.refresh()
+
     def _pay(self) -> None:
         oid = self._selected_id()
         if not oid:
             warn(self, t('Sélectionnez une commande.'))
             return
-        if not confirm(self, t('Marquer cette commande comme payée ?'), t('Commande')):
+        if not confirm(
+            self,
+            t("Marquer cette commande comme payée ? Aucun ticket ne sera imprimé."),
+            t('Commande'),
+        ):
             return
         try:
             order_service.OrderService.mark_paid(oid)
