@@ -1,12 +1,12 @@
 @echo off
 REM ===================================================================
-REM  Script de génération du bundle Windows (onedir)
+REM  Build Windows — un seul fichier GestionCommerciale.exe (onefile)
 REM  Prérequis : Python 3 installé et dans le PATH.
 REM ===================================================================
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-echo [1/5] Preparation de l'environnement virtuel...
+echo [1/4] Preparation de l'environnement virtuel...
 if exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" -c "import pip" 1>nul 2>nul
     if errorlevel 1 (
@@ -23,7 +23,7 @@ if not exist ".venv\Scripts\python.exe" (
     )
 )
 
-echo [2/5] Installation des dependances...
+echo [2/4] Installation des dependances...
 call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 if errorlevel 1 (
@@ -53,7 +53,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/5] Generation du bundle avec PyInstaller...
+echo [3/4] Generation de l'EXE unique (onefile)...
 python -m PyInstaller gestion_app.spec --noconfirm
 if errorlevel 1 (
     echo ERREUR : PyInstaller a echoue.
@@ -61,18 +61,23 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/5] Verification du bundle (modules + plugins Qt)...
-python scripts\verify_exe_modules.py dist\GestionCommerciale
+echo [4/4] Verification de l'EXE...
+python scripts\verify_exe_modules.py dist\GestionCommerciale.exe
 if errorlevel 1 (
-    echo ERREUR : bundle incomplet. Ne pas distribuer ce dossier.
+    echo ERREUR : EXE incomplet. Ne pas distribuer.
     pause
     exit /b 1
 )
 
-echo [5/5] Termine.
-echo Le bundle se trouve dans : dist\GestionCommerciale\
-echo Lancez GestionCommerciale.exe depuis CE dossier entier ^(_internal obligatoire^).
-echo En cas de fermeture immediate : GestionCommerciale_console.exe ou
-echo %%APPDATA%%\GestionCommerciale\startup_error.log
+echo.
+echo === TERMINE ===
+echo Copiez UN SEUL fichier sur la cle / le PC :
+echo   dist\GestionCommerciale.exe
+echo.
+echo Diagnostic (si fermeture immediate) :
+echo   dist\GestionCommerciale_console.exe
+echo   ou %%APPDATA%%\GestionCommerciale\startup_error.log
+echo.
+echo Astuce antivirus : ajoutez une exclusion sur le dossier / l'exe.
 pause
 endlocal

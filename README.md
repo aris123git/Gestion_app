@@ -138,22 +138,20 @@ ou manuellement :
 pyinstaller gestion_app.spec --noconfirm
 ```
 
-L'application est générée dans le dossier `dist/GestionCommerciale/`
-(mode **onedir** : `GestionCommerciale.exe` + dossier `_internal`).
-Téléchargez / copiez **tout le dossier**, pas seulement le `.exe`.
+L'application est générée en **un seul fichier** :
+`dist/GestionCommerciale.exe` (mode PyInstaller **onefile**).
+
+Copiez ce fichier sur la clé USB ou le PC cible — rien d'autre n'est requis
+(les données restent dans `%APPDATA%\GestionCommerciale`).
 
 **L'EXE ne s'ouvre pas / se ferme tout de suite ?**
 
-1. Copiez **tout** `dist\GestionCommerciale\` (y compris `_internal`), ou utilisez
-   l'installateur Inno Setup (`installer.iss`).
-2. Ajoutez une **exclusion antivirus** sur ce dossier (sinon
-   `ModuleNotFoundError: app.ui.main_window` est fréquent).
-3. Lancez `GestionCommerciale_console.exe` dans le même dossier : la console
-   affiche l'erreur Python.
-4. Sinon ouvrez `%APPDATA%\GestionCommerciale\startup_error.log`.
-5. Reconstruisez après `git pull` : `build_windows.bat` vérifie le bundle.
-   Vous pouvez aussi télécharger l'artefact **GestionCommerciale-Windows** sur
-   GitHub Actions (branche `main`).
+1. Lancez `dist\GestionCommerciale_console.exe` : la console affiche l'erreur.
+2. Ajoutez une **exclusion antivirus** sur l'exe (sinon
+   `ModuleNotFoundError: app.ui.main_window` est fréquent au premier lancement).
+3. Sinon ouvrez `%APPDATA%\GestionCommerciale\startup_error.log`.
+4. Reconstruisez après `git pull` : `build_windows.bat` vérifie l'EXE.
+   Artefact CI : **GestionCommerciale-Windows** (`GestionCommerciale.exe`).
 
 ## Génération de l'installateur Windows
 

@@ -30,7 +30,7 @@ séparé de l'UI : `models/` (ORM) → `controllers/` (logique) → `ui/` (PySid
   (`source .venv/bin/activate`).
 - **Packaging Windows** (`pyinstaller gestion_app.spec`, `installer.iss`) est
   prévu pour être exécuté **sous Windows**, pas dans le VM Linux. Le résultat
-  est un dossier `dist/GestionCommerciale/` (onedir), pas un seul `.exe`.
+  est un seul fichier `dist/GestionCommerciale.exe` (mode **onefile**).
 - **Tests automatisés** : suite unitaire dans `tests/` (lancer avec
   `python -m unittest discover -s tests -v`). La CI Windows build l'exe ; la
   validation métier complète reste un flux caisse manuel (créer un produit,
