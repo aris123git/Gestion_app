@@ -33,9 +33,23 @@ jobs:
       - name: Vérifier les modules critiques dans le bundle
         run: python scripts/verify_exe_modules.py dist/GestionCommerciale
 
+      - name: Ajouter LANCER.bat + ZIP portable USB
+        shell: pwsh
+        run: |
+          Copy-Item portable/LANCER.bat dist/GestionCommerciale/LANCER.bat -Force
+          Copy-Item portable/LIRE_MOI_CLE_USB.txt dist/GestionCommerciale/LIRE_MOI_CLE_USB.txt -Force
+          Compress-Archive -Path dist/GestionCommerciale/* -DestinationPath dist/GestionCommerciale_portable.zip -Force
+
       - name: Publier le dossier Windows (artefact téléchargeable)
         uses: actions/upload-artifact@v4
         with:
           name: GestionCommerciale-Windows
           path: dist/GestionCommerciale/
+          if-no-files-found: error
+
+      - name: Publier le ZIP portable (clé USB)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCommerciale-portable-zip
+          path: dist/GestionCommerciale_portable.zip
           if-no-files-found: error

@@ -69,9 +69,26 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo [4b/5] Fichiers portable USB + ZIP...
+copy /Y "portable\LANCER.bat" "dist\GestionCommerciale\LANCER.bat" >nul
+copy /Y "portable\LIRE_MOI_CLE_USB.txt" "dist\GestionCommerciale\LIRE_MOI_CLE_USB.txt" >nul
+if exist "dist\GestionCommerciale_portable.zip" del /f /q "dist\GestionCommerciale_portable.zip"
+powershell -NoProfile -Command "Compress-Archive -Path 'dist\GestionCommerciale\*' -DestinationPath 'dist\GestionCommerciale_portable.zip' -Force"
+if errorlevel 1 (
+    echo Avertissement : ZIP non cree. Vous pouvez quand meme copier le dossier dist\GestionCommerciale\
+) else (
+    echo ZIP portable : dist\GestionCommerciale_portable.zip
+)
+
 echo [5/5] Termine.
-echo Le bundle se trouve dans : dist\GestionCommerciale\
-echo Lancez GestionCommerciale.exe depuis CE dossier entier ^(_internal obligatoire^).
+echo.
+echo === COPIE SUR CLE USB ===
+echo 1. Preferez : copier dist\GestionCommerciale_portable.zip sur la cle puis Extraire.
+echo 2. Ou copier TOUT le dossier dist\GestionCommerciale\ ^(exe + _internal^).
+echo 3. Sur la cle : double-cliquer LANCER.bat ^(pas l'exe seul^).
+echo.
+echo Ne JAMAIS copier seulement GestionCommerciale.exe — ca ne marchera pas.
+echo.
 echo En cas de fermeture immediate : GestionCommerciale_console.exe ou
 echo %%APPDATA%%\GestionCommerciale\startup_error.log
 pause

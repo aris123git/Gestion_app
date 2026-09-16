@@ -140,7 +140,17 @@ pyinstaller gestion_app.spec --noconfirm
 
 L'application est générée dans le dossier `dist/GestionCommerciale/`
 (mode **onedir** : `GestionCommerciale.exe` + dossier `_internal`).
-Téléchargez / copiez **tout le dossier**, pas seulement le `.exe`.
+`build_windows.bat` crée aussi `dist/GestionCommerciale_portable.zip`.
+
+### Copie sur clé USB
+
+**Ne copiez jamais seulement le `.exe`.** Sans `_internal`, Windows demande
+des fichiers manquants / le disque et l'app ne démarre pas.
+
+1. Copiez `GestionCommerciale_portable.zip` sur la clé, **ou** tout le dossier
+   `GestionCommerciale\`
+2. Sur la clé : extraire le ZIP si besoin
+3. Double-cliquez **`LANCER.bat`** (il vérifie que `_internal` est présent)
 
 **L'EXE ne s'ouvre pas / se ferme tout de suite ?**
 

@@ -1,0 +1,34 @@
+========================================
+  COPIE SUR CLE USB — A LIRE
+========================================
+
+NE COPIEZ PAS SEULEMENT « GestionCommerciale.exe ».
+
+Ce logiciel a besoin du dossier COMPLET :
+
+  GestionCommerciale\
+    LANCER.bat                 ← double-cliquez ici pour demarrer
+    GestionCommerciale.exe
+    _internal\                 ← OBLIGATOIRE (DLL, Python, interface…)
+    LIRE_MOI_CLE_USB.txt
+
+COMMENT FAIRE
+-------------
+1. Preferez le fichier ZIP (GestionCommerciale_portable.zip) :
+   - Copiez le ZIP sur la cle
+   - Clic droit → Extraire tout…
+   - Ouvrez le dossier extrait
+   - Double-cliquez sur LANCER.bat
+
+2. Ou copiez le dossier entier « GestionCommerciale » (glisser-deposer
+   le dossier, pas un seul fichier .exe).
+
+SI CA NE DEMARRE PAS
+--------------------
+- Verifiez que _internal est bien present a cote de l’exe
+- Autorisez le dossier dans Windows Defender / antivirus
+- Essayez GestionCommerciale_console.exe pour voir l’erreur
+
+Les donnees (ventes, stock) restent sur le PC dans :
+  %APPDATA%\GestionCommerciale
+(pas sur la cle, sauf si GESTION_DATA_DIR pointe ailleurs)
