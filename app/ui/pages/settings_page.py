@@ -19,6 +19,8 @@ class SettingsPage(QWidget):
         super().__init__()
         self.state = state
         self._logo_path = ''
+        self._maquis_tables_cb = None
+        self._maquis_kitchen_cb = None
         self._backup_paths: list[Path] = []
         self._product_secret_clicks = 0
         self._product_click_timer = QTimer(self)
@@ -157,6 +159,22 @@ class SettingsPage(QWidget):
         self.catalog_categories.setChecked(catalog_features.category_browser_enabled())
         form.addRow('', self.catalog_images)
         form.addRow('', self.catalog_categories)
+        from app.services import product_profile as _pp
+
+        self._maquis_tables_cb = None
+        self._maquis_kitchen_cb = None
+        if _pp.is_maquis():
+            from app.services import maquis_settings
+
+            form.addRow(QLabel(f"<b>{t('Maquis Caisse (PC)')}</b>"))
+            self._maquis_tables_cb = QCheckBox(t("Activer le plan de salle (tables)"))
+            self._maquis_tables_cb.setChecked(maquis_settings.tables_enabled())
+            self._maquis_kitchen_cb = QCheckBox(
+                t("Proposer le bon serveur après enregistrement d'une commande")
+            )
+            self._maquis_kitchen_cb.setChecked(maquis_settings.kitchen_prompt_after_save())
+            form.addRow("", self._maquis_tables_cb)
+            form.addRow("", self._maquis_kitchen_cb)
         outer.addWidget(make_card(form_widget))
         save = QPushButton(t('Enregistrer les informations'))
         save.setObjectName('Primary')
@@ -205,6 +223,11 @@ class SettingsPage(QWidget):
         settings_service.set_setting('shop_fax', self.fax.text().strip())
         catalog_features.set_product_images_enabled(self.catalog_images.isChecked())
         catalog_features.set_category_browser_enabled(self.catalog_categories.isChecked())
+        if self._maquis_tables_cb is not None:
+            from app.services import maquis_settings
+
+            maquis_settings.set_tables_enabled(self._maquis_tables_cb.isChecked())
+            maquis_settings.set_kitchen_prompt_after_save(self._maquis_kitchen_cb.isChecked())
         lang_changed = set_language(new_lang) != previous_lang
         audit_service.log_action('Paramètres commerce', 'ShopInfo', '', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         if lang_changed:

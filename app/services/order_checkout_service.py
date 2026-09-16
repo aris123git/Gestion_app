@@ -13,7 +13,7 @@ from app.controllers.sale_controller import (
     SaleController,
 )
 from app.i18n import t
-from app.models.open_order import STATUS_OPEN
+from app.models.open_order import STATUS_OPEN, STATUS_UNPAID
 from app.services import permissions as perms, settings_service
 from app.services.order_service import OrderService
 from app.ui.dialogs.payment_dialog import PaymentDialog
@@ -47,16 +47,17 @@ def checkout_open_order(
 ) -> bool:
     """Encaisse la commande (PaymentDialog), crée la vente, marque payée — pas de ticket."""
     order = OrderService.get(order_id)
-    if not order or order.status != STATUS_OPEN:
+    if not order or order.status not in (STATUS_OPEN, STATUS_UNPAID):
         warn(parent, t("Commande introuvable ou déjà clôturée."))
         return False
     if not order.items:
         warn(parent, t("La commande ne contient aucun article."))
         return False
     lines = order_to_cart_lines(order)
-    total = float(order.total or 0)
+    prior_paid = float(order.paid_amount or 0)
+    total_due = float(order.remaining_amount)
     dialog = PaymentDialog(
-        total,
+        total_due,
         client_id=None,
         client_phone="",
         allow_credit=state.can(perms.SELL_ON_CREDIT),
@@ -76,7 +77,7 @@ def checkout_open_order(
             lines=lines,
             payments=dialog.result_payments,
             amount_received=dialog.amount_received,
-            discount=0.0,
+            discount=prior_paid,
             client_id=dialog.result_client_id,
             user_id=state.user_id,
             allow_credit=credit_requested,

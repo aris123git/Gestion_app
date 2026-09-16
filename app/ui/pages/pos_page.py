@@ -192,7 +192,9 @@ class POSPage(QWidget):
         resume_btn.clicked.connect(self._resume_pending)
         pending_row.addWidget(hold_btn)
         pending_row.addWidget(resume_btn)
-        layout.addLayout(pending_row)
+        self._pending_row = QWidget()
+        self._pending_row.setLayout(pending_row)
+        layout.addWidget(self._pending_row)
         pay_button = QPushButton(t('pos.checkout'))
         pay_button.setObjectName('Success')
         pay_button.setMinimumHeight(52)
@@ -233,8 +235,15 @@ class POSPage(QWidget):
         self._table_combo.addItem("Aucune", None)
         from app.services.table_service import TableService
 
-        for table in TableService.list():
-            self._table_combo.addItem(table.display_name, table.id)
+        from app.services.maquis_settings import tables_enabled
+
+        self._tables_enabled = tables_enabled()
+        if self._tables_enabled:
+            for table in TableService.list():
+                self._table_combo.addItem(table.display_name, table.id)
+        else:
+            self._table_combo.setEnabled(False)
+            self._table_combo.addItem(t("Tables désactivées"), None)
         bar.addWidget(QLabel("Serveuse"))
         bar.addWidget(self._waitress_combo, 1)
         bar.addWidget(QLabel("Table"))
@@ -249,6 +258,8 @@ class POSPage(QWidget):
         for w in (self._loyalty_row_widget,):
             w.setVisible(False)
         self.discount_input.parentWidget().setVisible(False) if self.discount_input.parentWidget() else None
+        if hasattr(self, "_pending_row"):
+            self._pending_row.setVisible(False)
 
     def _maquis_product_tap(self, product) -> None:
         from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
@@ -299,20 +310,45 @@ class POSPage(QWidget):
         try:
             from app.services.order_service import OrderService
 
-            OrderService.create_from_cart(
+            order = OrderService.upsert_cart_for_table(
                 self.cart,
                 table_id=tid,
                 table_label=tlabel,
                 waitress_id=wid,
                 waitress_name=wname,
                 opened_by=self.state.user_id,
-                mark_paid=False,
             )
-            info(self, "Commande enregistrée (non payée).")
+            info(
+                self,
+                t("Commande {id} enregistrée (non payée).").format(
+                    id=order.public_id
+                ),
+            )
+            self._maybe_maquis_kitchen_prompt(order.id)
             self._clear_cart()
             self.state.notify_data_changed()
         except Exception as exc:
             warn(self, str(exc))
+
+    def _maybe_maquis_kitchen_prompt(self, order_id: int) -> None:
+        from app.services.maquis_settings import kitchen_prompt_after_save
+        from app.services.maquis_kitchen import print_kitchen_for_order
+        from app.ui.widgets.helpers import confirm
+
+        if not kitchen_prompt_after_save():
+            return
+        if not confirm(
+            self,
+            t("Imprimer le bon serveur pour cette commande ?"),
+            t("Bon serveur"),
+        ):
+            return
+        user = getattr(self.state.current_user, "username", "") or ""
+        ok, msg = print_kitchen_for_order(order_id, cashier_name=user)
+        if ok:
+            info(self, msg, t("Bon serveur"))
+        else:
+            warn(self, msg, t("Bon serveur"))
 
     def refresh(self) -> None:
         if isinstance(self._catalog, PosCatalogPanel):
@@ -776,15 +812,32 @@ class POSPage(QWidget):
             tid, tlabel, wid, wname = self._maquis_table_context()
             from app.services.order_service import OrderService
 
-            OrderService.create_from_cart(
-                list(self.cart),
-                table_id=tid,
-                table_label=tlabel,
-                waitress_id=wid,
-                waitress_name=wname,
-                opened_by=self.state.user_id,
-                mark_paid=True,
-                sale_id=result.sale_id,
+            user = getattr(self.state.current_user, "username", "") or ""
+            if tid:
+                order = OrderService.upsert_cart_for_table(
+                    list(self.cart),
+                    table_id=tid,
+                    table_label=tlabel,
+                    waitress_id=wid,
+                    waitress_name=wname,
+                    opened_by=self.state.user_id,
+                )
+            else:
+                order = OrderService.create_from_cart(
+                    list(self.cart),
+                    table_id=None,
+                    table_label="",
+                    waitress_id=wid,
+                    waitress_name=wname,
+                    opened_by=self.state.user_id,
+                    mark_paid=False,
+                )
+            OrderService.attach_sale_payment(
+                order.id,
+                result.sale_id,
+                dialog.result_payments,
+                user_id=self.state.user_id,
+                user_name=user,
             )
         elif not self._maquis_mode:
             sale = SaleController.get(result.sale_id)

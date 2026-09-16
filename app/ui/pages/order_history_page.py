@@ -1,4 +1,4 @@
-"""Historique des commandes — équivalent HistoriqueScreen (tablette)."""
+"""Historique des commandes — Maquis Caisse PC."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ class OrderHistoryPage(QWidget):
         self._on_open_order = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        title = QLabel(t("nav.maquis.history"))
+        title = QLabel(t("Historique commandes"))
         title.setObjectName("PageTitle")
         layout.addWidget(title)
         layout.addWidget(

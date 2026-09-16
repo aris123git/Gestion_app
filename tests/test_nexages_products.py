@@ -122,6 +122,37 @@ class MaquisTablesOrdersTestCase(unittest.TestCase):
         t2 = next(t for t in tables2 if t.id == free.id)
         self.assertEqual(t2.status, "libre")
 
+    def test_upsert_cart_merges_on_same_table(self) -> None:
+        from app.controllers.sale_controller import CartLine
+
+        table_service.TableService.ensure_defaults()
+        free = next(t for t in table_service.TableService.list() if t.status == "libre")
+        line = CartLine(
+            product_id=None,
+            name="Test",
+            unit_price=1000.0,
+            quantity=1.0,
+            purchase_price=0.0,
+        )
+        o1 = order_service.OrderService.upsert_cart_for_table(
+            [line], table_id=free.id, table_label=free.display_name
+        )
+        line2 = CartLine(
+            product_id=None,
+            name="Test",
+            unit_price=1000.0,
+            quantity=2.0,
+            purchase_price=0.0,
+        )
+        o2 = order_service.OrderService.upsert_cart_for_table(
+            [line2], table_id=free.id, table_label=free.display_name
+        )
+        self.assertEqual(o1.id, o2.id)
+        loaded = order_service.OrderService.get(o2.id)
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded.items), 2)
+        self.assertEqual(float(loaded.total), 3000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

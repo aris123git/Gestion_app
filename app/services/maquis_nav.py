@@ -1,4 +1,4 @@
-"""Navigation Maquis Caisse PC — alignée sur l'app tablette (MaquisSideBar)."""
+"""Navigation Maquis Caisse PC."""
 
 from __future__ import annotations
 
@@ -32,7 +32,9 @@ def build_maquis_nav_items() -> List[NavEntry]:
     if not product_profile.is_maquis():
         return []
 
-    return [
+    from app.services.maquis_settings import tables_enabled
+
+    items = [
         (t("Caisse"), "🛒", POSPage, perms.SELL),
         (t("Commandes"), "🍽️", OrdersPage, perms.SELL),
         (t("Historique"), "📋", OrderHistoryPage, perms.SELL),
@@ -51,6 +53,9 @@ def build_maquis_nav_items() -> List[NavEntry]:
         (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
         (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
     ]
+    if not tables_enabled():
+        items = [e for e in items if e[0] != t("nav.tables")]
+    return items
 
 
 def maquis_nav_visible(state, entry: NavEntry) -> bool:

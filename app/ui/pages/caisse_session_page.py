@@ -1,4 +1,4 @@
-"""Relève de caisse — équivalent CaisseSessionScreen (tablette)."""
+"""Relève de caisse — Maquis Caisse PC."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ class CaisseSessionPage(QWidget):
         self.state = state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        title = QLabel(t("nav.maquis.cash_session"))
+        title = QLabel(t("Relève de caisse"))
         title.setObjectName("PageTitle")
         layout.addWidget(title)
         layout.addWidget(

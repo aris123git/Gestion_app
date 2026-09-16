@@ -19,7 +19,12 @@ def _default_flag(setting_key: str, gestion_default: str) -> str:
 
 
 def ensure_maquis_tablet_defaults() -> None:
-    """Premier lancement Maquis : aligner l'affichage caisse sur la tablette."""
+    """Alias historique — préférences Maquis version PC."""
+    ensure_maquis_pc_defaults()
+
+
+def ensure_maquis_pc_defaults() -> None:
+    """Premier lancement Maquis : affichage caisse et options PC."""
     if not product_profile.is_maquis():
         return
     if settings_service.get_setting(SETTING_PRODUCT_IMAGES, "") == "":
@@ -28,6 +33,9 @@ def ensure_maquis_tablet_defaults() -> None:
         set_category_browser_enabled(True)
     if settings_service.get_setting("pos_catalog_large_text", "") == "":
         settings_service.set_setting("pos_catalog_large_text", "1")
+    from app.services.maquis_settings import ensure_maquis_pc_defaults as _maquis
+
+    _maquis()
 
 
 def product_images_enabled() -> bool:

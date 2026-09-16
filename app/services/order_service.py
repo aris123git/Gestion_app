@@ -15,9 +15,12 @@ from app.models.open_order import (
     STATUS_CANCELLED,
     STATUS_OPEN,
     STATUS_PAID,
+    STATUS_UNPAID,
     OpenOrder,
     OpenOrderItem,
 )
+
+_ORDER_EDITABLE = frozenset({STATUS_OPEN, STATUS_UNPAID})
 from app.services import table_service
 
 
@@ -51,7 +54,7 @@ class OrderService:
                 .options(joinedload(OpenOrder.items))
                 .where(
                     OpenOrder.table_id == table_id,
-                    OpenOrder.status == STATUS_OPEN,
+                    OpenOrder.status.in_((STATUS_OPEN, STATUS_UNPAID)),
                 )
                 .order_by(OpenOrder.id.desc())
             ).first()
@@ -70,7 +73,7 @@ class OrderService:
                         joinedload(OpenOrder.table),
                         joinedload(OpenOrder.items),
                     )
-                    .where(OpenOrder.status == STATUS_OPEN)
+                    .where(OpenOrder.status.in_((STATUS_OPEN, STATUS_UNPAID)))
                     .order_by(OpenOrder.id.desc())
                     .limit(limit)
                 )
@@ -170,6 +173,88 @@ class OrderService:
             return order
 
     @staticmethod
+    def append_cart_lines(
+        order_id: int,
+        lines,
+        *,
+        waitress_id: Optional[int] = None,
+        waitress_name: str = "",
+    ) -> OpenOrder:
+        """Ajoute les lignes du panier à une commande existante (caisse PC)."""
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order or order.status not in _ORDER_EDITABLE:
+                raise ValueError("Commande non modifiable.")
+            if waitress_id is not None:
+                order.waitress_id = waitress_id
+                order.waitress_name = (waitress_name or "").strip()
+            for cart_line in lines:
+                qty = float(getattr(cart_line, "quantity", 1) or 1)
+                price = float(getattr(cart_line, "unit_price", 0) or 0)
+                pid = getattr(cart_line, "product_id", None)
+                name = str(getattr(cart_line, "name", "") or "")
+                merged = False
+                if pid and not getattr(cart_line, "free_amount", False):
+                    for existing in order.items:
+                        if existing.product_id == pid:
+                            existing.quantity = float(existing.quantity or 0) + qty
+                            existing.line_total = round(
+                                float(existing.quantity) * float(existing.unit_price), 2
+                            )
+                            merged = True
+                            break
+                if not merged:
+                    lt = round(qty * price, 2)
+                    session.add(
+                        OpenOrderItem(
+                            order_id=order.id,
+                            product_id=pid,
+                            product_name=name,
+                            quantity=qty,
+                            unit_price=price,
+                            line_total=lt,
+                        )
+                    )
+            session.flush()
+            order.total = round(
+                sum(float(i.line_total or 0) for i in order.items), 2
+            )
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
+    def upsert_cart_for_table(
+        lines,
+        *,
+        table_id: Optional[int],
+        table_label: str = "",
+        waitress_id: Optional[int] = None,
+        waitress_name: str = "",
+        opened_by: Optional[int] = None,
+    ) -> OpenOrder:
+        """Crée ou complète la commande ouverte d'une table."""
+        if table_id:
+            existing = OrderService.open_for_table(table_id)
+            if existing:
+                return OrderService.append_cart_lines(
+                    existing.id,
+                    lines,
+                    waitress_id=waitress_id,
+                    waitress_name=waitress_name,
+                )
+        return OrderService.create_from_cart(
+            lines,
+            table_id=table_id,
+            table_label=table_label,
+            waitress_id=waitress_id,
+            waitress_name=waitress_name,
+            opened_by=opened_by,
+            mark_paid=False,
+        )
+
+    @staticmethod
     def open_on_table(
         table_id: int,
         *,
@@ -207,7 +292,7 @@ class OrderService:
     ) -> OpenOrder:
         with session_scope() as session:
             order = session.get(OpenOrder, order_id)
-            if not order or order.status != STATUS_OPEN:
+            if not order or order.status not in _ORDER_EDITABLE:
                 raise ValueError("Commande non modifiable.")
             qty = float(quantity)
             price = float(unit_price)
@@ -233,7 +318,7 @@ class OrderService:
             if not line:
                 raise ValueError("Ligne introuvable.")
             order = session.get(OpenOrder, line.order_id)
-            if not order or order.status != STATUS_OPEN:
+            if not order or order.status not in _ORDER_EDITABLE:
                 raise ValueError("Commande non modifiable.")
             order.total = float(order.total or 0) - float(line.line_total or 0)
             session.delete(line)
@@ -273,10 +358,15 @@ class OrderService:
                     )
                 )
             order.sale_id = sale_id
-            order.paid_amount = float(order.total or 0)
-            order.status = STATUS_PAID
-            order.closed_at = datetime.utcnow()
-            if order.table_id:
+            order.paid_amount = round(float(order.paid_amount or 0) + paid, 2)
+            total = float(order.total or 0)
+            if order.paid_amount + 0.009 >= total:
+                order.paid_amount = total
+                order.status = STATUS_PAID
+                order.closed_at = datetime.utcnow()
+            else:
+                order.status = STATUS_UNPAID
+            if order.status == STATUS_PAID and order.table_id:
                 from app.models.dining_table import DiningTable
 
                 table = session.get(DiningTable, order.table_id)
@@ -284,7 +374,7 @@ class OrderService:
                     others = session.scalars(
                         select(OpenOrder).where(
                             OpenOrder.table_id == table.id,
-                            OpenOrder.status == STATUS_OPEN,
+                            OpenOrder.status.in_((STATUS_OPEN, STATUS_UNPAID)),
                             OpenOrder.id != order.id,
                         )
                     ).first()
@@ -300,7 +390,7 @@ class OrderService:
         """Remplace les lignes (admin) — comme updateOrderItems tablette."""
         with session_scope() as session:
             order = session.get(OpenOrder, order_id)
-            if not order or order.status not in (STATUS_OPEN, STATUS_UNPAID):
+            if not order or order.status not in _ORDER_EDITABLE:
                 raise ValueError("Commande non modifiable.")
             for old in list(order.items):
                 session.delete(old)

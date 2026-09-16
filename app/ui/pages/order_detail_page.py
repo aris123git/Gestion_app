@@ -1,9 +1,7 @@
-"""Détail commande (plein écran) — équivalent OrderDetailScreen tablette."""
+"""Détail commande plein écran — Maquis Caisse PC."""
 
 from __future__ import annotations
 
-from datetime import datetime
-from types import SimpleNamespace
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
@@ -18,10 +16,8 @@ from PySide6.QtWidgets import (
 )
 
 from app.i18n import t
-from app.models.open_order import STATUS_OPEN
-from app.printers import thermal_printer
-from app.printers.printer_targets import get_thermal_printer_name
-from app.printers.ticket.options import is_kitchen_ticket_enabled
+from app.models.open_order import STATUS_OPEN, STATUS_UNPAID
+from app.services.maquis_kitchen import print_kitchen_for_order
 from app.services import settings_service
 from app.services.order_checkout_service import checkout_open_order
 from app.services.order_service import OrderService
@@ -103,8 +99,13 @@ class OrderDetailPage(QWidget):
         waitress = order.waitress_name or "—"
         self.header.setText(f"{order.public_id} · {table_name} · {waitress}")
         currency = settings_service.get_currency()
-        open_order = order.status == STATUS_OPEN
+        open_order = order.status in (STATUS_OPEN, STATUS_UNPAID)
         self.pay_btn.setVisible(open_order)
+        self.pay_btn.setText(
+            t("Encaisser")
+            if order.status == STATUS_UNPAID
+            else t("Marquer payée")
+        )
         self.catalog.setEnabled(open_order)
         items = list(order.items or [])
         self.lines.setRowCount(len(items))
@@ -129,9 +130,11 @@ class OrderDetailPage(QWidget):
                 iid = it.id
                 del_btn.clicked.connect(lambda _=False, lid=iid: self._remove_line(lid))
                 self.lines.setCellWidget(row, 4, del_btn)
-        self.total_label.setText(
-            f"{t('Total')} : {format_money(float(order.total or 0), currency)}"
-        )
+        total_txt = f"{t('Total')} : {format_money(float(order.total or 0), currency)}"
+        remaining = float(order.remaining_amount)
+        if order.status == STATUS_UNPAID and remaining > 0.009:
+            total_txt += f"\n{t('Reste à payer')} : {format_money(remaining, currency)}"
+        self.total_label.setText(total_txt)
 
     def _pay(self) -> None:
         if self.order_id and checkout_open_order(self.order_id, self.state, self):
@@ -194,55 +197,12 @@ class OrderDetailPage(QWidget):
         except Exception as exc:
             warn(self, str(exc))
 
-    def _order_sale_stub(self, order):
-        items = []
-        for it in order.items or []:
-            items.append(
-                SimpleNamespace(
-                    product_name=it.product_name,
-                    quantity=float(it.quantity or 0),
-                    unit_price=float(it.unit_price or 0),
-                    line_total=float(it.line_total or 0),
-                )
-            )
-        table_label = order.table_label or ""
-        if getattr(order, "table", None) is not None:
-            table_label = order.table.display_name
-        return SimpleNamespace(
-            ticket_number=str(order.public_id or ""),
-            date=datetime.now(),
-            cashier_name=getattr(self.state.current_user, "username", "") or "",
-            client_name=table_label,
-            items=items,
-            subtotal=float(order.total or 0),
-            discount=0.0,
-            total=float(order.total or 0),
-            amount_received=0.0,
-            change_due=0.0,
-            payments=[],
-        )
-
     def _print_kitchen(self) -> None:
-        if not is_kitchen_ticket_enabled():
-            warn(
-                self,
-                t("Le bon serveur / cuisine est désactivé dans Paramètres → Designs des tickets."),
-                t("Bon serveur"),
-            )
+        if not self.order_id:
             return
-        order = OrderService.get(self.order_id) if self.order_id else None
-        if not order or not order.items:
-            warn(self, t("Aucun article à envoyer en cuisine."))
-            return
-        stub = self._order_sale_stub(order)
-        paper = settings_service.get_setting("thermal_width", "80mm") or "80mm"
-        result = thermal_printer.print_ticket(
-            stub,
-            paper=paper,
-            printer_name=get_thermal_printer_name(),
-            role="kitchen",
-        )
-        if result.printed:
-            info(self, result.message or t("Bon serveur envoyé."), t("Bon serveur"))
+        user = getattr(self.state.current_user, "username", "") or ""
+        ok, msg = print_kitchen_for_order(self.order_id, cashier_name=user)
+        if ok:
+            info(self, msg, t("Bon serveur"))
         else:
-            warn(self, result.message or t("Impression impossible."), t("Bon serveur"))
+            warn(self, msg, t("Bon serveur"))
