@@ -142,19 +142,26 @@ L'application est générée dans le dossier `dist/GestionCommerciale/`
 (mode **onedir** : `GestionCommerciale.exe` + dossier `_internal`).
 `build_windows.bat` crée aussi `dist/GestionCommerciale_portable.zip`.
 
-### Copie sur clé USB
+### Copie sur clé USB / PC étranger
 
-**Ne copiez jamais seulement le `.exe`.** Sans `_internal`, Windows demande
-des fichiers manquants / le disque et l'app ne démarre pas.
+**Symptôme « ajouter le disque » / fichiers manquants :** le pack est incomplet,
+ou l’exe a été lancé **depuis la fenêtre ZIP** sans « Extraire tout ».
 
-1. Copiez `GestionCommerciale_portable.zip` sur la clé (le ZIP contient déjà
-   le dossier `GestionCommerciale\` avec l’exe + `_internal` + `LANCER.bat`)
-2. Sur la clé : clic droit → **Extraire tout…**
-3. Ouvrez le dossier extrait `GestionCommerciale\` et double-cliquez
-   **`LANCER.bat`** (il vérifie que `_internal` est présent)
+**Recommandé (1 seul fichier) :** téléchargez l’artefact CI
+`GestionCommerciale-Setup` → `GestionCommerciale_Setup.exe`.
 
-Sans ZIP : copiez **tout** le dossier `GestionCommerciale\` (glisser-déposer
-le dossier, jamais l’exe seul).
+1. Copiez **uniquement** `GestionCommerciale_Setup.exe` sur la clé
+2. Sur le PC : double-cliquez → Suivant → Installer
+3. Lancez depuis le menu Démarrer
+
+**Alternative ZIP portable :**
+
+1. Copiez `GestionCommerciale_portable.zip` sur la clé
+2. Clic droit → **Extraire tout…** (obligatoire)
+3. Ouvrez `GestionCommerciale\` → **`LANCER.bat`**
+
+Ne lancez jamais l’exe en double-cliquant *dans* le ZIP ouvert.
+Ne copiez jamais seulement `GestionCommerciale.exe` (sans `_internal`).
 
 **L'EXE ne s'ouvre pas / se ferme tout de suite ?**
 
@@ -171,10 +178,12 @@ le dossier, jamais l’exe seul).
 
 ## Génération de l'installateur Windows
 
-1. Générer d'abord l'exécutable (voir ci-dessus).
-2. Installer [Inno Setup](https://jrsoftware.org/isinfo.php).
-3. Compiler `installer.iss` avec Inno Setup pour obtenir
-   `GestionCommerciale_Setup.exe`.
+1. Générer d'abord l'exécutable (`build_windows.bat` appelle Inno Setup s’il
+   est installé et produit `Output\GestionCommerciale_Setup.exe`).
+2. Sinon : installer [Inno Setup](https://jrsoftware.org/isinfo.php) puis
+   compiler `installer.iss`.
+3. Sur GitHub Actions, l’artefact **GestionCommerciale-Setup** est toujours
+   publié automatiquement.
 
 ---
 

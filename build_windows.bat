@@ -82,14 +82,33 @@ if errorlevel 1 (
     echo ZIP portable : dist\GestionCommerciale_portable.zip
 )
 
+echo [4c/5] Installateur Setup.exe (si Inno Setup est installe)...
+set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+if not exist "%ISCC%" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+if exist "%ISCC%" (
+    "%ISCC%" installer.iss
+    if errorlevel 1 (
+        echo Avertissement : compilation Inno Setup echouee.
+    ) else (
+        echo Setup.exe : Output\GestionCommerciale_Setup.exe
+    )
+) else (
+    echo Inno Setup absent — pas de Setup.exe local.
+    echo Sur GitHub Actions l'artefact GestionCommerciale-Setup est produit automatiquement.
+)
+
 echo [5/5] Termine.
 echo.
-echo === COPIE SUR CLE USB ===
-echo 1. Preferez : copier dist\GestionCommerciale_portable.zip sur la cle puis Extraire.
-echo 2. Ou copier TOUT le dossier dist\GestionCommerciale\ ^(exe + _internal^).
-echo 3. Sur la cle : double-cliquer LANCER.bat ^(pas l'exe seul^).
+echo === PC ETRANGER / CLE USB (RECOMMANDE) ===
+echo   Copiez UN SEUL fichier : Output\GestionCommerciale_Setup.exe
+echo   Sur le PC : double-cliquez Setup.exe → Installer.
 echo.
-echo Ne JAMAIS copier seulement GestionCommerciale.exe — ca ne marchera pas.
+echo === Alternative ZIP portable ===
+echo   1. Copiez dist\GestionCommerciale_portable.zip
+echo   2. Clic droit → Extraire tout ^(NE PAS lancer l'exe depuis le ZIP ouvert^)
+echo   3. Ouvrez GestionCommerciale\ → LANCER.bat
+echo.
+echo Ne JAMAIS copier seulement GestionCommerciale.exe — Windows demandera un disque.
 echo.
 echo En cas de fermeture immediate : GestionCommerciale_console.exe ou
 echo %%APPDATA%%\GestionCommerciale\startup_error.log

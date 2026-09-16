@@ -9,19 +9,28 @@ if not exist "%~dp0_internal\" (
     echo  ERREUR : dossier _internal introuvable a cote de ce fichier.
     echo ============================================================
     echo.
-    echo  Sur la cle USB, il faut copier TOUT le dossier
-    echo  GestionCommerciale , pas seulement GestionCommerciale.exe
+    echo  Windows peut alors demander d'ajouter un disque / des fichiers
+    echo  manquants — c'est parce que le pack est INCOMPLET.
     echo.
-    echo  Contenu attendu :
-    echo    GestionCommerciale\
-    echo      LANCER.bat
-    echo      GestionCommerciale.exe
-    echo      _internal\          ^<-- OBLIGATOIRE
-    echo      LIRE_MOI_CLE_USB.txt
+    echo  Causes frequentes :
+    echo   - Vous avez ouvert le ZIP et lance l'exe SANS « Extraire tout »
+    echo   - Vous avez copie seulement GestionCommerciale.exe
+    echo   - La copie USB s'est arretee avant la fin
     echo.
-    echo  Astuce : copiez le fichier ZIP puis extrayez-le sur la cle,
-    echo  ou glissez le dossier entier GestionCommerciale sur la cle.
+    echo  Sur un PC etranger : preferez GestionCommerciale_Setup.exe
+    echo  ^(un seul fichier, pas d'extraction^).
     echo.
+    echo  Sinon : Extraire tout le ZIP, puis verifier que _internal
+    echo  est present a cote de LANCER.bat et de l'exe.
+    echo.
+    pause
+    exit /b 1
+)
+
+REM Dossier _internal present mais quasi vide = copie tronquee / ZIP ouvert
+dir /a-d /b "%~dp0_internal\" 2>nul | findstr /r "." >nul
+if errorlevel 1 (
+    echo ERREUR : le dossier _internal est vide. Recopiez / re-extrayez le pack.
     pause
     exit /b 1
 )

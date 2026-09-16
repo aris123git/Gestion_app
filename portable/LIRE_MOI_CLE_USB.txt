@@ -1,35 +1,58 @@
 ========================================
-  COPIE SUR CLE USB — A LIRE
+  INSTALLATION / CLE USB — A LIRE
 ========================================
 
-NE COPIEZ PAS SEULEMENT « GestionCommerciale.exe ».
+SUR UN ORDINATEUR ETRANGER (RECOMMANDE)
+---------------------------------------
+Utilisez le fichier UNIQUE :
 
-Ce logiciel a besoin du dossier COMPLET :
+  GestionCommerciale_Setup.exe
 
+1. Copiez CE SEUL fichier sur la cle USB
+2. Sur le PC : double-cliquez Setup.exe
+3. Suivez l'assistant (Suivant → Installer)
+4. Lancez depuis le menu Demarrer ou le bureau
+
+→ Pas besoin d'extraire un ZIP.
+→ Pas de dossier _internal a copier a la main.
+→ Evite le message Windows « inserer / ajouter le disque ».
+
+
+SI VOUS AVEZ SEULEMENT LE ZIP PORTABLE
+--------------------------------------
+NE lancez JAMAIS l'exe en double-cliquant DANS le ZIP
+(fenetre « Dossier compresse »). Windows demande alors
+des fichiers manquants / un disque — c'est normal : le
+dossier _internal n'est pas vraiment extrait.
+
+Faites plutot :
+1. Clic DROIT sur le ZIP → Extraire tout… → Extraire
+2. Attendez la fin (dossier GestionCommerciale cree)
+3. Ouvrez ce dossier
+4. Double-cliquez LANCER.bat
+
+Contenu attendu APRES extraction :
   GestionCommerciale\
-    LANCER.bat                 ← double-cliquez ici pour demarrer
+    LANCER.bat
     GestionCommerciale.exe
-    _internal\                 ← OBLIGATOIRE (DLL, Python, interface…)
+    _internal\          ← OBLIGATOIRE (beaucoup de fichiers)
     LIRE_MOI_CLE_USB.txt
 
-COMMENT FAIRE
--------------
-1. Preferez le fichier ZIP (GestionCommerciale_portable.zip) :
-   - Le ZIP CONTIENT le dossier GestionCommerciale (exe + _internal + LANCER)
-   - Copiez le ZIP sur la cle
-   - Clic droit → Extraire tout…
-   - Ouvrez le dossier GestionCommerciale extrait
-   - Double-cliquez sur LANCER.bat
+Si _internal est absent ou quasi vide → copie incomplete.
+Re-copiez le ZIP entier (attendez la fin de la copie USB).
 
-2. Ou copiez le dossier entier « GestionCommerciale » (glisser-deposer
-   le dossier, pas un seul fichier .exe).
 
-SI CA NE DEMARRE PAS
---------------------
-- Verifiez que _internal est bien present a cote de l’exe
-- Autorisez le dossier dans Windows Defender / antivirus
-- Essayez GestionCommerciale_console.exe pour voir l’erreur
+NE COPIEZ JAMAIS SEULEMENT GestionCommerciale.exe
+-------------------------------------------------
+Sans _internal, Windows affiche « fichiers manquants »
+ou « ajouter le disque ».
+
+
+SI CA NE DEMARRE TOUJOURS PAS
+-----------------------------
+- Autorisez le dossier / Setup dans Windows Defender
+- Lancez GestionCommerciale_console.exe pour voir l'erreur
+- Consultez %APPDATA%\GestionCommerciale\startup_error.log
 
 Les donnees (ventes, stock) restent sur le PC dans :
   %APPDATA%\GestionCommerciale
-(pas sur la cle, sauf si GESTION_DATA_DIR pointe ailleurs)
