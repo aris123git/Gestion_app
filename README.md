@@ -140,6 +140,8 @@ pyinstaller gestion_app.spec --noconfirm
 
 L'application est générée en mode **onedir** :
 `dist/GestionCommerciale/` (`GestionCommerciale.exe` + `_internal`).
+Le pack est **allégé** (sans Qt WebEngine / QML / Multimedia) : typiquement
+très inférieur à l'ancien EXE onefile (~220 Mo).
 
 **Un seul fichier à copier (recommandé) :** l'artefact CI
 `GestionCommerciale-Setup` → `GestionCommerciale_Setup.exe`.
