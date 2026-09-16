@@ -12,10 +12,20 @@ call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-echo [3/4] Generation de l'executable avec PyInstaller...
+echo [3/5] Generation de l'executable avec PyInstaller...
 pyinstaller gestion_app.spec --noconfirm
 
-echo [4/4] Termine.
+echo [4/5] Verification du bundle (modules + plugins Qt)...
+python scripts\verify_exe_modules.py dist\GestionCommerciale
+if errorlevel 1 (
+    echo ERREUR : bundle incomplet. Ne pas distribuer ce dossier.
+    pause
+    exit /b 1
+)
+
+echo [5/5] Termine.
 echo Le bundle se trouve dans : dist\GestionCommerciale\
-echo (lancez GestionCommerciale.exe depuis ce dossier, avec _internal a cote)
+echo Lancez GestionCommerciale.exe depuis CE dossier entier ^(_internal obligatoire^).
+echo En cas de fermeture immediate : GestionCommerciale_console.exe ou
+echo %%APPDATA%%\GestionCommerciale\startup_error.log
 pause

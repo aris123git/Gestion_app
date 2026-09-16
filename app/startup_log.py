@@ -24,6 +24,7 @@ def startup_error_log_path() -> Path:
 
 def write_startup_error(exc: BaseException | None = None, *, note: str = "") -> None:
     """Écrit une trace d'erreur de démarrage (jamais bloquant)."""
+    text = ""
     try:
         path = startup_error_log_path()
         parts: list[str] = []
@@ -35,9 +36,19 @@ def write_startup_error(exc: BaseException | None = None, *, note: str = "") -> 
             )
         else:
             parts.append("".join(traceback.format_exception(*sys.exc_info())))
-        path.write_text("".join(parts), encoding="utf-8")
+        text = "".join(parts)
+        path.write_text(text, encoding="utf-8")
     except Exception:
-        pass
+        if not text and exc is not None:
+            text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    if text:
+        try:
+            from app.startup_fatal_dialog import show_startup_fatal
+
+            log_hint = f"\n\nFichier journal :\n{startup_error_log_path()}"
+            show_startup_fatal(text + log_hint)
+        except Exception:
+            pass
 
 
 def install_startup_excepthook() -> None:

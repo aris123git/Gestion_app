@@ -9,6 +9,7 @@ REQUIRED = (
     "app.ui.app",
     "app.ui.main_window",
     "app.ui.login_dialog",
+    "app.ui.pages.maquis_inventaire_page",
     "app.main",
 )
 
@@ -68,6 +69,18 @@ def _pyz_modules(exe: Path) -> set[str]:
         pyz_path.unlink(missing_ok=True)
 
 
+def _qt_platform_plugin_ok(bundle_dir: Path) -> bool:
+    """Vérifie que les plugins Qt (souvent oubliés) sont dans _internal."""
+    for root in (bundle_dir / "_internal", bundle_dir):
+        platforms = root / "PySide6" / "plugins" / "platforms"
+        if not platforms.is_dir():
+            continue
+        for pattern in ("qwindows*.dll", "qxcb*.so", "libqxcb*.so"):
+            if any(platforms.glob(pattern)):
+                return True
+    return False
+
+
 def main() -> int:
     target = Path(sys.argv[1] if len(sys.argv) > 1 else "dist/GestionCommerciale")
     try:
@@ -87,6 +100,18 @@ def main() -> int:
         print(f"  fichiers trouvés: {sorted(file_hits)}", file=sys.stderr)
         print(f"  dans PYZ: {[m for m in REQUIRED if m in pyz_hits]}", file=sys.stderr)
         return 1
+
+    if not _qt_platform_plugin_ok(bundle_dir):
+        print(
+            "Plugin Qt plateforme introuvable (PySide6/plugins/platforms). "
+            "L'EXE Windows ne démarrera probablement pas.",
+            file=sys.stderr,
+        )
+        return 1
+
+    console_exe = bundle_dir / "GestionCommerciale_console.exe"
+    if not console_exe.is_file():
+        print("Avertissement : GestionCommerciale_console.exe absent", file=sys.stderr)
 
     print(f"OK — modules critiques présents dans {bundle_dir}")
     return 0

@@ -142,6 +142,19 @@ L'application est générée dans le dossier `dist/GestionCommerciale/`
 (mode **onedir** : `GestionCommerciale.exe` + dossier `_internal`).
 Téléchargez / copiez **tout le dossier**, pas seulement le `.exe`.
 
+**L'EXE ne s'ouvre pas / se ferme tout de suite ?**
+
+1. Copiez **tout** `dist\GestionCommerciale\` (y compris `_internal`), ou utilisez
+   l'installateur Inno Setup (`installer.iss`).
+2. Ajoutez une **exclusion antivirus** sur ce dossier (sinon
+   `ModuleNotFoundError: app.ui.main_window` est fréquent).
+3. Lancez `GestionCommerciale_console.exe` dans le même dossier : la console
+   affiche l'erreur Python.
+4. Sinon ouvrez `%APPDATA%\GestionCommerciale\startup_error.log`.
+5. Reconstruisez après `git pull` : `build_windows.bat` vérifie le bundle.
+   Vous pouvez aussi télécharger l'artefact **GestionCommerciale-Windows** sur
+   GitHub Actions (branche `main`).
+
 ## Génération de l'installateur Windows
 
 1. Générer d'abord l'exécutable (voir ci-dessus).
