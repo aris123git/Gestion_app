@@ -160,9 +160,18 @@ class POSPage(QWidget):
         return panel
 
     def _apply_catalog_mode(self) -> None:
-        """Affiche combo/table ou chips/grille selon les options Paramètres."""
-        use_chips = catalog_features.category_browser_enabled()
-        use_images = catalog_features.product_images_enabled()
+        """Affiche combo/table ou chips/grille selon les options Paramètres.
+
+        En mode Maquis Caisse, l'affichage tablette (puces catégories + grille
+        de produits avec photos) est forcé : c'est le même code visuel utilisé
+        par la caisse table, pour que la saisie / l'affichage soient identiques
+        entre les deux écrans.
+        """
+        from app.services import product_profile
+
+        maquis = product_profile.is_maquis()
+        use_chips = True if maquis else catalog_features.category_browser_enabled()
+        use_images = True if maquis else catalog_features.product_images_enabled()
         self.category_filter.setVisible(not use_chips)
         self.category_chips_scroll.setVisible(use_chips)
         self.product_table.setVisible(not use_images)
