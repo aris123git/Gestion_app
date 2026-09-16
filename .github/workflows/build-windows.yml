@@ -32,7 +32,7 @@ jobs:
       - name: Vérifier les modules critiques dans le bundle
         run: python scripts/verify_exe_modules.py dist/GestionCommerciale
 
-      - name: Afficher la taille du bundle (objectif : << 222 Mo onefile)
+      - name: Afficher la taille du bundle
         shell: pwsh
         run: |
           $dir = Get-Item dist/GestionCommerciale
