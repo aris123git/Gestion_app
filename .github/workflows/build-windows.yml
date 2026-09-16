@@ -1,7 +1,6 @@
 name: Build Windows EXE
 
-# Construit l'exécutable Windows (.exe) et le publie comme artefact
-# téléchargeable depuis l'onglet "Actions" de GitHub.
+# Construit un seul .exe (onefile) et le publie comme artefact.
 on:
   push:
     branches:
@@ -27,15 +26,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Générer l'exécutable avec PyInstaller
+      - name: Générer l'exécutable onefile avec PyInstaller
         run: pyinstaller gestion_app.spec --noconfirm
 
-      - name: Vérifier les modules critiques dans le bundle
-        run: python scripts/verify_exe_modules.py dist/GestionCommerciale
+      - name: Vérifier les modules critiques dans l'EXE
+        run: python scripts/verify_exe_modules.py dist/GestionCommerciale.exe
 
-      - name: Publier le dossier Windows (artefact téléchargeable)
+      - name: Publier GestionCommerciale.exe (1 fichier)
         uses: actions/upload-artifact@v4
         with:
           name: GestionCommerciale-Windows
-          path: dist/GestionCommerciale/
+          path: |
+            dist/GestionCommerciale.exe
+            dist/GestionCommerciale_console.exe
           if-no-files-found: error

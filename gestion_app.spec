@@ -1,9 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Spécification PyInstaller pour générer l'exécutable Windows.
-
-Mode **onedir** (dossier ``dist/GestionCommerciale/``) : plus robuste que
-onefile face aux antivirus qui altèrent l'extraction dans ``%TEMP%``
-(symptôme fréquent : ``ModuleNotFoundError: app.ui.main_window``).
+"""Spécification PyInstaller — un seul fichier ``GestionCommerciale.exe``.
 
 Usage :
     pyinstaller gestion_app.spec
@@ -59,25 +55,29 @@ a = Analysis(
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    # Modules en fichiers (pas dans un seul PYZ) → un antivirus qui bloque
-    # un fichier n'efface pas tout le package d'un coup.
-    noarchive=True,
+    noarchive=False,
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 _icon = "app/assets/icon.ico" if __import__("os").path.exists("app/assets/icon.ico") else None
 
+# Un seul fichier autonome (windowed).
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name="GestionCommerciale",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
+    # UPX off : sinon antivirus Windows → ModuleNotFoundError (main_window).
     upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
@@ -86,33 +86,25 @@ exe = EXE(
     icon=_icon,
 )
 
-# Même bundle, fenêtre console : voir les erreurs si l'EXE principal se ferme.
+# Variante console pour diagnostiquer une fermeture immédiate.
 exe_console = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name="GestionCommerciale_console",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon=_icon,
-)
-
-coll = COLLECT(
-    exe,
-    exe_console,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name="GestionCommerciale",
 )

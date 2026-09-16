@@ -1,9 +1,9 @@
 ; ===================================================================
 ;  Script Inno Setup pour créer l'installateur Windows.
 ;  Prérequis :
-;    1. Générer le bundle : voir build_windows.bat (dist\GestionCommerciale\)
+;    1. Générer l'EXE : build_windows.bat → dist\GestionCommerciale.exe
 ;    2. Installer Inno Setup (https://jrsoftware.org/isinfo.php)
-;    3. Compiler ce fichier avec Inno Setup pour obtenir l'installateur.
+;    3. Compiler ce fichier avec Inno Setup.
 ; ===================================================================
 
 #define MyAppName "Gestion Commerciale"
@@ -19,11 +19,13 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\GestionCommerciale
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+OutputDir=Output
 OutputBaseFilename=GestionCommerciale_Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=admin
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
@@ -32,8 +34,9 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer une icône sur le bureau"; GroupDescription: "Icônes supplémentaires:"
 
 [Files]
-; Bundle onedir complet (exe + _internal + DLL).
-Source: "dist\GestionCommerciale\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; EXE onefile unique (+ variante console pour diagnostic).
+Source: "dist\GestionCommerciale.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\GestionCommerciale_console.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
