@@ -75,13 +75,19 @@ def _pyz_modules(exe: Path) -> set[str]:
 
 def _qt_platform_plugin_ok(bundle_dir: Path) -> bool:
     """Vérifie que les plugins Qt (souvent oubliés) sont dans _internal."""
-    for root in (bundle_dir / "_internal", bundle_dir):
-        platforms = root / "PySide6" / "plugins" / "platforms"
-        if not platforms.is_dir():
-            continue
-        for pattern in ("qwindows*.dll", "qxcb*.so", "libqxcb*.so"):
-            if any(platforms.glob(pattern)):
-                return True
+    roots = (bundle_dir / "_internal", bundle_dir)
+    rel_platforms = (
+        Path("PySide6") / "Qt" / "plugins" / "platforms",
+        Path("PySide6") / "plugins" / "platforms",
+    )
+    for root in roots:
+        for rel in rel_platforms:
+            platforms = root / rel
+            if not platforms.is_dir():
+                continue
+            for pattern in ("qwindows*.dll", "qxcb*.so", "libqxcb*.so"):
+                if any(platforms.glob(pattern)):
+                    return True
     return False
 
 
@@ -112,7 +118,8 @@ def main() -> int:
 
     if not _qt_platform_plugin_ok(bundle_dir):
         print(
-            "Plugin Qt plateforme introuvable (PySide6/plugins/platforms). "
+            "Plugin Qt plateforme introuvable "
+            "(PySide6/Qt/plugins/platforms ou PySide6/plugins/platforms). "
             "L'EXE Windows ne démarrera probablement pas.",
             file=sys.stderr,
         )

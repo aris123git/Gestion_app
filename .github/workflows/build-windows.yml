@@ -32,6 +32,14 @@ jobs:
       - name: Vérifier les modules critiques dans le bundle
         run: python scripts/verify_exe_modules.py dist/GestionCommerciale
 
+      - name: Afficher la taille du bundle (objectif : << 222 Mo onefile)
+        shell: pwsh
+        run: |
+          $dir = Get-Item dist/GestionCommerciale
+          $bytes = (Get-ChildItem $dir -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          "{0:N1} MB  dist/GestionCommerciale" -f ($bytes/1MB)
+          Get-ChildItem dist/GestionCommerciale -File | Format-Table Name, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}
+
       - name: Ajouter LANCER.bat + ZIP portable
         shell: pwsh
         run: |
