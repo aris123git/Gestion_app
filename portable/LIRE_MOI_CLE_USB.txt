@@ -1,0 +1,39 @@
+========================================
+  UN SEUL FICHIER A COPIER — A LIRE
+========================================
+
+POURQUOI PAS UN .EXE UNIQUE « onefile » ?
+----------------------------------------
+Un EXE PyInstaller « tout-en-un » s'extrait dans %TEMP%.
+Windows Defender / antivirus y bloque souvent des fichiers
+→ erreur « Module app.ui.main_window introuvable ».
+Le module EST dans l'EXE, mais l'antivirus le casse a l'execution.
+
+
+RECOMMANDE : GestionCommerciale_Setup.exe
+-----------------------------------------
+1. Telechargez l'artefact CI « GestionCommerciale-Setup »
+2. Copiez CE SEUL fichier sur la cle USB
+3. Sur le PC : double-cliquez Setup.exe → Installer
+4. Lancez depuis le menu Demarrer ou le bureau
+
+→ Un seul fichier a transporter
+→ Installation complete (exe + _internal)
+→ Plus d'erreur main_window liee a %TEMP%
+
+
+ALTERNATIVE : ZIP portable
+--------------------------
+1. Extraire TOUT (clic droit → Extraire tout)
+2. Ouvrir GestionCommerciale\
+3. Double-cliquer LANCER.bat
+
+NE lancez JAMAIS l'exe depuis le ZIP ouvert.
+NE copiez JAMAIS seulement GestionCommerciale.exe.
+
+
+SI CA NE DEMARRE PAS
+--------------------
+- Exclusion antivirus sur le dossier d'installation
+- GestionCommerciale_console.exe pour voir l'erreur
+- Journal : %APPDATA%\GestionCommerciale\startup_error.log
