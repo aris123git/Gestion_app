@@ -16,7 +16,7 @@ class TablesPage(QWidget):
         title = QLabel(t('Tables'))
         title.setObjectName('PageTitle')
         layout.addWidget(title)
-        layout.addWidget(QLabel(t('Plan de salle Maquis Caisse. Ouvrez une commande depuis une table libre.')))
+        layout.addWidget(QLabel(t('Plan de salle Maquis Caisse. Ouvrez une table libre pour saisir des produits en Caisse.')))
         add_row = QHBoxLayout()
         self.number = QLineEdit()
         self.number.setPlaceholderText(t('N°'))
@@ -71,16 +71,27 @@ class TablesPage(QWidget):
         except Exception as exc:
             warn(self, str(exc))
 
+    def _go_caisse_with_table(self, table_id: int) -> None:
+        """Ouvre la Caisse avec la table pré-sélectionnée (flux tablette)."""
+        window = self.window()
+        if window is None or not hasattr(window, '_select_page_by_label'):
+            return
+        page = window._select_page_by_label(t('nav.pos'))
+        if page is None:
+            # Libellé FR direct si i18n nav.pos ≠ clé stockée dans NAV_ITEMS.
+            for candidate in (t('Caisse'), 'Caisse', t('nav.pos')):
+                page = window._select_page_by_label(candidate)
+                if page is not None:
+                    break
+        if page is not None and hasattr(page, 'select_table'):
+            page.select_table(table_id)
+
     def _on_table(self, table_id: int, status: str) -> None:
         if status == STATUS_FREE:
-            if not confirm(self, t('Ouvrir une commande sur cette table ?'), t('Table')):
+            if not confirm(self, t('Ouvrir cette table en Caisse pour saisir des produits ?'), t('Table')):
                 return
-            try:
-                user = getattr(self.state, 'current_user', None)
-                order = order_service.OrderService.open_on_table(table_id, opened_by=getattr(user, 'id', None))
-                info(self, f'Commande {order.public_id} ouverte.')
-                self.refresh()
-            except Exception as exc:
-                warn(self, str(exc))
+            self._go_caisse_with_table(table_id)
+            self.refresh()
         else:
-            info(self, t("Table occupée. Gérez la commande dans l'écran Commandes."))
+            info(self, t("Table occupée. Gérez la commande dans l'écran Commandes, ou continuez en Caisse."))
+            self._go_caisse_with_table(table_id)

@@ -16,7 +16,7 @@ class OrdersPage(QWidget):
         title = QLabel(t('Commandes ouvertes'))
         title.setObjectName('PageTitle')
         layout.addWidget(title)
-        layout.addWidget(QLabel(t('Commandes en cours sur les tables. Encaissement via « Marquer payée ».')))
+        layout.addWidget(QLabel(t('Commandes en cours sur les tables. « Marquer payée » encaisse sans imprimer (réimpression séparée si besoin).')))
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([t('N°'), t('Table'), t('Client'), t('Total'), t('Statut')])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -70,7 +70,8 @@ class OrdersPage(QWidget):
         try:
             order_service.OrderService.mark_paid(oid)
             self.refresh()
-            info(self, t("Commande payée — table libérée si plus d'autres commandes."))
+            # Aligné tablette : marquer payée n'imprime pas.
+            info(self, t("Commande payée — table libérée si plus d'autres commandes. Aucune impression automatique."))
         except Exception as exc:
             warn(self, str(exc))
 

@@ -23,7 +23,15 @@ from app.services import (  # noqa: E402
     product_profile,
     table_service,
 )
-from app.ui.main_window import build_nav_items  # noqa: E402
+
+init_database()
+seed_all()
+
+
+def _build_nav_items():
+    from app.ui.main_window import build_nav_items
+
+    return build_nav_items()
 
 
 class ProductProfileTestCase(unittest.TestCase):
@@ -52,12 +60,12 @@ class ProductProfileTestCase(unittest.TestCase):
 
     def test_nav_differs_by_product(self) -> None:
         product_profile.set_product(product_profile.PRODUCT_GESTION)
-        gestion_labels = {item[0] for item in build_nav_items()}
+        gestion_labels = {item[0] for item in _build_nav_items()}
         self.assertIn("Avoirs", gestion_labels)
         self.assertNotIn("Tables", gestion_labels)
 
         product_profile.set_product(product_profile.PRODUCT_MAQUIS)
-        maquis_labels = {item[0] for item in build_nav_items()}
+        maquis_labels = {item[0] for item in _build_nav_items()}
         self.assertIn("Tables", maquis_labels)
         self.assertIn("Commandes", maquis_labels)
         self.assertIn("Avoirs", maquis_labels)
@@ -80,6 +88,7 @@ class ProductProfileTestCase(unittest.TestCase):
                 product_profile.PRODUCT_MAQUIS
             ].lower(),
         )
+class AvoirServiceTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         init_database()
@@ -114,6 +123,42 @@ class MaquisTablesOrdersTestCase(unittest.TestCase):
         tables2 = table_service.TableService.list()
         t2 = next(t for t in tables2 if t.id == free.id)
         self.assertEqual(t2.status, "libre")
+
+    def test_create_from_cart_occupies_table(self) -> None:
+        from app.controllers.sale_controller import CartLine
+
+        table_service.TableService.ensure_defaults()
+        free = next(t for t in table_service.TableService.list() if t.status == "libre")
+        lines = [
+            CartLine(
+                product_id=None,
+                name="Attieke",
+                unit_price=500,
+                quantity=2,
+                purchase_price=200,
+            )
+        ]
+        order = order_service.OrderService.create_from_cart(
+            lines, table_id=free.id, customer_name="Awa"
+        )
+        self.assertEqual(float(order.total), 1000)
+        self.assertEqual(order.customer_name, "Awa")
+        tables = table_service.TableService.list()
+        occupied = next(t for t in tables if t.id == free.id)
+        self.assertEqual(occupied.status, "occupée")
+        order_service.OrderService.mark_paid(order.id)
+
+
+class MaquisCatalogDefaultsTestCase(unittest.TestCase):
+    def test_maquis_forces_product_images(self) -> None:
+        from app.services import catalog_features
+
+        product_profile.set_product(product_profile.PRODUCT_MAQUIS)
+        self.assertTrue(catalog_features.product_images_enabled())
+        self.assertTrue(catalog_features.category_browser_enabled())
+        product_profile.set_product(product_profile.PRODUCT_GESTION)
+        # Gestion : défaut off tant que non activé
+        self.assertFalse(catalog_features.product_images_enabled())
 
 
 if __name__ == "__main__":

@@ -9,8 +9,9 @@ from app.controllers.client_controller import ClientController
 from app.controllers.product_controller import ProductController
 from app.controllers.sale_controller import CartLine, BelowMinPriceError, InsufficientPaymentError, InsufficientStockError, SaleController
 from app.i18n import t
-from app.services import audit_service, catalog_features, permissions as perms, settings_service
+from app.services import audit_service, catalog_features, permissions as perms, product_profile, settings_service
 from app.ui.dialogs.free_amount_dialog import FreeAmountDialog
+from app.ui.dialogs.numeric_keypad_dialog import ask_quantity
 from app.ui.dialogs.payment_dialog import PaymentDialog
 from app.ui.dialogs.price_change_dialog import PriceChangeDialog
 from app.ui.dialogs.ticket_dialog import TicketDialog
@@ -33,6 +34,10 @@ class POSPage(QWidget):
         self._pending_sale_id: Optional[int] = None
         self._chip_buttons: list[QToolButton] = []
         self._grid_product_ids: list[int] = []
+        self._maquis = product_profile.is_maquis()
+        self._save_order_button: Optional[QPushButton] = None
+        self._waitress_combo: Optional[QComboBox] = None
+        self._table_combo: Optional[QComboBox] = None
         self._root = QHBoxLayout(self)
         self._root.setContentsMargins(12, 12, 12, 12)
         self._root.setSpacing(12)
@@ -46,8 +51,11 @@ class POSPage(QWidget):
         self._scroll_layout = QHBoxLayout(self._scroll_host)
         self._scroll_layout.setContentsMargins(0, 0, 0, 0)
         self._scroll_layout.setSpacing(12)
-        self._scroll_layout.addWidget(self._catalog, 5)
-        self._scroll_layout.addWidget(self._cart_panel, 4)
+        # Maquis tablette : catalogue plus large que le panier (≈ 1.85 / 0.72).
+        cat_stretch = 5 if not self._maquis else 7
+        cart_stretch = 4 if not self._maquis else 3
+        self._scroll_layout.addWidget(self._catalog, cat_stretch)
+        self._scroll_layout.addWidget(self._cart_panel, cart_stretch)
         self._scroll.setWidget(self._scroll_host)
         self._root.addWidget(self._scroll, 1)
         self._pay_button: Optional[QPushButton] = None
@@ -108,15 +116,32 @@ class POSPage(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
         layout.addWidget(page_title(t('pos.title')))
+        if self._maquis:
+            subtitle = QLabel(t('Touche un produit pour l\'ajouter au panier'))
+            subtitle.setStyleSheet('color: #64748b; font-size: 13px;')
+            layout.addWidget(subtitle)
+            meta_row = QHBoxLayout()
+            self._waitress_combo = QComboBox()
+            self._waitress_combo.setMinimumHeight(40)
+            self._table_combo = QComboBox()
+            self._table_combo.setMinimumHeight(40)
+            meta_row.addWidget(QLabel(t('Serveuse')))
+            meta_row.addWidget(self._waitress_combo, 1)
+            meta_row.addWidget(QLabel(t('Table')))
+            meta_row.addWidget(self._table_combo, 1)
+            layout.addLayout(meta_row)
+            self._reload_maquis_meta()
         search_row = QHBoxLayout()
         self.barcode_input = QLineEdit()
         self.barcode_input.setPlaceholderText(t('pos.barcode'))
         self.barcode_input.returnPressed.connect(self._add_by_barcode)
         search_row.addWidget(self.barcode_input)
         layout.addLayout(search_row)
+        if self._maquis:
+            self.barcode_input.hide()
         filter_row = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(t('pos.search_product'))
+        self.search_input.setPlaceholderText(t('pos.search_product') if not self._maquis else t('Rechercher un produit…'))
         self.search_input.textChanged.connect(self._reload_products)
         self.category_filter = QComboBox()
         self.category_filter.currentIndexChanged.connect(self._reload_products)
@@ -149,7 +174,7 @@ class POSPage(QWidget):
         self.product_grid_host = QWidget()
         self.product_grid_layout = QGridLayout(self.product_grid_host)
         self.product_grid_layout.setContentsMargins(4, 4, 4, 4)
-        self.product_grid_layout.setSpacing(10)
+        self.product_grid_layout.setSpacing(8 if self._maquis else 10)
         self.product_grid_scroll.setWidget(self.product_grid_host)
         layout.addWidget(self.product_grid_scroll)
         self.add_to_cart_btn = QPushButton(t('pos.add_to_cart'))
@@ -248,13 +273,31 @@ class POSPage(QWidget):
         pending_row.addWidget(hold_btn)
         pending_row.addWidget(resume_btn)
         layout.addLayout(pending_row)
-        pay_button = QPushButton(t('pos.checkout'))
+        if self._maquis:
+            hold_btn.hide()
+            resume_btn.hide()
+            save_order = QPushButton(t('Enregistrer commande'))
+            save_order.setMinimumHeight(44)
+            save_order.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            save_order.clicked.connect(self._save_open_order)
+            layout.addWidget(save_order)
+            self._save_order_button = save_order
+            pay_button = QPushButton(t('Encaisser'))
+        else:
+            pay_button = QPushButton(t('pos.checkout'))
         pay_button.setObjectName('Success')
         pay_button.setMinimumHeight(52)
         pay_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         pay_button.clicked.connect(self._checkout)
         layout.addWidget(pay_button)
         self._pay_button = pay_button
+        if self._maquis:
+            # Panier compact : clic = éditer quantité (pavé), comme tablette.
+            self.cart_table.cellClicked.connect(self._on_maquis_cart_clicked)
+            hint_cart = QLabel(t('Touchez une ligne pour modifier la quantité.'))
+            hint_cart.setStyleSheet('color: #64748b; font-size: 12px;')
+            hint_cart.setWordWrap(True)
+            layout.insertWidget(layout.indexOf(self.total_label), hint_cart)
         return panel
 
     def refresh(self) -> None:
@@ -262,7 +305,140 @@ class POSPage(QWidget):
         self._reload_categories()
         self._reload_products()
         self._reload_clients()
+        if self._maquis:
+            self._reload_maquis_meta()
         self._apply_large_text()
+
+    def _reload_maquis_meta(self) -> None:
+        """Charge serveuses (utilisateurs actifs) et tables pour la caisse Maquis."""
+        if not self._maquis:
+            return
+        from app.services.auth_service import AuthService
+        from app.services import table_service
+
+        if self._waitress_combo is not None:
+            current = self._waitress_combo.currentData()
+            self._waitress_combo.blockSignals(True)
+            self._waitress_combo.clear()
+            self._waitress_combo.addItem(t('Aucune'), None)
+            try:
+                users = AuthService.list_users()
+            except Exception:
+                users = []
+            for user in users:
+                if not getattr(user, 'is_active', True):
+                    continue
+                label = getattr(user, 'full_name', None) or user.username
+                self._waitress_combo.addItem(str(label), user.id)
+            idx = self._waitress_combo.findData(current)
+            if idx >= 0:
+                self._waitress_combo.setCurrentIndex(idx)
+            self._waitress_combo.blockSignals(False)
+
+        if self._table_combo is not None:
+            current_t = self._table_combo.currentData()
+            self._table_combo.blockSignals(True)
+            self._table_combo.clear()
+            self._table_combo.addItem(t('Aucune'), None)
+            try:
+                table_service.TableService.ensure_defaults()
+                tables = table_service.TableService.list()
+            except Exception:
+                tables = []
+            for table in tables:
+                self._table_combo.addItem(table.display_name, table.id)
+            idx = self._table_combo.findData(current_t)
+            if idx >= 0:
+                self._table_combo.setCurrentIndex(idx)
+            self._table_combo.blockSignals(False)
+
+    def select_table(self, table_id: Optional[int]) -> None:
+        """Pré-sélectionne une table (ex. depuis le plan de salle)."""
+        if self._table_combo is None or table_id is None:
+            return
+        self._reload_maquis_meta()
+        idx = self._table_combo.findData(table_id)
+        if idx >= 0:
+            self._table_combo.setCurrentIndex(idx)
+
+    def _maquis_waitress_name(self) -> str:
+        if self._waitress_combo is None:
+            return ''
+        return (self._waitress_combo.currentText() or '').strip() if self._waitress_combo.currentData() else ''
+
+    def _maquis_table_id(self) -> Optional[int]:
+        if self._table_combo is None:
+            return None
+        data = self._table_combo.currentData()
+        return int(data) if data is not None else None
+
+    def _on_maquis_cart_clicked(self, row: int, _column: int) -> None:
+        if not self._maquis or row < 0 or row >= len(self.cart):
+            return
+        line = self.cart[row]
+        if line.free_amount or line.loyalty_reward:
+            return
+        currency = settings_service.get_currency()
+        qty, deleted = ask_quantity(
+            self,
+            product_name=line.name,
+            unit_price_label=format_money(line.unit_price, currency),
+            initial=float(line.quantity),
+            allow_delete_line=True,
+        )
+        if deleted:
+            self._remove_line(row)
+            return
+        if qty is None:
+            return
+        available = self._available_stock(line.product_id, exclude_cart=True) if line.product_id else 999999
+        if available + 0.0001 < qty:
+            warn(self, f'Stock insuffisant pour « {line.name} » : disponible {format_quantity(available)}, demandé {format_quantity(qty)}.', t('Stock insuffisant'))
+            return
+        line.quantity = float(qty)
+        self._render_cart()
+
+    def _save_open_order(self) -> None:
+        """Enregistre une commande ouverte (non payée) — comme « Enregistrer commande » tablette."""
+        if not self.cart:
+            warn(self, t('Le panier est vide.'))
+            return
+        from app.services import order_service
+
+        try:
+            order = order_service.OrderService.create_from_cart(
+                list(self.cart),
+                table_id=self._maquis_table_id(),
+                customer_name=self._maquis_waitress_name(),
+                opened_by=self.state.user_id,
+            )
+        except Exception as exc:
+            warn(self, str(exc))
+            return
+        audit_service.log_action(
+            'Commande ouverte',
+            'OpenOrder',
+            f'{order.public_id} total={order.total}',
+            self.state.user_id,
+            getattr(self.state.current_user, 'username', ''),
+        )
+        # Impression uniquement à l'enregistrement si option activée — pas au paiement.
+        auto_print = settings_service.get_setting('auto_print_ticket', '0') == '1'
+        currency = settings_service.get_currency()
+        msg = (
+            f'Commande {order.public_id} enregistrée.\n'
+            f'Total : {format_money(float(order.total or 0), currency)}\n'
+            f'Tu restes en Caisse.'
+        )
+        info(self, msg, t('Commande enregistrée'))
+        if auto_print:
+            # Ticket via une vente « fantôme » non applicable : on laisse le détail
+            # dans Commandes ; l'impression cuisine/client se fait depuis Commandes.
+            pass
+        self._clear_cart()
+        self._reload_products()
+        self._reload_maquis_meta()
+        self.state.notify_data_changed()
 
     def _apply_large_text(self) -> None:
         """Agrandit noms/prix catalogue + panier si activé dans Paramètres."""
@@ -466,35 +642,75 @@ class POSPage(QWidget):
         card = QFrame()
         card.setObjectName('ProductCard')
         card.setCursor(Qt.CursorShape.PointingHandCursor)
-        card.setFixedSize(148, 180)
-        card.setStyleSheet('#ProductCard { border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; }#ProductCard:hover { border: 2px solid #2563eb; }')
+        if self._maquis:
+            # Tuiles proches de la tablette (image carrée, coins arrondis).
+            card.setFixedSize(132, 190)
+            card.setStyleSheet(
+                '#ProductCard { border: none; border-radius: 18px; background: rgba(255,255,255,0.95); '
+                'padding: 4px; }'
+                '#ProductCard:hover { background: #eff6ff; }'
+            )
+        else:
+            card.setFixedSize(148, 180)
+            card.setStyleSheet(
+                '#ProductCard { border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; }'
+                '#ProductCard:hover { border: 2px solid #2563eb; }'
+            )
         box = QVBoxLayout(card)
         box.setContentsMargins(8, 8, 8, 8)
         box.setSpacing(4)
         img = QLabel()
-        img.setFixedSize(128, 96)
+        if self._maquis:
+            img.setFixedSize(112, 112)
+        else:
+            img.setFixedSize(128, 96)
         img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        img.setStyleSheet('background: #f1f5f9; border-radius: 6px; color: #94a3b8;')
+        img.setStyleSheet('background: #dbeafe; border-radius: 14px; color: #64748b;')
         path = str(getattr(product, 'image_path', '') or '')
         pix = QPixmap(path) if path else QPixmap()
         if not pix.isNull():
-            img.setPixmap(pix.scaled(128, 96, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            side = 112 if self._maquis else 128
+            h = 112 if self._maquis else 96
+            img.setPixmap(
+                pix.scaled(
+                    side,
+                    h,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding
+                    if self._maquis
+                    else Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
         else:
-            img.setText('•')
+            img.setText('🖼' if self._maquis else '•')
         box.addWidget(img, alignment=Qt.AlignmentFlag.AlignCenter)
         name = QLabel(product.name)
         name.setWordWrap(True)
-        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name.setAlignment(Qt.AlignmentFlag.AlignLeft if self._maquis else Qt.AlignmentFlag.AlignCenter)
         name.setStyleSheet('font-weight: 600; font-size: 12px;')
         box.addWidget(name)
         if getattr(product, 'free_amount_sale', False):
-            price_txt = f'réf. {format_money(product.sale_price, currency)}' if float(product.sale_price or 0) > 0 else 'montant libre'
+            price_txt = (
+                f'réf. {format_money(product.sale_price, currency)}'
+                if float(product.sale_price or 0) > 0
+                else 'montant libre'
+            )
         else:
             price_txt = format_money(product.sale_price, currency)
         price = QLabel(price_txt)
-        price.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        price.setStyleSheet('color: #0f172a; font-weight: 700;')
+        price.setAlignment(Qt.AlignmentFlag.AlignLeft if self._maquis else Qt.AlignmentFlag.AlignCenter)
+        price.setStyleSheet('color: #1d4ed8; font-weight: 800;')
         box.addWidget(price)
+        cat_name = getattr(product, 'category_name', None) or getattr(
+            getattr(product, 'category', None), 'name', ''
+        )
+        if self._maquis and cat_name:
+            cat = QLabel(str(cat_name))
+            cat.setStyleSheet(
+                'background: #e0f2fe; color: #0369a1; border-radius: 8px; '
+                'padding: 2px 6px; font-size: 10px;'
+            )
+            box.addWidget(cat)
         pid = product.id
 
         def _click(_event=None, product_id=pid):
@@ -525,7 +741,7 @@ class POSPage(QWidget):
                 stock_item.setForeground(Qt.GlobalColor.red)
             self.product_table.setItem(row, 2, stock_item)
         self._clear_product_grid()
-        cols = 3
+        cols = 5 if self._maquis else 3
         for index, product in enumerate(products):
             card = self._make_product_card(product, currency)
             self.product_grid_layout.addWidget(card, index // cols, index % cols)
@@ -580,17 +796,32 @@ class POSPage(QWidget):
         if min_price > 0 and sale_price < min_price:
             warn(self, f"Impossible d'ajouter « {product.name} » : le prix de vente {format_money(sale_price, settings_service.get_currency())} est inférieur au prix minimum {format_money(min_price, settings_service.get_currency())}.", t('Prix minimum'))
             return
+        currency = settings_service.get_currency()
+        qty = 1.0
+        if self._maquis:
+            qty_value, deleted = ask_quantity(
+                self,
+                product_name=product.name,
+                unit_price_label=format_money(sale_price, currency),
+                initial=1,
+            )
+            if deleted or qty_value is None:
+                return
+            qty = float(qty_value)
         available = self._available_stock(product.id)
-        requested = 1.0
-        if available + 0.0001 < requested:
-            warn(self, f'Stock insuffisant pour « {product.name} » : disponible {format_quantity(available)}, demandé {format_quantity(requested)}.', t('Stock insuffisant'))
+        if available + 0.0001 < qty:
+            warn(self, f'Stock insuffisant pour « {product.name} » : disponible {format_quantity(available)}, demandé {format_quantity(qty)}.', t('Stock insuffisant'))
             return
         for line in self.cart:
             if line.product_id == product.id and (not line.free_amount) and (not line.loyalty_reward):
-                line.quantity += 1
+                new_qty = float(line.quantity) + qty
+                if available + float(line.stock_quantity) + 0.0001 < new_qty:
+                    warn(self, f'Stock insuffisant pour « {product.name} » : disponible {format_quantity(available + float(line.stock_quantity))}, demandé {format_quantity(new_qty)}.', t('Stock insuffisant'))
+                    return
+                line.quantity = new_qty
                 self._render_cart()
                 return
-        self.cart.append(CartLine(product_id=product.id, name=product.name, unit_price=float(product.sale_price), quantity=1, purchase_price=float(product.purchase_price)))
+        self.cart.append(CartLine(product_id=product.id, name=product.name, unit_price=float(product.sale_price), quantity=qty, purchase_price=float(product.purchase_price)))
         self._render_cart()
 
     def _add_free_amount_product(self, product) -> None:
@@ -882,10 +1113,14 @@ class POSPage(QWidget):
         currency = settings_service.get_currency()
         info(self, f'Vente enregistrée : {result.ticket_number}\nTotal : {format_money(result.total, currency)}\nMonnaie rendue : {format_money(result.change_due, currency)}', t('Vente réussie'))
         sale = SaleController.get(result.sale_id)
-        if sale:
+        # Maquis Caisse (aligné tablette) : marquer payé / encaisser n'ouvre PAS
+        # le dialogue d'impression. Réimpression depuis l'historique si besoin.
+        if sale and not self._maquis:
             if result.loyalty_credit_remaining is not None:
                 sale.loyalty_credit_remaining = result.loyalty_credit_remaining
             TicketDialog(sale, self, auto_print=False).exec()
         self._clear_cart()
         self._reload_products()
+        if self._maquis:
+            self._reload_maquis_meta()
         self.state.notify_data_changed()

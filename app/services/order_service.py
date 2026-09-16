@@ -122,6 +122,72 @@ class OrderService:
             return order
 
     @staticmethod
+    def create_from_cart(
+        lines: list,
+        *,
+        table_id: Optional[int] = None,
+        customer_name: str = "",
+        opened_by: Optional[int] = None,
+        note: str = "",
+    ) -> OpenOrder:
+        """Enregistre une commande ouverte depuis le panier caisse (comme tablette).
+
+        Ne marque pas comme payée et n'imprime pas — l'impression éventuelle
+        se fait à l'enregistrement côté UI si l'option est activée.
+        """
+        if not lines:
+            raise ValueError("Panier vide.")
+        from app.models.dining_table import STATUS_OCCUPIED, DiningTable
+
+        with session_scope() as session:
+            table = None
+            if table_id:
+                table = session.get(DiningTable, table_id)
+                if not table:
+                    raise ValueError("Table introuvable.")
+            order = OpenOrder(
+                public_id=OrderService._public_id(),
+                table_id=table_id,
+                status=STATUS_OPEN,
+                customer_name=(customer_name or "").strip(),
+                note=(note or "").strip(),
+                opened_by=opened_by,
+                total=0,
+            )
+            session.add(order)
+            session.flush()
+            total = 0.0
+            for line in lines:
+                qty = float(getattr(line, "quantity", 0) or 0)
+                if qty <= 0:
+                    continue
+                if getattr(line, "free_amount", False):
+                    line_total = round(float(getattr(line, "amount", 0) or 0), 2)
+                    price = float(getattr(line, "unit_price", 0) or 0)
+                else:
+                    price = float(getattr(line, "unit_price", 0) or 0)
+                    line_total = round(qty * price, 2)
+                item = OpenOrderItem(
+                    order_id=order.id,
+                    product_id=getattr(line, "product_id", None),
+                    product_name=(getattr(line, "name", "") or "").strip(),
+                    quantity=qty,
+                    unit_price=price,
+                    line_total=line_total,
+                )
+                session.add(item)
+                total += line_total
+            if total <= 0:
+                raise ValueError("Panier vide.")
+            order.total = total
+            if table is not None:
+                table.status = STATUS_OCCUPIED
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
     def mark_paid(order_id: int) -> OpenOrder:
         with session_scope() as session:
             order = session.get(OpenOrder, order_id)

@@ -155,6 +155,14 @@ class SettingsPage(QWidget):
         self.catalog_categories = QCheckBox(t('settings.catalog_categories'))
         self.catalog_categories.setToolTip(t('settings.catalog_categories_tip'))
         self.catalog_categories.setChecked(catalog_features.category_browser_enabled())
+        if product_profile.is_maquis():
+            self.catalog_images.setChecked(True)
+            self.catalog_images.setEnabled(False)
+            self.catalog_images.setToolTip(
+                t('Maquis Caisse : grille images forcée (comme la tablette).')
+            )
+            if settings_service.get_setting(catalog_features.SETTING_CATEGORY_BROWSER, '') == '':
+                self.catalog_categories.setChecked(True)
         form.addRow('', self.catalog_images)
         form.addRow('', self.catalog_categories)
         outer.addWidget(make_card(form_widget))
