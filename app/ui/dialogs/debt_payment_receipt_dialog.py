@@ -1,4 +1,9 @@
-"""Aperçu / impression d'un reçu de règlement de dette."""
+"""Aperçu / impression d'un reçu de règlement de dette.
+
+L'impression n'est jamais automatique : marquer une dette comme payée
+n'imprime rien. Le reçu est proposé en aperçu, à imprimer si le client
+le demande (``auto_print=True`` reste possible pour un appel explicite).
+"""
 from __future__ import annotations
 from app.i18n import t
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
@@ -8,7 +13,7 @@ from app.ui.widgets.helpers import info, warn
 class DebtPaymentReceiptDialog(QDialog):
     """Affiche le reçu texte et propose de (ré)imprimer."""
 
-    def __init__(self, *, client_name: str, amount: float, payment_method: str, remaining_after: float, note: str='', cashier: str='', payment_id: int | None=None, parent=None):
+    def __init__(self, *, client_name: str, amount: float, payment_method: str, remaining_after: float, note: str='', cashier: str='', payment_id: int | None=None, parent=None, auto_print: bool=False):
         super().__init__(parent)
         self.setWindowTitle(t('Reçu règlement dette'))
         self.setModal(True)
@@ -16,7 +21,7 @@ class DebtPaymentReceiptDialog(QDialog):
         self._kwargs = dict(client_name=client_name, amount=amount, payment_method=payment_method, remaining_after=remaining_after, note=note, cashier=cashier, payment_id=payment_id)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.addWidget(QLabel(t("Preuve d'encaissement — à remettre au client / conserver.")))
+        layout.addWidget(QLabel(t("Preuve d'encaissement — imprimez seulement si le client le demande.")))
         text = render_debt_payment_text(**self._kwargs)
         preview = QPlainTextEdit()
         preview.setReadOnly(True)
@@ -33,7 +38,8 @@ class DebtPaymentReceiptDialog(QDialog):
         buttons.addWidget(reprint)
         buttons.addWidget(close)
         layout.addLayout(buttons)
-        self._print(silent=True)
+        if auto_print:
+            self._print(silent=True)
 
     def _print(self, silent: bool=False) -> None:
         result = print_debt_payment(**self._kwargs)

@@ -50,6 +50,37 @@ class TableService:
             return table
 
     @staticmethod
+    def get(table_id: int) -> Optional[DiningTable]:
+        with session_scope() as session:
+            table = session.get(DiningTable, table_id)
+            if table is not None:
+                session.expunge(table)
+            return table
+
+    @staticmethod
+    def update(
+        table_id: int,
+        *,
+        number: Optional[str] = None,
+        name: Optional[str] = None,
+        capacity: Optional[int] = None,
+    ) -> DiningTable:
+        with session_scope() as session:
+            table = session.get(DiningTable, table_id)
+            if not table:
+                raise ValueError("Table introuvable.")
+            if number is not None:
+                table.number = number.strip()
+            if name is not None:
+                table.name = name.strip()
+            if capacity is not None:
+                table.capacity = max(1, int(capacity))
+            session.flush()
+            session.refresh(table)
+            session.expunge(table)
+            return table
+
+    @staticmethod
     def set_status(table_id: int, status: str) -> DiningTable:
         with session_scope() as session:
             table = session.get(DiningTable, table_id)

@@ -198,6 +198,21 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "or Threads, Buttons…), then the products in that category.",
         "zh": "收银时先选分类（如汽水、果汁、啤酒，或线材、纽扣等），再选该分类下的商品。",
     },
+    "settings.catalog_touch": {
+        "fr": "Caisse tactile (style tablette : tuiles produits, ardoise)",
+        "en": "Touch POS (tablet style: product tiles, big order lines)",
+        "zh": "触屏收银（平板风格：商品磁贴、大字账单）",
+    },
+    "settings.catalog_touch_tip": {
+        "fr": "Même saisie qu'à la table pour Maquis Caisse : catégories en "
+        "onglets, grandes tuiles produits, quantité par −/+ ou pavé numérique. "
+        "Activé par défaut pour Maquis Caisse.",
+        "en": "Same entry as at the table for Maquis Caisse: category tabs, "
+        "large product tiles, quantity via −/+ or numeric keypad. "
+        "Enabled by default for Maquis Caisse.",
+        "zh": "与桌台点单一致（Maquis Caisse）：分类标签、大号商品磁贴、"
+        "通过 −/+ 或数字键盘调整数量。Maquis Caisse 默认启用。",
+    },
     "settings.language_saved": {
         "fr": "Langue enregistrée.\n\n{restart}",
         "en": "Language saved.\n\n{restart}",
@@ -221,9 +236,12 @@ def normalize_language(code: str | None) -> str:
 def get_language() -> str:
     global _current
     if _current is None:
-        _current = normalize_language(
-            settings_service.get_setting(SETTING_LANGUAGE, LANG_FR)
-        )
+        try:
+            stored = settings_service.get_setting(SETTING_LANGUAGE, LANG_FR)
+        except Exception:
+            # Base pas encore initialisée (import de modules avant init_database).
+            return LANG_FR
+        _current = normalize_language(stored)
     return _current
 
 

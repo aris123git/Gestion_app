@@ -18,15 +18,23 @@ from app.ui.responsive import LayoutProfile
 from app.ui.state import AppState
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.helpers import info, page_title, warn
+from app.ui.widgets.touch_catalog import TouchCatalog
+from app.ui.widgets.touch_ticket import TouchTicket
 from app.utils.helpers import format_money, format_quantity, to_float
 
 class POSPage(QWidget):
-    """Écran de caisse : catalogue à gauche, panier à droite."""
+    """Écran de caisse : catalogue à gauche, panier à droite.
+
+    En mode tactile (Maquis Caisse par défaut), la saisie des produits et
+    l'affichage du panier utilisent les mêmes composants que l'écran de
+    commande des tables.
+    """
     COL_NAME, COL_QTY, COL_PRICE, COL_TOTAL, COL_DEL = range(5)
 
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
+        self._touch = catalog_features.touch_layout_enabled()
         self.cart: List[CartLine] = []
         self._updating = False
         self._client_map: Dict[int, int] = {}
@@ -80,6 +88,13 @@ class POSPage(QWidget):
             self._cart_panel.setMinimumHeight(0)
             self._catalog.setMinimumWidth(280)
             self._cart_panel.setMinimumWidth(260)
+        if self._touch:
+            total_px = 22 if profile.density == 'compact' else 26
+            self.total_label.setStyleSheet(f'font-size: {total_px}px; font-weight: 800;')
+            if self._pay_button is not None:
+                self._pay_button.setMinimumHeight(56)
+                self._pay_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            return
         if profile.content_width < 700 or stack:
             self.cart_table.setColumnWidth(self.COL_QTY, 52)
             self.cart_table.setColumnWidth(self.COL_PRICE, 72)
@@ -102,6 +117,13 @@ class POSPage(QWidget):
             self._pay_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def _build_catalog(self) -> QWidget:
+        if self._touch:
+            self._touch_catalog = TouchCatalog(title=t('pos.title'), show_barcode=True)
+            self._touch_catalog.product_activated.connect(self._add_product_by_id)
+            self._touch_catalog.barcode_scanned.connect(self._add_barcode_code)
+            self.barcode_input = self._touch_catalog.barcode_input
+            self.search_input = self._touch_catalog.search_input
+            return self._touch_catalog
         panel = QFrame()
         panel.setObjectName('Card')
         layout = QVBoxLayout(panel)
@@ -161,6 +183,8 @@ class POSPage(QWidget):
 
     def _apply_catalog_mode(self) -> None:
         """Affiche combo/table ou chips/grille selon les options Paramètres."""
+        if self._touch:
+            return
         use_chips = catalog_features.category_browser_enabled()
         use_images = catalog_features.product_images_enabled()
         self.category_filter.setVisible(not use_chips)
@@ -193,15 +217,21 @@ class POSPage(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet('color: #64748b; font-size: 12px;')
         layout.addWidget(hint)
-        self.cart_table = QTableWidget(0, 5)
-        self.cart_table.setHorizontalHeaderLabels([t('Produit'), t('Qté'), t('Prix U.'), t('Total'), ''])
-        self.cart_table.horizontalHeader().setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Stretch)
-        self.cart_table.setColumnWidth(self.COL_QTY, 70)
-        self.cart_table.setColumnWidth(self.COL_PRICE, 100)
-        self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
-        self.cart_table.setColumnWidth(self.COL_DEL, 44)
-        self.cart_table.itemChanged.connect(self._on_cart_edited)
-        layout.addWidget(self.cart_table)
+        if self._touch:
+            self.touch_ticket = TouchTicket()
+            self.touch_ticket.quantity_changed.connect(self._set_line_quantity)
+            self.touch_ticket.remove_requested.connect(self._remove_line)
+            layout.addWidget(self.touch_ticket, 1)
+        else:
+            self.cart_table = QTableWidget(0, 5)
+            self.cart_table.setHorizontalHeaderLabels([t('Produit'), t('Qté'), t('Prix U.'), t('Total'), ''])
+            self.cart_table.horizontalHeader().setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Stretch)
+            self.cart_table.setColumnWidth(self.COL_QTY, 70)
+            self.cart_table.setColumnWidth(self.COL_PRICE, 100)
+            self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
+            self.cart_table.setColumnWidth(self.COL_DEL, 44)
+            self.cart_table.itemChanged.connect(self._on_cart_edited)
+            layout.addWidget(self.cart_table)
         discount_row = QHBoxLayout()
         discount_row.addWidget(QLabel(t('pos.discount')))
         self.discount_input = QDoubleSpinBox()
@@ -245,12 +275,15 @@ class POSPage(QWidget):
         hold_btn.clicked.connect(self._hold_sale)
         resume_btn = QPushButton(t('pos.resume'))
         resume_btn.clicked.connect(self._resume_pending)
+        if self._touch:
+            hold_btn.setMinimumHeight(46)
+            resume_btn.setMinimumHeight(46)
         pending_row.addWidget(hold_btn)
         pending_row.addWidget(resume_btn)
         layout.addLayout(pending_row)
         pay_button = QPushButton(t('pos.checkout'))
         pay_button.setObjectName('Success')
-        pay_button.setMinimumHeight(52)
+        pay_button.setMinimumHeight(56 if self._touch else 52)
         pay_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         pay_button.clicked.connect(self._checkout)
         layout.addWidget(pay_button)
@@ -266,6 +299,9 @@ class POSPage(QWidget):
 
     def _apply_large_text(self) -> None:
         """Agrandit noms/prix catalogue + panier si activé dans Paramètres."""
+        if self._touch:
+            # Le mode tactile utilise déjà de grandes tuiles et lignes.
+            return
         large = settings_service.get_setting('pos_catalog_large_text', '0') == '1'
         size_key = settings_service.get_setting('pos_catalog_text_size', 'large')
         if large:
@@ -295,6 +331,9 @@ class POSPage(QWidget):
                     item.setFont(price_font if col != self.COL_NAME else font)
 
     def _reload_categories(self) -> None:
+        if self._touch:
+            self._touch_catalog.reload_categories()
+            return
         from app.controllers.category_controller import CategoryController
         current = self.category_filter.currentData()
         self.category_filter.blockSignals(True)
@@ -358,17 +397,9 @@ class POSPage(QWidget):
         if not ProfitLoyaltyService.is_enabled():
             warn(self, t('La fidélité bénéfices est désactivée.'))
             return
-        row = self.product_table.currentRow()
-        if row < 0:
-            warn(self, t('Sélectionnez un produit du catalogue à offrir.'))
-            return
-        item = self.product_table.item(row, 0)
-        if item is None:
-            return
-        product_id = item.data(Qt.ItemDataRole.UserRole)
-        product = ProductController.get(product_id) if product_id else None
+        product = self._selected_catalog_product()
         if not product:
-            warn(self, t('Produit introuvable.'))
+            warn(self, t('Sélectionnez un produit du catalogue à offrir.'))
             return
         if getattr(product, 'free_amount_sale', False):
             warn(self, t('Les ventes au montant libre ne peuvent pas être offertes en fidélité. Choisissez un produit à prix fixe (boisson, frite…).'))
@@ -504,7 +535,20 @@ class POSPage(QWidget):
         card.mousePressEvent = _click
         return card
 
+    def _cart_stock_usage(self) -> Dict[int, float]:
+        """Quantités déjà engagées par le panier courant, par produit."""
+        usage: Dict[int, float] = {}
+        for line in self.cart:
+            if line.product_id:
+                key = int(line.product_id)
+                usage[key] = usage.get(key, 0.0) + float(line.stock_quantity)
+        return usage
+
     def _reload_products(self) -> None:
+        if self._touch:
+            self._touch_catalog.set_stock_adjustments(self._cart_stock_usage())
+            self._touch_catalog.reload_products()
+            return
         products = ProductController.list(search=self.search_input.text().strip(), category_id=self.category_filter.currentData())
         currency = settings_service.get_currency()
         self.product_table.setRowCount(len(products))
@@ -537,19 +581,36 @@ class POSPage(QWidget):
         code = self.barcode_input.text().strip()
         if not code:
             return
-        product = ProductController.find_by_barcode(code)
         self.barcode_input.clear()
+        self._add_barcode_code(code)
+
+    def _add_barcode_code(self, code: str) -> None:
+        product = ProductController.find_by_barcode(code)
         if not product:
             warn(self, f'Aucun produit avec le code-barres « {code} ».')
             return
         self._add_product(product)
 
-    def _add_selected_product(self) -> None:
+    def _add_product_by_id(self, product_id: int) -> None:
+        product = ProductController.get(int(product_id))
+        if product:
+            self._add_product(product)
+
+    def _selected_catalog_product(self):
+        """Produit sélectionné dans le catalogue (tuile tactile ou ligne de table)."""
+        if self._touch:
+            product_id = self._touch_catalog.selected_product_id()
+            return ProductController.get(int(product_id)) if product_id else None
         row = self.product_table.currentRow()
         if row < 0:
-            return
-        product_id = self.product_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        product = ProductController.get(product_id)
+            return None
+        item = self.product_table.item(row, 0)
+        if item is None:
+            return None
+        return ProductController.get(item.data(Qt.ItemDataRole.UserRole))
+
+    def _add_selected_product(self) -> None:
+        product = self._selected_catalog_product()
         if product:
             self._add_product(product)
 
@@ -620,8 +681,13 @@ class POSPage(QWidget):
         self._render_cart()
 
     def _render_cart(self) -> None:
-        self._updating = True
         currency = settings_service.get_currency()
+        if self._touch:
+            self.touch_ticket.set_lines(self.cart, currency)
+            self._touch_catalog.set_stock_adjustments(self._cart_stock_usage())
+            self._refresh_loyalty_credit()
+            return
+        self._updating = True
         self.cart_table.setRowCount(len(self.cart))
         for row, line in enumerate(self.cart):
             name_item = QTableWidgetItem(line.name)
@@ -673,6 +739,42 @@ class POSPage(QWidget):
             self.cart.pop(row)
             self._render_cart()
 
+    def _set_line_quantity(self, row: int, quantity: float) -> None:
+        """Applique une quantité saisie (table, −/+ ou pavé tactile)."""
+        if row < 0 or row >= len(self.cart):
+            return
+        line = self.cart[row]
+        if line.free_amount:
+            self._render_cart()
+            return
+        qty = float(quantity)
+        if qty <= 0:
+            self._remove_line(row)
+            return
+        if line.loyalty_reward:
+            unit = float(line.unit_price)
+            others = sum((float(l.reward_value) for i, l in enumerate(self.cart) if i != row))
+            from app.services.profit_loyalty_service import ProfitLoyaltyService
+            cid = self._current_client_id()
+            balance = ProfitLoyaltyService.credit_balance(int(cid)) if cid else 0.0
+            need = round(unit * qty, 2)
+            if need > balance - others + 0.009:
+                warn(self, t('Crédit fidélité insuffisant pour cette quantité.'))
+                self._render_cart()
+                return
+        if line.product_id:
+            stock = self._available_stock(line.product_id, exclude_cart=True)
+            if stock <= 0:
+                warn(self, f'Stock insuffisant : « {line.name} » est en rupture de stock.', t('Stock insuffisant'))
+                self._render_cart()
+                return
+            if qty > stock:
+                warn(self, f'Stock insuffisant pour « {line.name} » : disponible {format_quantity(stock)}, demandé {format_quantity(qty)}.', t('Stock insuffisant'))
+                self._render_cart()
+                return
+        line.quantity = qty
+        self._render_cart()
+
     def _on_cart_edited(self, item: QTableWidgetItem) -> None:
         if self._updating:
             return
@@ -684,33 +786,7 @@ class POSPage(QWidget):
             self._render_cart()
             return
         if item.column() == self.COL_QTY:
-            qty = to_float(item.text())
-            if qty <= 0:
-                self._remove_line(row)
-                return
-            if line.loyalty_reward:
-                unit = float(line.unit_price)
-                others = sum((float(l.reward_value) for i, l in enumerate(self.cart) if i != row))
-                from app.services.profit_loyalty_service import ProfitLoyaltyService
-                cid = self._current_client_id()
-                balance = ProfitLoyaltyService.credit_balance(int(cid)) if cid else 0.0
-                need = round(unit * qty, 2)
-                if need > balance - others + 0.009:
-                    warn(self, t('Crédit fidélité insuffisant pour cette quantité.'))
-                    self._render_cart()
-                    return
-            if line.product_id:
-                stock = self._available_stock(line.product_id, exclude_cart=True)
-                if stock <= 0:
-                    warn(self, f'Stock insuffisant : « {line.name} » est en rupture de stock.', t('Stock insuffisant'))
-                    self._render_cart()
-                    return
-                if qty > stock:
-                    warn(self, f'Stock insuffisant pour « {line.name} » : disponible {format_quantity(stock)}, demandé {format_quantity(qty)}.', t('Stock insuffisant'))
-                    self._render_cart()
-                    return
-            line.quantity = qty
-            self._render_cart()
+            self._set_line_quantity(row, to_float(item.text()))
         elif item.column() == self.COL_PRICE:
             if line.loyalty_reward:
                 warn(self, t("Le prix d'un produit offert fidélité n'est pas modifiable."))

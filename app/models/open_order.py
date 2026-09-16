@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.connection import Base
@@ -31,6 +31,10 @@ class OpenOrder(Base, TimestampMixin):
     total: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
     opened_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Vente créée à l'encaissement (stock, tableau de bord, dette client).
+    sale_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("sales.id"), nullable=True, index=True
+    )
 
     table: Mapped[Optional["DiningTable"]] = relationship(  # noqa: F821
         back_populates="orders"
@@ -54,5 +58,11 @@ class OpenOrderItem(Base):
     quantity: Mapped[float] = mapped_column(Numeric(14, 3), default=1)
     unit_price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
     line_total: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    # Prix d'achat figé à l'ajout : marge juste même si un achat le fait varier.
+    purchase_price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    # Vente au montant libre (ex. 300 F de poisson) — quantité estimée.
+    free_amount: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Consigne cuisine / bar (ex. « sans piment », « bien froid »).
+    note: Mapped[str] = mapped_column(String(200), default="")
 
     order: Mapped["OpenOrder"] = relationship(back_populates="items")

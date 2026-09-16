@@ -155,8 +155,12 @@ class SettingsPage(QWidget):
         self.catalog_categories = QCheckBox(t('settings.catalog_categories'))
         self.catalog_categories.setToolTip(t('settings.catalog_categories_tip'))
         self.catalog_categories.setChecked(catalog_features.category_browser_enabled())
+        self.catalog_touch = QCheckBox(t('settings.catalog_touch'))
+        self.catalog_touch.setToolTip(t('settings.catalog_touch_tip'))
+        self.catalog_touch.setChecked(catalog_features.touch_layout_enabled())
         form.addRow('', self.catalog_images)
         form.addRow('', self.catalog_categories)
+        form.addRow('', self.catalog_touch)
         outer.addWidget(make_card(form_widget))
         save = QPushButton(t('Enregistrer les informations'))
         save.setObjectName('Primary')
@@ -205,6 +209,10 @@ class SettingsPage(QWidget):
         settings_service.set_setting('shop_fax', self.fax.text().strip())
         catalog_features.set_product_images_enabled(self.catalog_images.isChecked())
         catalog_features.set_category_browser_enabled(self.catalog_categories.isChecked())
+        touch_changed = (
+            self.catalog_touch.isChecked() != catalog_features.touch_layout_enabled()
+        )
+        catalog_features.set_touch_layout_enabled(self.catalog_touch.isChecked())
         lang_changed = set_language(new_lang) != previous_lang
         audit_service.log_action('Paramètres commerce', 'ShopInfo', '', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         if lang_changed:
@@ -215,7 +223,12 @@ class SettingsPage(QWidget):
             else:
                 QApplication.quit()
             return
-        info(self, t('Informations enregistrées.'))
+        message = t('Informations enregistrées.')
+        if touch_changed:
+            message = (
+                f"{message}\n\n{t('La caisse prend la nouvelle interface au prochain démarrage.')}"
+            )
+        info(self, message)
         self.state.notify_data_changed()
 
     def _build_appearance_tab(self) -> QWidget:

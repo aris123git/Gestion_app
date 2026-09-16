@@ -125,6 +125,14 @@ def _migrate_schema() -> None:
             "due_date": "DATE",
             "status": "VARCHAR(40) DEFAULT 'en_cours'",
         },
+        "open_orders": {
+            "sale_id": "INTEGER",
+        },
+        "open_order_items": {
+            "purchase_price": "NUMERIC(14, 2) DEFAULT 0",
+            "free_amount": "BOOLEAN DEFAULT 0",
+            "note": "VARCHAR(200) DEFAULT ''",
+        },
     }
     with engine.begin() as conn:
         for table, columns in alterations.items():
