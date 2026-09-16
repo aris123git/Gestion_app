@@ -75,6 +75,24 @@ class MaquisOrderServiceTestCase(unittest.TestCase):
         self.assertEqual(empty.items, [])
         self.assertEqual(float(empty.total), 0)
 
+    def test_each_new_product_is_included_in_total_immediately(self) -> None:
+        first = order_service.OrderService.add_item(
+            self.order.id,
+            product_id=None,
+            product_name="Poisson braisé",
+            quantity=1,
+            unit_price=5000,
+        )
+        self.assertEqual(float(first.total), 5000)
+        second = order_service.OrderService.add_item(
+            self.order.id,
+            product_id=None,
+            product_name="Bière locale",
+            quantity=1,
+            unit_price=1000,
+        )
+        self.assertEqual(float(second.total), 6000)
+
     def test_empty_order_cannot_be_marked_paid(self) -> None:
         with self.assertRaisesRegex(ValueError, "commande vide"):
             order_service.OrderService.mark_paid(self.order.id)

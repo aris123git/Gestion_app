@@ -137,14 +137,15 @@ class OrderService:
             )
             if line is None:
                 line = OpenOrderItem(
-                    order_id=order.id,
                     product_id=product_id,
                     product_name=name,
                     quantity=qty,
                     unit_price=price,
                     line_total=round(qty * price, 2),
                 )
-                session.add(line)
+                # Passer par la relation garantit que la nouvelle ligne participe
+                # immédiatement au recalcul, avant même le flush SQL.
+                order.items.append(line)
             else:
                 line.quantity = float(line.quantity) + qty
                 line.line_total = round(float(line.quantity) * price, 2)
