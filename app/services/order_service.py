@@ -122,6 +122,84 @@ class OrderService:
             return order
 
     @staticmethod
+    def add_product(
+        order_id: int,
+        *,
+        product_id: int,
+        product_name: str,
+        unit_price: float,
+    ) -> OpenOrder:
+        """Ajoute un article catalogue ou augmente sa quantité dans la commande."""
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order or order.status != STATUS_OPEN:
+                raise ValueError("Commande non modifiable.")
+            line = session.scalar(
+                select(OpenOrderItem).where(
+                    OpenOrderItem.order_id == order.id,
+                    OpenOrderItem.product_id == product_id,
+                )
+            )
+            if line:
+                line.quantity = float(line.quantity) + 1
+                line.line_total = round(float(line.quantity) * float(line.unit_price), 2)
+            else:
+                line = OpenOrderItem(
+                    order_id=order.id,
+                    product_id=product_id,
+                    product_name=(product_name or "").strip(),
+                    quantity=1,
+                    unit_price=float(unit_price),
+                    line_total=round(float(unit_price), 2),
+                )
+                session.add(line)
+            session.flush()
+            order.total = round(
+                sum(float(item.line_total or 0) for item in order.items), 2
+            )
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
+    def remove_item(order_id: int, item_id: int) -> OpenOrder:
+        """Supprime une ligne de commande et recalcule son total."""
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order or order.status != STATUS_OPEN:
+                raise ValueError("Commande non modifiable.")
+            line = session.get(OpenOrderItem, item_id)
+            if not line or line.order_id != order.id:
+                raise ValueError("Article de commande introuvable.")
+            session.delete(line)
+            session.flush()
+            order.total = round(
+                sum(float(item.line_total or 0) for item in order.items), 2
+            )
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
+    def get_open_for_table(table_id: int) -> Optional[OpenOrder]:
+        """Retourne la commande ouverte la plus récente d'une table."""
+        with session_scope() as session:
+            order = session.scalar(
+                select(OpenOrder)
+                .options(joinedload(OpenOrder.table), joinedload(OpenOrder.items))
+                .where(
+                    OpenOrder.table_id == table_id,
+                    OpenOrder.status == STATUS_OPEN,
+                )
+                .order_by(OpenOrder.id.desc())
+            )
+            if order:
+                session.expunge(order)
+            return order
+
+    @staticmethod
     def mark_paid(order_id: int) -> OpenOrder:
         with session_scope() as session:
             order = session.get(OpenOrder, order_id)

@@ -4,6 +4,7 @@ from app.i18n import t
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
 from app.models.dining_table import STATUS_FREE, STATUS_OCCUPIED
 from app.services import order_service, table_service
+from app.ui.dialogs.maquis_order_dialog import MaquisOrderDialog
 from app.ui.widgets.helpers import confirm, info, warn
 
 class TablesPage(QWidget):
@@ -78,9 +79,18 @@ class TablesPage(QWidget):
             try:
                 user = getattr(self.state, 'current_user', None)
                 order = order_service.OrderService.open_on_table(table_id, opened_by=getattr(user, 'id', None))
-                info(self, f'Commande {order.public_id} ouverte.')
+                table = next((item for item in table_service.TableService.list() if item.id == table_id), None)
+                if table:
+                    MaquisOrderDialog(table, order, self).exec()
                 self.refresh()
             except Exception as exc:
                 warn(self, str(exc))
         else:
-            info(self, t("Table occupée. Gérez la commande dans l'écran Commandes."))
+            order = order_service.OrderService.get_open_for_table(table_id)
+            table = next((item for item in table_service.TableService.list() if item.id == table_id), None)
+            if not order or not table:
+                warn(self, t("Aucune commande ouverte n'a été trouvée pour cette table."))
+                self.refresh()
+                return
+            MaquisOrderDialog(table, order, self).exec()
+            self.refresh()

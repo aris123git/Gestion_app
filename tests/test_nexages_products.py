@@ -15,6 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.pop("NEXAGES_PRODUCT", None)
 
 from app import config  # noqa: E402
+from app.controllers.product_controller import ProductController  # noqa: E402
 from app.database.connection import engine, init_database  # noqa: E402
 from app.database.seed import seed_all  # noqa: E402
 from app.services import (  # noqa: E402
@@ -114,6 +115,40 @@ class MaquisTablesOrdersTestCase(unittest.TestCase):
         tables2 = table_service.TableService.list()
         t2 = next(t for t in tables2 if t.id == free.id)
         self.assertEqual(t2.status, "libre")
+
+    def test_add_and_remove_catalog_product_from_open_order(self) -> None:
+        table_service.TableService.ensure_defaults()
+        free = next(t for t in table_service.TableService.list() if t.status == "libre")
+        product = ProductController.create(
+            {
+                "name": "Bière pression commande",
+                "sale_price": 1500,
+                "purchase_price": 900,
+                "quantity": 10,
+            }
+        )
+        order = order_service.OrderService.open_on_table(free.id)
+        order_service.OrderService.add_product(
+            order.id,
+            product_id=product.id,
+            product_name=product.name,
+            unit_price=float(product.sale_price),
+        )
+        updated = order_service.OrderService.add_product(
+            order.id,
+            product_id=product.id,
+            product_name=product.name,
+            unit_price=float(product.sale_price),
+        )
+        loaded = order_service.OrderService.get_open_for_table(free.id)
+        self.assertEqual(len(loaded.items), 1)
+        self.assertEqual(float(loaded.items[0].quantity), 2)
+        self.assertEqual(float(updated.total), 3000)
+        order_service.OrderService.remove_item(order.id, loaded.items[0].id)
+        empty = order_service.OrderService.get_open_for_table(free.id)
+        self.assertEqual(empty.items, [])
+        self.assertEqual(float(empty.total), 0)
+        order_service.OrderService.mark_paid(order.id)
 
 
 if __name__ == "__main__":
