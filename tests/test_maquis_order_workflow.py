@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -17,8 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from app import config  # noqa: E402
-from app.database.connection import engine, init_database  # noqa: E402
+from app.database.connection import init_database  # noqa: E402
 from app.database.seed import seed_all  # noqa: E402
 from app.models.open_order import STATUS_OPEN  # noqa: E402
 from app.services import order_service, table_service  # noqa: E402
@@ -151,12 +149,6 @@ class OrdersPagePaymentTestCase(unittest.TestCase):
         create_sale.assert_called_once()
         mark_paid.assert_called_once_with(42)
         ticket_dialog.assert_not_called()
-
-
-def tearDownModule() -> None:
-    engine.dispose()
-    shutil.rmtree(config.DATA_DIR, ignore_errors=True)
-
 
 if __name__ == "__main__":
     unittest.main()
