@@ -724,30 +724,16 @@ class POSPage(QWidget):
         if total <= 0:
             warn(self, t("Montant total invalide"))
             return
-        dialog = PaymentDialog(
-            total,
-            client_id=None,
-            client_phone="",
-            allow_credit=self.state.can(perms.SELL_ON_CREDIT),
-            max_credit=self._cashier_max_credit(),
-            parent=self,
+        from app.services.maquis_payment_flow import (
+            apply_payment_to_order,
+            run_maquis_payment,
         )
-        if not dialog.exec():
-            return
-        credit_requested = dialog.use_credit or any(
-            p.method == config.PAYMENT_METHOD_CREDIT for p in dialog.result_payments
-        )
-        if credit_requested and (not self.state.can(perms.SELL_ON_CREDIT)):
-            warn(self, t("Vous n'avez pas l'autorisation de vendre à crédit."))
-            return
-        if credit_requested and not dialog.result_client_id:
-            warn(self, t("Sélectionnez un client pour la dette."))
-            return
-        tid, tlabel, wid, wname = self._maquis_table_context()
-        from app.services.maquis_order_service import MaquisOrderService
         from app.services.order_service import OrderService
 
-        order = None
+        pay = run_maquis_payment(total, self, allow_partial=False, state=self.state)
+        if not pay:
+            return
+        tid, tlabel, wid, wname = self._maquis_table_context()
         try:
             order = OrderService.upsert_cart_for_table(
                 list(self.cart),
@@ -758,13 +744,12 @@ class POSPage(QWidget):
                 opened_by=self.state.user_id,
             )
             user = getattr(self.state.current_user, "username", "") or ""
-            MaquisOrderService.pay_order_lines(
+            apply_payment_to_order(
                 order.id,
-                dialog.result_payments,
+                pay,
                 user_id=self.state.user_id,
                 user_name=user,
-                debt_client_id=dialog.result_client_id,
-                change_amount=float(dialog.change_due or 0),
+                remaining_before=total,
             )
         except ValueError as exc:
             warn(self, str(exc))
@@ -773,11 +758,10 @@ class POSPage(QWidget):
             warn(self, str(exc), t("Stock insuffisant"))
             return
         currency = settings_service.get_currency()
-        pid = order.public_id if order else ""
         info(
             self,
-            t("Commande {id} payée").format(id=pid)
-            + f"\n{t('Monnaie rendue')} : {format_money(dialog.change_due, currency)}",
+            t("Commande {id} payée").format(id=order.public_id)
+            + f"\n{t('Monnaie rendue')} : {format_money(pay.change_amount, currency)}",
             t("Encaissement"),
         )
         self._clear_cart()

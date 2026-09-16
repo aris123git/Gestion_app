@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -74,10 +75,20 @@ class OrderDetailPage(QWidget):
         self.cancel_btn = QPushButton(t("Annuler"))
         self.cancel_btn.setObjectName("Danger")
         self.cancel_btn.clicked.connect(self._cancel_order)
+        self.edit_btn = QPushButton(t("Modifier"))
+        self.edit_btn.clicked.connect(self._toggle_edit)
+        self.save_edit_btn = QPushButton(t("Enregistrer"))
+        self.save_edit_btn.setObjectName("Primary")
+        self.save_edit_btn.clicked.connect(self._save_edits)
+        self.save_edit_btn.setVisible(False)
         actions.addWidget(self.kitchen_btn)
         actions.addStretch()
+        actions.addWidget(self.edit_btn)
+        actions.addWidget(self.save_edit_btn)
         actions.addWidget(self.cancel_btn)
         actions.addWidget(self.pay_btn)
+        self._editing = False
+        self._edit_qty: dict[int, QDoubleSpinBox] = {}
         rlay.addLayout(actions)
         root.addWidget(right, 4)
 
@@ -108,15 +119,18 @@ class OrderDetailPage(QWidget):
         )
         currency = settings_service.get_currency()
         open_order = order.status in (STATUS_OPEN, STATUS_UNPAID)
-        self.pay_btn.setVisible(open_order)
+        self._edit_qty.clear()
         self.pay_btn.setText(
             t("Encaisser")
             if order.status == STATUS_UNPAID
             else t("Marquer payée")
         )
-        self.catalog.setEnabled(open_order)
         is_admin = getattr(self.state.current_user, "role", "") == perms.ROLE_ADMIN
-        self.cancel_btn.setVisible(open_order and is_admin)
+        self.cancel_btn.setVisible(open_order and is_admin and not self._editing)
+        self.edit_btn.setVisible(open_order and is_admin and not self._editing)
+        self.save_edit_btn.setVisible(open_order and is_admin and self._editing)
+        self.pay_btn.setVisible(open_order and not self._editing)
+        self.catalog.setEnabled(open_order and not self._editing)
         items = list(order.items or [])
         self.lines.setRowCount(len(items))
         for row, it in enumerate(items):
@@ -134,7 +148,14 @@ class OrderDetailPage(QWidget):
                 3,
                 QTableWidgetItem(format_money(float(it.line_total or 0), currency)),
             )
-            if open_order:
+            if open_order and self._editing and is_admin:
+                spin = QDoubleSpinBox()
+                spin.setRange(0, 9999)
+                spin.setDecimals(3)
+                spin.setValue(float(it.quantity or 0))
+                self._edit_qty[it.id] = spin
+                self.lines.setCellWidget(row, 1, spin)
+            elif open_order and not self._editing:
                 del_btn = QPushButton("✕")
                 del_btn.setObjectName("Danger")
                 iid = it.id
@@ -149,6 +170,47 @@ class OrderDetailPage(QWidget):
     def _pay(self) -> None:
         if self.order_id and checkout_open_order(self.order_id, self.state, self):
             self._go_back()
+
+    def _toggle_edit(self) -> None:
+        if getattr(self.state.current_user, "role", "") != perms.ROLE_ADMIN:
+            warn(self, t("Seul l'administrateur peut modifier une commande."))
+            return
+        self._editing = not self._editing
+        self._edit_qty.clear()
+        self._reload_lines()
+
+    def _save_edits(self) -> None:
+        if not self.order_id:
+            return
+        order = OrderService.get(self.order_id)
+        if not order:
+            return
+        lines = []
+        for it in order.items or []:
+            spin = self._edit_qty.get(it.id)
+            qty = float(spin.value()) if spin else float(it.quantity or 0)
+            if qty <= 0:
+                continue
+            lines.append(
+                {
+                    "product_id": it.product_id,
+                    "product_name": it.product_name,
+                    "quantity": qty,
+                    "unit_price": float(it.unit_price or 0),
+                }
+            )
+        if not lines:
+            warn(self, t("La commande ne peut pas être vide."))
+            return
+        try:
+            OrderService.replace_items(self.order_id, lines)
+            self._editing = False
+            self._edit_qty.clear()
+            self._reload_lines()
+            self.state.notify_data_changed()
+            info(self, t("Commande mise à jour."))
+        except Exception as exc:
+            warn(self, str(exc))
 
     def _cancel_order(self) -> None:
         if not self.order_id:
