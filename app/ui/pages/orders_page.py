@@ -84,6 +84,8 @@ class OrdersPage(QWidget):
         currency = settings_service.get_shop_info().currency or 'FCFA'
         rows = order_service.OrderService.list_open(limit=100)
         self._ids = [o.id for o in rows]
+        self.table.blockSignals(True)
+        self.table.clearSelection()
         self.table.setRowCount(len(rows))
         for i, o in enumerate(rows):
             table_name = '—'
@@ -94,8 +96,12 @@ class OrdersPage(QWidget):
             self.table.setItem(i, 2, QTableWidgetItem(o.customer_name or '—'))
             self.table.setItem(i, 3, QTableWidgetItem(format_money(float(o.total or 0), currency)))
             self.table.setItem(i, 4, QTableWidgetItem(o.status))
+        self.table.blockSignals(False)
         if rows:
             self.table.selectRow(0)
+            # Une sélection survivante de QTableWidget peut ne pas réémettre le
+            # signal après un repeuplement : synchroniser le détail explicitement.
+            self._show_selected()
         else:
             self._clear_details()
 

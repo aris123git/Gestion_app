@@ -101,6 +101,55 @@ class OrdersPagePaymentTestCase(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_refresh_keeps_selected_row_and_details_synchronized(self) -> None:
+        state = SimpleNamespace(
+            current_user=SimpleNamespace(role="admin"),
+            user_id=1,
+            can=lambda _permission: True,
+            notify_data_changed=MagicMock(),
+        )
+        table_2 = SimpleNamespace(display_name="Table 2")
+        table_1 = SimpleNamespace(display_name="Table 1")
+        newest = SimpleNamespace(
+            id=2,
+            public_id="CMD-TABLE2",
+            table=table_2,
+            customer_name="",
+            note="Sans piment",
+            status=STATUS_OPEN,
+            total=9000,
+            items=[],
+        )
+        older = SimpleNamespace(
+            id=1,
+            public_id="CMD-TABLE1",
+            table=table_1,
+            customer_name="",
+            note="",
+            status=STATUS_OPEN,
+            total=8000,
+            items=[],
+        )
+        by_id = {2: newest, 1: older}
+        with (
+            patch.object(
+                order_service.OrderService,
+                "list_open",
+                return_value=[newest, older],
+            ),
+            patch.object(
+                order_service.OrderService,
+                "get",
+                side_effect=lambda order_id: by_id[order_id],
+            ),
+        ):
+            page = OrdersPage(state)
+            page.refresh()
+
+        self.assertEqual(page.table.currentRow(), 0)
+        self.assertIn("CMD-TABLE2", page.detail_title.text())
+        self.assertIn("9 000", page.detail_total.text())
+
     def test_mark_paid_records_sale_without_opening_ticket_dialog(self) -> None:
         state = SimpleNamespace(
             current_user=SimpleNamespace(role="admin"),
