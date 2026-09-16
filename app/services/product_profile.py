@@ -97,9 +97,11 @@ def set_product(product: str) -> None:
         encoding="utf-8",
     )
     try:
-        from app.services import settings_service
+        from app.services import catalog_features, settings_service
 
         settings_service.set_setting("nexages_product", code)
+        if code == PRODUCT_MAQUIS:
+            catalog_features.ensure_maquis_tablet_defaults()
     except Exception:
         logger.debug("Impossible de miroirer le produit dans settings.", exc_info=True)
 

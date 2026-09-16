@@ -27,6 +27,39 @@ class OrderService:
         return "CMD-" + secrets.token_hex(3).upper()
 
     @staticmethod
+    def get(order_id: int) -> Optional[OpenOrder]:
+        with session_scope() as session:
+            order = session.scalars(
+                select(OpenOrder)
+                .options(
+                    joinedload(OpenOrder.table),
+                    joinedload(OpenOrder.items),
+                )
+                .where(OpenOrder.id == order_id)
+            ).first()
+            if order is None:
+                return None
+            session.expunge(order)
+            return order
+
+    @staticmethod
+    def open_for_table(table_id: int) -> Optional[OpenOrder]:
+        with session_scope() as session:
+            order = session.scalars(
+                select(OpenOrder)
+                .options(joinedload(OpenOrder.items))
+                .where(
+                    OpenOrder.table_id == table_id,
+                    OpenOrder.status == STATUS_OPEN,
+                )
+                .order_by(OpenOrder.id.desc())
+            ).first()
+            if order is None:
+                return None
+            session.expunge(order)
+            return order
+
+    @staticmethod
     def list_open(limit: int = 100) -> List[OpenOrder]:
         with session_scope() as session:
             rows = list(
@@ -116,6 +149,22 @@ class OrderService:
             )
             session.add(line)
             order.total = float(order.total or 0) + float(line.line_total)
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
+    def remove_item(item_id: int) -> OpenOrder:
+        with session_scope() as session:
+            line = session.get(OpenOrderItem, item_id)
+            if not line:
+                raise ValueError("Ligne introuvable.")
+            order = session.get(OpenOrder, line.order_id)
+            if not order or order.status != STATUS_OPEN:
+                raise ValueError("Commande non modifiable.")
+            order.total = float(order.total or 0) - float(line.line_total or 0)
+            session.delete(line)
             session.flush()
             session.refresh(order)
             session.expunge(order)

@@ -3,6 +3,8 @@ from __future__ import annotations
 from app.i18n import t
 from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.services import order_service, settings_service
+from app.services.order_checkout_service import checkout_open_order
+from app.ui.dialogs.table_order_dialog import TableOrderDialog
 from app.ui.widgets.helpers import confirm, info, warn
 from app.utils.helpers import format_money
 
@@ -16,14 +18,17 @@ class OrdersPage(QWidget):
         title = QLabel(t('Commandes ouvertes'))
         title.setObjectName('PageTitle')
         layout.addWidget(title)
-        layout.addWidget(QLabel(t('Commandes en cours sur les tables. Encaissement via « Marquer payée ».')))
+        layout.addWidget(QLabel(t('Commandes en cours sur les tables. Ouvrez pour saisir les articles ; encaissez via « Marquer payée » (sans impression ticket).')))
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([t('N°'), t('Table'), t('Client'), t('Total'), t('Statut')])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.doubleClicked.connect(self._open_selected)
         layout.addWidget(self.table, 1)
         actions = QHBoxLayout()
+        open_btn = QPushButton(t('Ouvrir'))
+        open_btn.clicked.connect(self._open_selected)
         pay = QPushButton(t('Marquer payée'))
         pay.setObjectName('Primary')
         pay.clicked.connect(self._pay)
@@ -31,6 +36,7 @@ class OrdersPage(QWidget):
         cancel.clicked.connect(self._cancel)
         refresh = QPushButton(t('Actualiser'))
         refresh.clicked.connect(self.refresh)
+        actions.addWidget(open_btn)
         actions.addWidget(pay)
         actions.addWidget(cancel)
         actions.addStretch()
@@ -65,14 +71,19 @@ class OrdersPage(QWidget):
         if not oid:
             warn(self, t('Sélectionnez une commande.'))
             return
-        if not confirm(self, t('Marquer cette commande comme payée ?'), t('Commande')):
+        if not confirm(self, t('Encaisser cette commande (vente enregistrée, sans ticket) ?'), t('Commande')):
             return
-        try:
-            order_service.OrderService.mark_paid(oid)
+        if checkout_open_order(oid, self.state, self):
             self.refresh()
-            info(self, t("Commande payée — table libérée si plus d'autres commandes."))
-        except Exception as exc:
-            warn(self, str(exc))
+
+    def _open_selected(self) -> None:
+        oid = self._selected_id()
+        if not oid:
+            warn(self, t('Sélectionnez une commande.'))
+            return
+        dlg = TableOrderDialog(oid, self.state, self)
+        dlg.exec()
+        self.refresh()
 
     def _cancel(self) -> None:
         oid = self._selected_id()

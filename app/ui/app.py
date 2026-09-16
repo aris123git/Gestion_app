@@ -98,8 +98,10 @@ class AppController:
     def show_main(self) -> None:
         if product_profile.is_maquis():
             try:
+                from app.services import catalog_features
                 from app.services.table_service import TableService
 
+                catalog_features.ensure_maquis_tablet_defaults()
                 TableService.ensure_defaults()
             except Exception:
                 logger.exception("Initialisation tables Maquis impossible")

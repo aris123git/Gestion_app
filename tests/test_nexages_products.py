@@ -23,9 +23,6 @@ from app.services import (  # noqa: E402
     product_profile,
     table_service,
 )
-from app.ui.main_window import build_nav_items  # noqa: E402
-
-
 class ProductProfileTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -49,8 +46,14 @@ class ProductProfileTestCase(unittest.TestCase):
         self.assertTrue(product_profile.is_product_chosen())
         self.assertTrue(product_profile.is_maquis())
         self.assertEqual(product_profile.product_label(), "Maquis Caisse")
+        from app.services import catalog_features
+
+        self.assertTrue(catalog_features.product_images_enabled())
+        self.assertTrue(catalog_features.category_browser_enabled())
 
     def test_nav_differs_by_product(self) -> None:
+        from app.ui.main_window import build_nav_items
+
         product_profile.set_product(product_profile.PRODUCT_GESTION)
         gestion_labels = {item[0] for item in build_nav_items()}
         self.assertIn("Avoirs", gestion_labels)
@@ -80,6 +83,9 @@ class ProductProfileTestCase(unittest.TestCase):
                 product_profile.PRODUCT_MAQUIS
             ].lower(),
         )
+
+
+class AvoirTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         init_database()
