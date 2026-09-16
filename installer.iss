@@ -19,11 +19,13 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\GestionCommerciale
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+OutputDir=Output
 OutputBaseFilename=GestionCommerciale_Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=admin
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"

@@ -33,9 +33,46 @@ jobs:
       - name: Vérifier les modules critiques dans le bundle
         run: python scripts/verify_exe_modules.py dist/GestionCommerciale
 
+      - name: Ajouter LANCER.bat + ZIP portable USB
+        shell: pwsh
+        run: |
+          Copy-Item portable/LANCER.bat dist/GestionCommerciale/LANCER.bat -Force
+          Copy-Item portable/LIRE_MOI_CLE_USB.txt dist/GestionCommerciale/LIRE_MOI_CLE_USB.txt -Force
+          # ZIP = dossier GestionCommerciale\ entier (pas seulement le contenu)
+          Compress-Archive -Path dist/GestionCommerciale -DestinationPath dist/GestionCommerciale_portable.zip -Force
+
+      - name: Installer Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compiler l'installateur Setup.exe (1 fichier pour PC étranger)
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe introuvable apres choco install innosetup" }
+          & $iscc installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Compilation Inno Setup echouee ($LASTEXITCODE)" }
+          Get-Item Output\GestionCommerciale_Setup.exe | Format-List Name, Length, FullName
+
+      - name: Publier Setup.exe (recommandé PC / clé USB)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCommerciale-Setup
+          path: Output/GestionCommerciale_Setup.exe
+          if-no-files-found: error
+
       - name: Publier le dossier Windows (artefact téléchargeable)
         uses: actions/upload-artifact@v4
         with:
           name: GestionCommerciale-Windows
           path: dist/GestionCommerciale/
+          if-no-files-found: error
+
+      - name: Publier le ZIP portable (clé USB)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCommerciale-portable-zip
+          path: dist/GestionCommerciale_portable.zip
           if-no-files-found: error

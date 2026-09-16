@@ -1,0 +1,58 @@
+========================================
+  INSTALLATION / CLE USB — A LIRE
+========================================
+
+SUR UN ORDINATEUR ETRANGER (RECOMMANDE)
+---------------------------------------
+Utilisez le fichier UNIQUE :
+
+  GestionCommerciale_Setup.exe
+
+1. Copiez CE SEUL fichier sur la cle USB
+2. Sur le PC : double-cliquez Setup.exe
+3. Suivez l'assistant (Suivant → Installer)
+4. Lancez depuis le menu Demarrer ou le bureau
+
+→ Pas besoin d'extraire un ZIP.
+→ Pas de dossier _internal a copier a la main.
+→ Evite le message Windows « inserer / ajouter le disque ».
+
+
+SI VOUS AVEZ SEULEMENT LE ZIP PORTABLE
+--------------------------------------
+NE lancez JAMAIS l'exe en double-cliquant DANS le ZIP
+(fenetre « Dossier compresse »). Windows demande alors
+des fichiers manquants / un disque — c'est normal : le
+dossier _internal n'est pas vraiment extrait.
+
+Faites plutot :
+1. Clic DROIT sur le ZIP → Extraire tout… → Extraire
+2. Attendez la fin (dossier GestionCommerciale cree)
+3. Ouvrez ce dossier
+4. Double-cliquez LANCER.bat
+
+Contenu attendu APRES extraction :
+  GestionCommerciale\
+    LANCER.bat
+    GestionCommerciale.exe
+    _internal\          ← OBLIGATOIRE (beaucoup de fichiers)
+    LIRE_MOI_CLE_USB.txt
+
+Si _internal est absent ou quasi vide → copie incomplete.
+Re-copiez le ZIP entier (attendez la fin de la copie USB).
+
+
+NE COPIEZ JAMAIS SEULEMENT GestionCommerciale.exe
+-------------------------------------------------
+Sans _internal, Windows affiche « fichiers manquants »
+ou « ajouter le disque ».
+
+
+SI CA NE DEMARRE TOUJOURS PAS
+-----------------------------
+- Autorisez le dossier / Setup dans Windows Defender
+- Lancez GestionCommerciale_console.exe pour voir l'erreur
+- Consultez %APPDATA%\GestionCommerciale\startup_error.log
+
+Les donnees (ventes, stock) restent sur le PC dans :
+  %APPDATA%\GestionCommerciale
