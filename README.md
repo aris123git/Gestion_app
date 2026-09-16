@@ -147,10 +147,14 @@ L'application est générée dans le dossier `dist/GestionCommerciale/`
 **Ne copiez jamais seulement le `.exe`.** Sans `_internal`, Windows demande
 des fichiers manquants / le disque et l'app ne démarre pas.
 
-1. Copiez `GestionCommerciale_portable.zip` sur la clé, **ou** tout le dossier
-   `GestionCommerciale\`
-2. Sur la clé : extraire le ZIP si besoin
-3. Double-cliquez **`LANCER.bat`** (il vérifie que `_internal` est présent)
+1. Copiez `GestionCommerciale_portable.zip` sur la clé (le ZIP contient déjà
+   le dossier `GestionCommerciale\` avec l’exe + `_internal` + `LANCER.bat`)
+2. Sur la clé : clic droit → **Extraire tout…**
+3. Ouvrez le dossier extrait `GestionCommerciale\` et double-cliquez
+   **`LANCER.bat`** (il vérifie que `_internal` est présent)
+
+Sans ZIP : copiez **tout** le dossier `GestionCommerciale\` (glisser-déposer
+le dossier, jamais l’exe seul).
 
 **L'EXE ne s'ouvre pas / se ferme tout de suite ?**
 

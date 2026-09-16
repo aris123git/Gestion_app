@@ -15,9 +15,10 @@ Ce logiciel a besoin du dossier COMPLET :
 COMMENT FAIRE
 -------------
 1. Preferez le fichier ZIP (GestionCommerciale_portable.zip) :
+   - Le ZIP CONTIENT le dossier GestionCommerciale (exe + _internal + LANCER)
    - Copiez le ZIP sur la cle
    - Clic droit → Extraire tout…
-   - Ouvrez le dossier extrait
+   - Ouvrez le dossier GestionCommerciale extrait
    - Double-cliquez sur LANCER.bat
 
 2. Ou copiez le dossier entier « GestionCommerciale » (glisser-deposer

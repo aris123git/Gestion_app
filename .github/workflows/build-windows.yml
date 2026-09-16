@@ -38,7 +38,8 @@ jobs:
         run: |
           Copy-Item portable/LANCER.bat dist/GestionCommerciale/LANCER.bat -Force
           Copy-Item portable/LIRE_MOI_CLE_USB.txt dist/GestionCommerciale/LIRE_MOI_CLE_USB.txt -Force
-          Compress-Archive -Path dist/GestionCommerciale/* -DestinationPath dist/GestionCommerciale_portable.zip -Force
+          # ZIP = dossier GestionCommerciale\ entier (pas seulement le contenu)
+          Compress-Archive -Path dist/GestionCommerciale -DestinationPath dist/GestionCommerciale_portable.zip -Force
 
       - name: Publier le dossier Windows (artefact téléchargeable)
         uses: actions/upload-artifact@v4
