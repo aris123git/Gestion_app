@@ -6,7 +6,7 @@ from app.printers.thermal_printer import print_debt_payment, render_debt_payment
 from app.ui.widgets.helpers import info, warn
 
 class DebtPaymentReceiptDialog(QDialog):
-    """Affiche le reçu texte et propose de (ré)imprimer."""
+    """Affiche le reçu texte et propose de l'imprimer (aucune impression automatique)."""
 
     def __init__(self, *, client_name: str, amount: float, payment_method: str, remaining_after: float, note: str='', cashier: str='', payment_id: int | None=None, parent=None):
         super().__init__(parent)
@@ -33,7 +33,6 @@ class DebtPaymentReceiptDialog(QDialog):
         buttons.addWidget(reprint)
         buttons.addWidget(close)
         layout.addLayout(buttons)
-        self._print(silent=True)
 
     def _print(self, silent: bool=False) -> None:
         result = print_debt_payment(**self._kwargs)
