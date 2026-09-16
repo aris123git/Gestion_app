@@ -65,6 +65,19 @@ class OrderService:
             return rows
 
     @staticmethod
+    def get(order_id: int) -> Optional[OpenOrder]:
+        """Charge une commande avec sa table et toutes ses lignes."""
+        with session_scope() as session:
+            order = session.execute(
+                select(OpenOrder)
+                .options(joinedload(OpenOrder.table), joinedload(OpenOrder.items))
+                .where(OpenOrder.id == order_id)
+            ).unique().scalar_one_or_none()
+            if order:
+                session.expunge(order)
+            return order
+
+    @staticmethod
     def open_on_table(
         table_id: int,
         *,
@@ -106,20 +119,92 @@ class OrderService:
                 raise ValueError("Commande non modifiable.")
             qty = float(quantity)
             price = float(unit_price)
-            line = OpenOrderItem(
-                order_id=order.id,
-                product_id=product_id,
-                product_name=(product_name or "").strip(),
-                quantity=qty,
-                unit_price=price,
-                line_total=round(qty * price, 2),
+            if qty <= 0:
+                raise ValueError("La quantité doit être supérieure à zéro.")
+            if price < 0:
+                raise ValueError("Le prix ne peut pas être négatif.")
+            name = (product_name or "").strip()
+            if not name:
+                raise ValueError("Le nom du produit est obligatoire.")
+            line = next(
+                (
+                    item
+                    for item in order.items
+                    if item.product_id == product_id
+                    and float(item.unit_price) == price
+                ),
+                None,
             )
-            session.add(line)
-            order.total = float(order.total or 0) + float(line.line_total)
+            if line is None:
+                line = OpenOrderItem(
+                    order_id=order.id,
+                    product_id=product_id,
+                    product_name=name,
+                    quantity=qty,
+                    unit_price=price,
+                    line_total=round(qty * price, 2),
+                )
+                session.add(line)
+            else:
+                line.quantity = float(line.quantity) + qty
+                line.line_total = round(float(line.quantity) * price, 2)
+            OrderService._recalculate_total(order)
             session.flush()
             session.refresh(order)
-            session.expunge(order)
+            _ = list(order.items)
+            session.expunge_all()
             return order
+
+    @staticmethod
+    def set_item_quantity(order_id: int, item_id: int, quantity: float) -> OpenOrder:
+        """Modifie la quantité d'une ligne, ou la retire si elle devient nulle."""
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order or order.status != STATUS_OPEN:
+                raise ValueError("Commande non modifiable.")
+            line = session.get(OpenOrderItem, item_id)
+            if not line or line.order_id != order.id:
+                raise ValueError("Ligne de commande introuvable.")
+            qty = float(quantity)
+            if qty <= 0:
+                session.delete(line)
+            else:
+                line.quantity = qty
+                line.line_total = round(qty * float(line.unit_price), 2)
+            session.flush()
+            session.expire(order, ["items"])
+            OrderService._recalculate_total(order)
+            session.flush()
+            session.refresh(order)
+            _ = list(order.items)
+            session.expunge_all()
+            return order
+
+    @staticmethod
+    def remove_item(order_id: int, item_id: int) -> OpenOrder:
+        return OrderService.set_item_quantity(order_id, item_id, 0)
+
+    @staticmethod
+    def update_details(
+        order_id: int, *, customer_name: str = "", note: str = ""
+    ) -> OpenOrder:
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order or order.status != STATUS_OPEN:
+                raise ValueError("Commande non modifiable.")
+            order.customer_name = (customer_name or "").strip()
+            order.note = (note or "").strip()
+            session.flush()
+            session.refresh(order)
+            _ = list(order.items)
+            session.expunge_all()
+            return order
+
+    @staticmethod
+    def _recalculate_total(order: OpenOrder) -> None:
+        order.total = round(
+            sum(float(item.line_total or 0) for item in order.items), 2
+        )
 
     @staticmethod
     def mark_paid(order_id: int) -> OpenOrder:
@@ -127,6 +212,10 @@ class OrderService:
             order = session.get(OpenOrder, order_id)
             if not order:
                 raise ValueError("Commande introuvable.")
+            if order.status != STATUS_OPEN:
+                raise ValueError("Cette commande n'est plus ouverte.")
+            if not order.items:
+                raise ValueError("Impossible d'encaisser une commande vide.")
             order.status = STATUS_PAID
             order.closed_at = datetime.utcnow()
             if order.table_id:

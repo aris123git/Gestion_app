@@ -4,6 +4,7 @@ from app.i18n import t
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
 from app.models.dining_table import STATUS_FREE, STATUS_OCCUPIED
 from app.services import order_service, table_service
+from app.ui.dialogs.maquis_order_dialog import MaquisOrderDialog
 from app.ui.widgets.helpers import confirm, info, warn
 
 class TablesPage(QWidget):
@@ -16,7 +17,7 @@ class TablesPage(QWidget):
         title = QLabel(t('Tables'))
         title.setObjectName('PageTitle')
         layout.addWidget(title)
-        layout.addWidget(QLabel(t('Plan de salle Maquis Caisse. Ouvrez une commande depuis une table libre.')))
+        layout.addWidget(QLabel(t('Touchez une table pour ouvrir ou reprendre sa commande.')))
         add_row = QHBoxLayout()
         self.number = QLineEdit()
         self.number.setPlaceholderText(t('N°'))
@@ -72,15 +73,28 @@ class TablesPage(QWidget):
             warn(self, str(exc))
 
     def _on_table(self, table_id: int, status: str) -> None:
+        order = None
         if status == STATUS_FREE:
-            if not confirm(self, t('Ouvrir une commande sur cette table ?'), t('Table')):
-                return
             try:
                 user = getattr(self.state, 'current_user', None)
                 order = order_service.OrderService.open_on_table(table_id, opened_by=getattr(user, 'id', None))
-                info(self, f'Commande {order.public_id} ouverte.')
-                self.refresh()
             except Exception as exc:
                 warn(self, str(exc))
+                return
         else:
-            info(self, t("Table occupée. Gérez la commande dans l'écran Commandes."))
+            order = next(
+                (
+                    row
+                    for row in order_service.OrderService.list_open()
+                    if row.table_id == table_id
+                ),
+                None,
+            )
+            if order is None:
+                warn(self, t("Aucune commande ouverte trouvée pour cette table."))
+                self.refresh()
+                return
+        dialog = MaquisOrderDialog(order.id, self)
+        dialog.order_changed.connect(self.state.notify_data_changed)
+        dialog.exec()
+        self.refresh()
