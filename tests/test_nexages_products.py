@@ -64,7 +64,8 @@ class ProductProfileTestCase(unittest.TestCase):
         self.assertIn("Tables", maquis_labels)
         self.assertIn("Commandes", maquis_labels)
         self.assertIn("Avoirs", maquis_labels)
-        self.assertIn("Achats", maquis_labels)  # héritage Gestion
+        self.assertNotIn("Achats", maquis_labels)
+        self.assertNotIn("Fournisseurs", maquis_labels)
 
     def test_profit_loyalty_on_both_products(self) -> None:
         product_profile.set_product(product_profile.PRODUCT_GESTION)

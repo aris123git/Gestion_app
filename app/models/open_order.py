@@ -27,8 +27,13 @@ class OpenOrder(Base, TimestampMixin):
     )
     status: Mapped[str] = mapped_column(String(40), default=STATUS_OPEN, index=True)
     customer_name: Mapped[str] = mapped_column(String(200), default="")
+    waitress_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    waitress_name: Mapped[str] = mapped_column(String(150), default="")
+    table_label: Mapped[str] = mapped_column(String(120), default="")
     note: Mapped[str] = mapped_column(Text, default="")
     total: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    paid_amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    sale_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sales.id"), nullable=True)
     opened_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

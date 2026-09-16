@@ -4,7 +4,6 @@ from app.i18n import t
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
 from app.models.dining_table import STATUS_FREE, STATUS_OCCUPIED
 from app.services import order_service, table_service
-from app.ui.dialogs.table_order_dialog import TableOrderDialog
 from app.ui.widgets.helpers import confirm, info, warn
 
 class TablesPage(QWidget):
@@ -79,8 +78,9 @@ class TablesPage(QWidget):
             try:
                 user = getattr(self.state, 'current_user', None)
                 order = order_service.OrderService.open_on_table(table_id, opened_by=getattr(user, 'id', None))
-                dlg = TableOrderDialog(order.id, self.state, self)
-                dlg.exec()
+                mw = self.window()
+                if hasattr(mw, "open_maquis_order"):
+                    mw.open_maquis_order(order.id)
                 self.refresh()
             except Exception as exc:
                 warn(self, str(exc))
@@ -90,6 +90,7 @@ class TablesPage(QWidget):
                 info(self, t("Table occupée sans commande ouverte — actualisez."))
                 self.refresh()
                 return
-            dlg = TableOrderDialog(order.id, self.state, self)
-            dlg.exec()
+            mw = self.window()
+            if hasattr(mw, "open_maquis_order"):
+                mw.open_maquis_order(order.id)
             self.refresh()

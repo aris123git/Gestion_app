@@ -35,10 +35,32 @@ logger = logging.getLogger(__name__)
 def build_nav_items():
     """Navigation selon le produit NexaGes (Gestion App | Maquis Caisse)."""
     from app.i18n import t
-    common_tail = [(t('nav.reports'), '📈', ReportsPage, perms.VIEW_REPORTS), (t('nav.audit'), '📝', AuditPage, perms.VIEW_AUDIT), (t('nav.assistant'), '💡', AssistantPage, perms.VIEW_ASSISTANT), (t('nav.users'), '🔐', UsersPage, perms.MANAGE_USERS), (t('nav.settings'), '⚙️', SettingsPage, perms.MANAGE_SETTINGS)]
+
     if product_profile.is_maquis():
-        return [(t('nav.pos'), '🛒', POSPage, perms.SELL), (t('nav.tables'), '🪑', TablesPage, perms.SELL), (t('nav.orders'), '🍽️', OrdersPage, perms.SELL), (t('nav.dashboard'), '📊', DashboardPage, perms.VIEW_DASHBOARD), (t('nav.products'), '📦', ProductsPage, perms.VIEW_PRODUCTS), (t('nav.categories'), '🏷️', CategoriesPage, perms.MANAGE_CATEGORIES), (t('nav.stock'), '📥', StockPage, perms.MANAGE_STOCK), (t('nav.purchases'), '🧾', PurchasesPage, perms.MANAGE_PURCHASES), (t('nav.clients'), '👥', ClientsPage, perms.MANAGE_CLIENTS), (t('nav.debts'), '💳', DebtsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.credits'), '🎟️', AvoirsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.suppliers'), '🚚', SuppliersPage, perms.MANAGE_SUPPLIERS), (t('nav.expenses'), '💸', ExpensesPage, perms.MANAGE_EXPENSES), *common_tail]
-    return [(t('nav.pos'), '🛒', POSPage, perms.SELL), (t('nav.dashboard'), '📊', DashboardPage, perms.VIEW_DASHBOARD), (t('nav.products'), '📦', ProductsPage, perms.VIEW_PRODUCTS), (t('nav.categories'), '🏷️', CategoriesPage, perms.MANAGE_CATEGORIES), (t('nav.stock'), '📥', StockPage, perms.MANAGE_STOCK), (t('nav.purchases'), '🧾', PurchasesPage, perms.MANAGE_PURCHASES), (t('nav.clients'), '👥', ClientsPage, perms.MANAGE_CLIENTS), (t('nav.debts'), '💳', DebtsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.credits'), '🎟️', AvoirsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.suppliers'), '🚚', SuppliersPage, perms.MANAGE_SUPPLIERS), (t('nav.expenses'), '💸', ExpensesPage, perms.MANAGE_EXPENSES), *common_tail]
+        from app.services.maquis_nav import build_maquis_nav_items
+
+        return build_maquis_nav_items()
+    common_tail = [
+        (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
+        (t("nav.audit"), "📝", AuditPage, perms.VIEW_AUDIT),
+        (t("nav.assistant"), "💡", AssistantPage, perms.VIEW_ASSISTANT),
+        (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
+        (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
+    ]
+    return [
+        (t("nav.pos"), "🛒", POSPage, perms.SELL),
+        (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
+        (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
+        (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
+        (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
+        (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
+        (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
+        (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
+        (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
+        (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
+        (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
+        *common_tail,
+    ]
 NAV_ITEMS = build_nav_items()
 
 class MainWindow(QWidget):
@@ -121,10 +143,17 @@ class MainWindow(QWidget):
         row.addWidget(self._topbar_user)
         return bar
 
-    def _allowed(self, permission: Optional[str]) -> bool:
+    def _allowed(self, permission: Optional[str], nav_index: Optional[int] = None) -> bool:
         if permission is None:
             return True
-        return self.state.can(permission)
+        if not self.state.can(permission):
+            return False
+        if nav_index is not None and product_profile.is_maquis():
+            from app.services.maquis_nav import maquis_nav_visible
+
+            if nav_index < len(NAV_ITEMS):
+                return maquis_nav_visible(self.state, NAV_ITEMS[nav_index])
+        return True
 
     def _run_periodic_backup(self) -> None:
         """Déclenche une sauvegarde automatique si la fréquence est échue."""
@@ -169,7 +198,7 @@ class MainWindow(QWidget):
         self._nav_group.setExclusive(True)
         for index, (label, icon, _page, permission) in enumerate(NAV_ITEMS):
             self._nav_meta.append((label, icon))
-            if not self._allowed(permission):
+            if not self._allowed(permission, nav_index=index):
                 self._nav_buttons.append(None)
                 continue
             button = QPushButton(f'{icon}  {label}')
@@ -344,20 +373,29 @@ class MainWindow(QWidget):
                 self._close_cash_btn.setToolTip(t('Fermer la caisse'))
 
     def _build_pages(self) -> None:
-        for label, _icon, page_class, permission in NAV_ITEMS:
-            if not self._allowed(permission):
+        for index, (label, _icon, page_class, permission) in enumerate(NAV_ITEMS):
+            if not self._allowed(permission, nav_index=index):
                 self.pages.append(None)
                 continue
             page = page_class(self.state)
             self.pages.append(page)
             self.stack.addWidget(page)
+            if product_profile.is_maquis() and hasattr(page, "set_order_opener"):
+                page.set_order_opener(self.open_maquis_order)
+        self._maquis_order_detail = None
+        if product_profile.is_maquis():
+            from app.ui.pages.order_detail_page import OrderDetailPage
+
+            self._maquis_order_detail = OrderDetailPage(self.state)
+            self._maquis_order_detail.set_back_handler(self._close_maquis_order)
+            self.stack.addWidget(self._maquis_order_detail)
 
     def select_page(self, index: int, refresh_auth: bool=True) -> Optional[QWidget]:
         if refresh_auth and (not self._refresh_auth_user()):
             return None
         if index >= len(NAV_ITEMS):
             return None
-        if not self._allowed(NAV_ITEMS[index][3]):
+        if not self._allowed(NAV_ITEMS[index][3], nav_index=index):
             return None
         page = self.pages[index] if index < len(self.pages) else None
         if page is None:
@@ -371,6 +409,15 @@ class MainWindow(QWidget):
         if hasattr(page, 'refresh'):
             page.refresh()
         return page
+
+    def open_maquis_order(self, order_id: int) -> None:
+        if self._maquis_order_detail is None:
+            return
+        self._maquis_order_detail.load(order_id)
+        self.stack.setCurrentWidget(self._maquis_order_detail)
+
+    def _close_maquis_order(self) -> None:
+        self._select_page_by_label("Commandes")
 
     def _select_page_by_label(self, label: str) -> Optional[QWidget]:
         for index, (item_label, _icon, _page, _permission) in enumerate(NAV_ITEMS):

@@ -125,6 +125,16 @@ def _migrate_schema() -> None:
             "due_date": "DATE",
             "status": "VARCHAR(40) DEFAULT 'en_cours'",
         },
+        "open_orders": {
+            "waitress_id": "INTEGER",
+            "waitress_name": "VARCHAR(150) DEFAULT ''",
+            "table_label": "VARCHAR(120) DEFAULT ''",
+            "paid_amount": "NUMERIC(14, 2) DEFAULT 0",
+            "sale_id": "INTEGER",
+        },
+        "users": {
+            "is_waitress": "BOOLEAN DEFAULT 0",
+        },
     }
     with engine.begin() as conn:
         for table, columns in alterations.items():

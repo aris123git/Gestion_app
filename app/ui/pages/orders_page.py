@@ -4,8 +4,7 @@ from app.i18n import t
 from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.services import order_service, settings_service
 from app.services.order_checkout_service import checkout_open_order
-from app.ui.dialogs.table_order_dialog import TableOrderDialog
-from app.ui.widgets.helpers import confirm, info, warn
+from app.ui.widgets.helpers import confirm, warn
 from app.utils.helpers import format_money
 
 class OrdersPage(QWidget):
@@ -43,7 +42,11 @@ class OrdersPage(QWidget):
         actions.addWidget(refresh)
         layout.addLayout(actions)
         self._ids: list[int] = []
+        self._open_order_cb = None
         self.refresh()
+
+    def set_order_opener(self, callback) -> None:
+        self._open_order_cb = callback
 
     def refresh(self) -> None:
         currency = settings_service.get_shop_info().currency or 'FCFA'
@@ -81,8 +84,8 @@ class OrdersPage(QWidget):
         if not oid:
             warn(self, t('Sélectionnez une commande.'))
             return
-        dlg = TableOrderDialog(oid, self.state, self)
-        dlg.exec()
+        if self._open_order_cb:
+            self._open_order_cb(oid)
         self.refresh()
 
     def _cancel(self) -> None:

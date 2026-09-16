@@ -20,6 +20,7 @@ class User(Base, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), default="Caissier")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_waitress: Mapped[bool] = mapped_column(Boolean, default=False)
 
     @property
     def is_admin(self) -> bool:

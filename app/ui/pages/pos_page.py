@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPixmap
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
 from app.controllers.client_controller import ClientController
 from app.controllers.product_controller import ProductController
 from app.controllers.sale_controller import CartLine, BelowMinPriceError, InsufficientPaymentError, InsufficientStockError, SaleController
 from app.i18n import t
-from app.services import audit_service, catalog_features, permissions as perms, settings_service
+from app.services import audit_service, permissions as perms, product_profile, settings_service
 from app.ui.dialogs.free_amount_dialog import FreeAmountDialog
 from app.ui.dialogs.payment_dialog import PaymentDialog
 from app.ui.dialogs.price_change_dialog import PriceChangeDialog
@@ -37,8 +37,15 @@ class POSPage(QWidget):
         self._root = QHBoxLayout(self)
         self._root.setContentsMargins(12, 12, 12, 12)
         self._root.setSpacing(12)
+        self._maquis_mode = product_profile.is_maquis()
         self._catalog = PosCatalogPanel(self)
-        self._catalog.product_chosen.connect(self._add_product)
+        if self._maquis_mode:
+            self._catalog.product_chosen.connect(self._maquis_product_tap)
+        else:
+            self._catalog.product_chosen.connect(self._add_product)
+        self._waitress_combo: Optional[QComboBox] = None
+        self._table_combo: Optional[QComboBox] = None
+        self._save_order_btn: Optional[QPushButton] = None
         self._cart_panel = self._build_cart()
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -56,6 +63,8 @@ class POSPage(QWidget):
         self.state.layout_changed.connect(self._on_layout_changed)
         if self.state.layout is not None:
             self._on_layout_changed(self.state.layout)
+        if self._maquis_mode:
+            self._apply_maquis_caisse_ui()
 
     def _on_layout_changed(self, profile: LayoutProfile) -> None:
         margins = 6 if profile.density == 'compact' else 10 if profile.is_narrow else 12
@@ -191,7 +200,119 @@ class POSPage(QWidget):
         pay_button.clicked.connect(self._checkout)
         layout.addWidget(pay_button)
         self._pay_button = pay_button
+        if product_profile.is_maquis():
+            save_btn = QPushButton("Enregistrer commande")
+            save_btn.clicked.connect(self._save_maquis_order)
+            layout.insertWidget(layout.indexOf(pay_button), save_btn)
+            self._save_order_btn = save_btn
+            pay_button.setText("Encaisser")
         return panel
+
+    def _apply_maquis_caisse_ui(self) -> None:
+        """Alignement écran Caisse sur l'app tablette (serveuse, table, pas de ticket auto)."""
+        bar = QHBoxLayout()
+        self._waitress_combo = QComboBox()
+        self._waitress_combo.addItem("Aucune", None)
+        from sqlalchemy import select
+
+        from app.database.connection import session_scope
+        from app.models.user import User
+
+        with session_scope() as session:
+            users = list(
+                session.scalars(
+                    select(User)
+                    .where(User.is_active.is_(True))
+                    .order_by(User.full_name)
+                ).all()
+            )
+        for u in users:
+            if u.is_waitress or u.role in (perms.ROLE_CASHIER, perms.ROLE_MANAGER):
+                self._waitress_combo.addItem(u.full_name or u.username, u.id)
+        self._table_combo = QComboBox()
+        self._table_combo.addItem("Aucune", None)
+        from app.services.table_service import TableService
+
+        for table in TableService.list():
+            self._table_combo.addItem(table.display_name, table.id)
+        bar.addWidget(QLabel("Serveuse"))
+        bar.addWidget(self._waitress_combo, 1)
+        bar.addWidget(QLabel("Table"))
+        bar.addWidget(self._table_combo, 1)
+        host = QWidget()
+        host.setLayout(bar)
+        cat_layout = self._catalog.layout()
+        if cat_layout is not None:
+            cat_layout.insertWidget(1, host)
+        self.client_search.setVisible(False)
+        self.client_search.parentWidget().setVisible(False) if self.client_search.parentWidget() else None
+        for w in (self._loyalty_row_widget,):
+            w.setVisible(False)
+        self.discount_input.parentWidget().setVisible(False) if self.discount_input.parentWidget() else None
+
+    def _maquis_product_tap(self, product) -> None:
+        from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
+
+        if getattr(product, "free_amount_sale", False):
+            self._add_product(product)
+            return
+        dlg = QuantityPadDialog(product.name, parent=self)
+        if not dlg.exec() or dlg.quantity <= 0:
+            return
+        min_price = float(product.min_price or 0)
+        sale_price = float(product.sale_price)
+        if min_price > 0 and sale_price < min_price:
+            warn(self, t("Prix minimum"))
+            return
+        available = self._available_stock(product.id)
+        if available + 0.0001 < dlg.quantity:
+            warn(self, t("Stock insuffisant"), t("Stock insuffisant"))
+            return
+        for line in self.cart:
+            if line.product_id == product.id and (not line.free_amount) and (not line.loyalty_reward):
+                line.quantity += dlg.quantity
+                self._render_cart()
+                return
+        self.cart.append(
+            CartLine(
+                product_id=product.id,
+                name=product.name,
+                unit_price=sale_price,
+                quantity=dlg.quantity,
+                purchase_price=float(product.purchase_price),
+            )
+        )
+        self._render_cart()
+
+    def _maquis_table_context(self) -> tuple[Optional[int], str, Optional[int], str]:
+        wid = self._waitress_combo.currentData() if self._waitress_combo else None
+        wname = self._waitress_combo.currentText() if self._waitress_combo and wid else ""
+        tid = self._table_combo.currentData() if self._table_combo else None
+        tlabel = self._table_combo.currentText() if self._table_combo and tid else ""
+        return tid, tlabel, wid, wname
+
+    def _save_maquis_order(self) -> None:
+        if not self.cart:
+            warn(self, t("Le panier est vide."))
+            return
+        tid, tlabel, wid, wname = self._maquis_table_context()
+        try:
+            from app.services.order_service import OrderService
+
+            OrderService.create_from_cart(
+                self.cart,
+                table_id=tid,
+                table_label=tlabel,
+                waitress_id=wid,
+                waitress_name=wname,
+                opened_by=self.state.user_id,
+                mark_paid=False,
+            )
+            info(self, "Commande enregistrée (non payée).")
+            self._clear_cart()
+            self.state.notify_data_changed()
+        except Exception as exc:
+            warn(self, str(exc))
 
     def refresh(self) -> None:
         if isinstance(self._catalog, PosCatalogPanel):
@@ -651,11 +772,26 @@ class POSPage(QWidget):
         audit_service.log_action('Vente', 'Sale', f'{result.ticket_number} total={result.total}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         currency = settings_service.get_currency()
         info(self, f'Vente enregistrée : {result.ticket_number}\nTotal : {format_money(result.total, currency)}\nMonnaie rendue : {format_money(result.change_due, currency)}', t('Vente réussie'))
-        sale = SaleController.get(result.sale_id)
-        if sale:
-            if result.loyalty_credit_remaining is not None:
-                sale.loyalty_credit_remaining = result.loyalty_credit_remaining
-            TicketDialog(sale, self, auto_print=False).exec()
+        if self._maquis_mode:
+            tid, tlabel, wid, wname = self._maquis_table_context()
+            from app.services.order_service import OrderService
+
+            OrderService.create_from_cart(
+                list(self.cart),
+                table_id=tid,
+                table_label=tlabel,
+                waitress_id=wid,
+                waitress_name=wname,
+                opened_by=self.state.user_id,
+                mark_paid=True,
+                sale_id=result.sale_id,
+            )
+        elif not self._maquis_mode:
+            sale = SaleController.get(result.sale_id)
+            if sale:
+                if result.loyalty_credit_remaining is not None:
+                    sale.loyalty_credit_remaining = result.loyalty_credit_remaining
+                TicketDialog(sale, self, auto_print=False).exec()
         self._clear_cart()
         if isinstance(self._catalog, PosCatalogPanel):
             self._catalog.refresh()

@@ -98,6 +98,77 @@ class OrderService:
             return rows
 
     @staticmethod
+    def create_from_cart(
+        lines,
+        *,
+        table_id: Optional[int] = None,
+        table_label: str = "",
+        waitress_id: Optional[int] = None,
+        waitress_name: str = "",
+        opened_by: Optional[int] = None,
+        mark_paid: bool = False,
+        sale_id: Optional[int] = None,
+    ) -> OpenOrder:
+        """Enregistre une commande depuis le panier caisse (comme tablette)."""
+        from app.models.dining_table import DiningTable
+
+        with session_scope() as session:
+            table = None
+            if table_id:
+                table = session.get(DiningTable, table_id)
+                if table:
+                    table.status = STATUS_OCCUPIED
+            order = OpenOrder(
+                public_id=OrderService._public_id(),
+                table_id=table_id,
+                table_label=(table_label or (table.display_name if table else "")),
+                status=STATUS_PAID if mark_paid else STATUS_OPEN,
+                waitress_id=waitress_id,
+                waitress_name=(waitress_name or "").strip(),
+                opened_by=opened_by,
+                sale_id=sale_id,
+            )
+            if mark_paid:
+                order.closed_at = datetime.utcnow()
+            session.add(order)
+            session.flush()
+            total = 0.0
+            for line in lines:
+                qty = float(getattr(line, "quantity", 1) or 1)
+                price = float(getattr(line, "unit_price", 0) or 0)
+                lt = round(qty * price, 2)
+                name = str(getattr(line, "name", "") or "")
+                pid = getattr(line, "product_id", None)
+                session.add(
+                    OpenOrderItem(
+                        order_id=order.id,
+                        product_id=pid,
+                        product_name=name,
+                        quantity=qty,
+                        unit_price=price,
+                        line_total=lt,
+                    )
+                )
+                total += lt
+            order.total = total
+            if mark_paid:
+                order.paid_amount = total
+                if table_id and table:
+                    others = session.scalars(
+                        select(OpenOrder).where(
+                            OpenOrder.table_id == table.id,
+                            OpenOrder.status == STATUS_OPEN,
+                            OpenOrder.id != order.id,
+                        )
+                    ).first()
+                    if others is None:
+                        table.status = STATUS_FREE
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
     def open_on_table(
         table_id: int,
         *,

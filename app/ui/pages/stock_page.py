@@ -23,11 +23,11 @@ class StockPage(QWidget):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
         layout.addWidget(page_title(t('Gestion du stock')))
-        tabs = QTabWidget()
-        tabs.addTab(self._build_movement_tab(), t('Mouvements'))
-        tabs.addTab(self._build_history_tab(), t('Historique'))
-        tabs.currentChanged.connect(lambda _: self._reload_history())
-        layout.addWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_movement_tab(), t('Mouvements'))
+        self.tabs.addTab(self._build_history_tab(), t('Historique'))
+        self.tabs.currentChanged.connect(lambda _: self._reload_history())
+        layout.addWidget(self.tabs)
 
     def _build_movement_tab(self) -> QWidget:
         wrap = QWidget()
