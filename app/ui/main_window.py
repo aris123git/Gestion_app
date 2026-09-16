@@ -39,7 +39,9 @@ def build_nav_items():
     if product_profile.is_maquis():
         return [(t('nav.pos'), '🛒', POSPage, perms.SELL), (t('nav.tables'), '🪑', TablesPage, perms.SELL), (t('nav.orders'), '🍽️', OrdersPage, perms.SELL), (t('nav.dashboard'), '📊', DashboardPage, perms.VIEW_DASHBOARD), (t('nav.products'), '📦', ProductsPage, perms.VIEW_PRODUCTS), (t('nav.categories'), '🏷️', CategoriesPage, perms.MANAGE_CATEGORIES), (t('nav.stock'), '📥', StockPage, perms.MANAGE_STOCK), (t('nav.purchases'), '🧾', PurchasesPage, perms.MANAGE_PURCHASES), (t('nav.clients'), '👥', ClientsPage, perms.MANAGE_CLIENTS), (t('nav.debts'), '💳', DebtsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.credits'), '🎟️', AvoirsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.suppliers'), '🚚', SuppliersPage, perms.MANAGE_SUPPLIERS), (t('nav.expenses'), '💸', ExpensesPage, perms.MANAGE_EXPENSES), *common_tail]
     return [(t('nav.pos'), '🛒', POSPage, perms.SELL), (t('nav.dashboard'), '📊', DashboardPage, perms.VIEW_DASHBOARD), (t('nav.products'), '📦', ProductsPage, perms.VIEW_PRODUCTS), (t('nav.categories'), '🏷️', CategoriesPage, perms.MANAGE_CATEGORIES), (t('nav.stock'), '📥', StockPage, perms.MANAGE_STOCK), (t('nav.purchases'), '🧾', PurchasesPage, perms.MANAGE_PURCHASES), (t('nav.clients'), '👥', ClientsPage, perms.MANAGE_CLIENTS), (t('nav.debts'), '💳', DebtsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.credits'), '🎟️', AvoirsPage, perms.MANAGE_CLIENT_DEBTS), (t('nav.suppliers'), '🚚', SuppliersPage, perms.MANAGE_SUPPLIERS), (t('nav.expenses'), '💸', ExpensesPage, perms.MANAGE_EXPENSES), *common_tail]
-NAV_ITEMS = build_nav_items()
+# Construit dans ``MainWindow.__init__`` : éviter tout accès SQLite lors du
+# simple import du module (notamment avant ``init_database`` dans les tests).
+NAV_ITEMS = []
 
 class MainWindow(QWidget):
 
