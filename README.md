@@ -138,27 +138,33 @@ ou manuellement :
 pyinstaller gestion_app.spec --noconfirm
 ```
 
-L'application est générée en **un seul fichier** :
-`dist/GestionCommerciale.exe` (mode PyInstaller **onefile**).
+L'application est générée en mode **onedir** :
+`dist/GestionCommerciale/` (`GestionCommerciale.exe` + `_internal`).
+Le pack est **allégé** (sans Qt WebEngine / QML / Multimedia) : typiquement
+très inférieur à l'ancien EXE onefile (~220 Mo).
 
-Copiez ce fichier sur la clé USB ou le PC cible — rien d'autre n'est requis
-(les données restent dans `%APPDATA%\GestionCommerciale`).
+**Un seul fichier à copier (recommandé) :** l'artefact CI
+`GestionCommerciale-Setup` → `GestionCommerciale_Setup.exe`.
+Sur le PC cible : double-clic → Installer. Pas d'EXE « onefile » :
+Windows Defender casse souvent l'extraction dans `%TEMP%` et provoque
+`ModuleNotFoundError: app.ui.main_window` (même si le module est dans l'EXE).
 
-**L'EXE ne s'ouvre pas / se ferme tout de suite ?**
+**Alternative portable :** ZIP `GestionCommerciale_portable.zip` → Extraire tout
+→ `LANCER.bat`. Ne copiez jamais l'exe seul (sans `_internal`).
 
-1. Lancez `dist\GestionCommerciale_console.exe` : la console affiche l'erreur.
-2. Ajoutez une **exclusion antivirus** sur l'exe (sinon
-   `ModuleNotFoundError: app.ui.main_window` est fréquent au premier lancement).
-3. Sinon ouvrez `%APPDATA%\GestionCommerciale\startup_error.log`.
-4. Reconstruisez après `git pull` : `build_windows.bat` vérifie l'EXE.
-   Artefact CI : **GestionCommerciale-Windows** (`GestionCommerciale.exe`).
+**L'app ne démarre pas ?**
+
+1. Lancez `GestionCommerciale_console.exe` dans le dossier installé.
+2. Exclusion antivirus sur le dossier d'installation.
+3. Journal : `%APPDATA%\GestionCommerciale\startup_error.log`.
 
 ## Génération de l'installateur Windows
 
-1. Générer d'abord l'exécutable (voir ci-dessus).
-2. Installer [Inno Setup](https://jrsoftware.org/isinfo.php).
-3. Compiler `installer.iss` avec Inno Setup pour obtenir
-   `GestionCommerciale_Setup.exe`.
+1. `build_windows.bat` (produit aussi `Output\GestionCommerciale_Setup.exe`
+   si Inno Setup est installé).
+2. Sinon : installer [Inno Setup](https://jrsoftware.org/isinfo.php) puis
+   compiler `installer.iss`.
+3. Sur GitHub Actions : artefact **GestionCommerciale-Setup**.
 
 ---
 

@@ -23,12 +23,24 @@ def _prepend_path(directory: str) -> None:
             pass
 
 
+def _first_existing(*candidates: str) -> str | None:
+    for path in candidates:
+        if path and os.path.isdir(path):
+            return path
+    return None
+
+
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     base = sys._MEIPASS
     _prepend_path(os.path.join(base, "PySide6"))
-    plugins = os.path.join(base, "PySide6", "plugins")
-    if os.path.isdir(plugins):
+    # Layout allégé (datas) ou layout complet collect_all
+    plugins = _first_existing(
+        os.path.join(base, "PySide6", "Qt", "plugins"),
+        os.path.join(base, "PySide6", "plugins"),
+        os.path.join(base, "qt6", "plugins"),
+    )
+    if plugins:
         os.environ.setdefault("QT_PLUGIN_PATH", plugins)
-    platforms = os.path.join(plugins, "platforms")
-    if os.path.isdir(platforms):
-        os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", platforms)
+        platforms = os.path.join(plugins, "platforms")
+        if os.path.isdir(platforms):
+            os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", platforms)

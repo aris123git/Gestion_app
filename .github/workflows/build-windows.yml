@@ -1,6 +1,6 @@
 name: Build Windows EXE
 
-# Construit un seul .exe (onefile) et le publie comme artefact.
+# Build onedir + Setup.exe (1 fichier à copier) + ZIP portable.
 on:
   push:
     branches:
@@ -26,17 +26,61 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Générer l'exécutable onefile avec PyInstaller
+      - name: Générer le bundle onedir avec PyInstaller
         run: pyinstaller gestion_app.spec --noconfirm
 
-      - name: Vérifier les modules critiques dans l'EXE
-        run: python scripts/verify_exe_modules.py dist/GestionCommerciale.exe
+      - name: Vérifier les modules critiques dans le bundle
+        run: python scripts/verify_exe_modules.py dist/GestionCommerciale
 
-      - name: Publier GestionCommerciale.exe (1 fichier)
+      - name: Afficher la taille du bundle
+        shell: pwsh
+        run: |
+          $dir = Get-Item dist/GestionCommerciale
+          $bytes = (Get-ChildItem $dir -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          "{0:N1} MB  dist/GestionCommerciale" -f ($bytes/1MB)
+          Get-ChildItem dist/GestionCommerciale -File | Format-Table Name, @{N='MB';E={[math]::Round($_.Length/1MB,1)}}
+
+      - name: Ajouter LANCER.bat + ZIP portable
+        shell: pwsh
+        run: |
+          Copy-Item portable/LANCER.bat dist/GestionCommerciale/LANCER.bat -Force
+          Copy-Item portable/LIRE_MOI_CLE_USB.txt dist/GestionCommerciale/LIRE_MOI_CLE_USB.txt -Force
+          Compress-Archive -Path dist/GestionCommerciale -DestinationPath dist/GestionCommerciale_portable.zip -Force
+
+      - name: Installer Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compiler Setup.exe (1 seul fichier à copier)
+        shell: pwsh
+        run: |
+          $pf86 = ${env:ProgramFiles(x86)}
+          if (-not $pf86) { $pf86 = "C:\Program Files (x86)" }
+          $iscc = Join-Path $pf86 "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $iscc = Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe introuvable apres choco install innosetup" }
+          & $iscc installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Compilation Inno Setup echouee ($LASTEXITCODE)" }
+          Get-Item Output\GestionCommerciale_Setup.exe | Format-List Name, Length, FullName
+
+      - name: Publier Setup.exe (RECOMMANDE — 1 fichier)
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCommerciale-Setup
+          path: Output/GestionCommerciale_Setup.exe
+          if-no-files-found: error
+
+      - name: Publier le dossier Windows (onedir)
         uses: actions/upload-artifact@v4
         with:
           name: GestionCommerciale-Windows
-          path: |
-            dist/GestionCommerciale.exe
-            dist/GestionCommerciale_console.exe
+          path: dist/GestionCommerciale/
+          if-no-files-found: error
+
+      - name: Publier le ZIP portable
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionCommerciale-portable-zip
+          path: dist/GestionCommerciale_portable.zip
           if-no-files-found: error

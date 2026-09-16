@@ -1,12 +1,12 @@
 @echo off
 REM ===================================================================
-REM  Build Windows — un seul fichier GestionCommerciale.exe (onefile)
-REM  Prérequis : Python 3 installé et dans le PATH.
+REM  Build Windows onedir + Setup.exe (1 fichier a distribuer)
+REM  onefile est abandonne : antivirus → ModuleNotFoundError main_window
 REM ===================================================================
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-echo [1/4] Preparation de l'environnement virtuel...
+echo [1/5] Preparation de l'environnement virtuel...
 if exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" -c "import pip" 1>nul 2>nul
     if errorlevel 1 (
@@ -23,7 +23,7 @@ if not exist ".venv\Scripts\python.exe" (
     )
 )
 
-echo [2/4] Installation des dependances...
+echo [2/5] Installation des dependances...
 call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 if errorlevel 1 (
@@ -53,7 +53,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [3/4] Generation de l'EXE unique (onefile)...
+echo [3/5] Generation du bundle onedir (PyInstaller)...
 python -m PyInstaller gestion_app.spec --noconfirm
 if errorlevel 1 (
     echo ERREUR : PyInstaller a echoue.
@@ -61,23 +61,38 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [4/4] Verification de l'EXE...
-python scripts\verify_exe_modules.py dist\GestionCommerciale.exe
+echo [4/5] Verification du bundle...
+python scripts\verify_exe_modules.py dist\GestionCommerciale
 if errorlevel 1 (
-    echo ERREUR : EXE incomplet. Ne pas distribuer.
+    echo ERREUR : bundle incomplet. Ne pas distribuer.
     pause
     exit /b 1
 )
 
+echo [4b/5] LANCER.bat + ZIP...
+copy /Y "portable\LANCER.bat" "dist\GestionCommerciale\LANCER.bat" >nul
+copy /Y "portable\LIRE_MOI_CLE_USB.txt" "dist\GestionCommerciale\LIRE_MOI_CLE_USB.txt" >nul
+if exist "dist\GestionCommerciale_portable.zip" del /f /q "dist\GestionCommerciale_portable.zip"
+powershell -NoProfile -Command "Compress-Archive -Path 'dist\GestionCommerciale' -DestinationPath 'dist\GestionCommerciale_portable.zip' -Force"
+
+echo [4c/5] Setup.exe (si Inno Setup installe)...
+set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+if not exist "%ISCC%" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+if exist "%ISCC%" (
+    "%ISCC%" installer.iss
+    if not errorlevel 1 echo Setup.exe : Output\GestionCommerciale_Setup.exe
+) else (
+    echo Inno Setup absent — CI produit l'artefact GestionCommerciale-Setup.
+)
+
+echo [5/5] Termine.
 echo.
-echo === TERMINE ===
-echo Copiez UN SEUL fichier sur la cle / le PC :
-echo   dist\GestionCommerciale.exe
+echo === UN SEUL FICHIER A COPIER (RECOMMANDE) ===
+echo   Output\GestionCommerciale_Setup.exe
+echo   Sur le PC : double-clic → Installer → lancer.
 echo.
-echo Diagnostic (si fermeture immediate) :
-echo   dist\GestionCommerciale_console.exe
-echo   ou %%APPDATA%%\GestionCommerciale\startup_error.log
+echo Ne PAS utiliser un EXE onefile : Windows Defender casse
+echo souvent l'extraction et affiche « main_window introuvable ».
 echo.
-echo Astuce antivirus : ajoutez une exclusion sur le dossier / l'exe.
 pause
 endlocal

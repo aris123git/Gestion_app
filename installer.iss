@@ -1,9 +1,6 @@
 ; ===================================================================
-;  Script Inno Setup pour créer l'installateur Windows.
-;  Prérequis :
-;    1. Générer l'EXE : build_windows.bat → dist\GestionCommerciale.exe
-;    2. Installer Inno Setup (https://jrsoftware.org/isinfo.php)
-;    3. Compiler ce fichier avec Inno Setup.
+;  Installateur Windows — 1 fichier Setup.exe à copier sur clé / PC.
+;  Embarque le bundle onedir complet (exe + _internal).
 ; ===================================================================
 
 #define MyAppName "Gestion Commerciale"
@@ -34,9 +31,7 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer une icône sur le bureau"; GroupDescription: "Icônes supplémentaires:"
 
 [Files]
-; EXE onefile unique (+ variante console pour diagnostic).
-Source: "dist\GestionCommerciale.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\GestionCommerciale_console.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "dist\GestionCommerciale\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

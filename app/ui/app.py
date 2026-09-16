@@ -22,10 +22,11 @@ try:
     from app.ui.main_window import MainWindow
 except ModuleNotFoundError as exc:  # pragma: no cover - garde bundle incomplet
     raise ModuleNotFoundError(
-        "Module app.ui.main_window introuvable dans cet EXE. "
-        "Téléchargez l'artefact GitHub Actions le plus récent "
-        "(GestionCommerciale.exe onefile) et ajoutez une exclusion "
-        "antivirus sur le fichier si besoin."
+        "Module app.ui.main_window introuvable. "
+        "N'utilisez pas un EXE onefile (antivirus / %TEMP%). "
+        "Installez via GestionCommerciale_Setup.exe, ou copiez le dossier "
+        "complet GestionCommerciale\\ (exe + _internal). "
+        "Artefact CI : GestionCommerciale-Setup."
     ) from exc
 from app.ui.product_choice_dialog import ProductChoiceDialog
 from app.ui.setup_wizard import SetupWizard
