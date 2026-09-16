@@ -318,37 +318,32 @@ class POSPage(QWidget):
                 waitress_name=wname,
                 opened_by=self.state.user_id,
             )
-            info(
-                self,
-                t("Commande {id} enregistrée (non payée).").format(
-                    id=order.public_id
-                ),
+            from app.printers.ticket.options import is_kitchen_ticket_enabled
+            from app.services.maquis_kitchen import print_kitchen_for_order
+            from app.ui.dialogs.saved_order_prompt_dialog import SavedOrderPromptDialog
+
+            user = getattr(self.state.current_user, "username", "") or ""
+            print_enabled = is_kitchen_ticket_enabled()
+            print_message = None
+            if print_enabled:
+                ok, print_message = print_kitchen_for_order(
+                    order.id, cashier_name=user
+                )
+                if ok:
+                    print_message = print_message or t("Ticket imprimé")
+            prompt = SavedOrderPromptDialog(
+                order.public_id,
+                print_enabled,
+                print_message or "",
+                parent=self,
             )
-            self._maybe_maquis_kitchen_prompt(order.id)
+            prompt.exec()
+            if prompt.reprint_requested:
+                print_kitchen_for_order(order.id, cashier_name=user)
             self._clear_cart()
             self.state.notify_data_changed()
         except Exception as exc:
             warn(self, str(exc))
-
-    def _maybe_maquis_kitchen_prompt(self, order_id: int) -> None:
-        from app.services.maquis_settings import kitchen_prompt_after_save
-        from app.services.maquis_kitchen import print_kitchen_for_order
-        from app.ui.widgets.helpers import confirm
-
-        if not kitchen_prompt_after_save():
-            return
-        if not confirm(
-            self,
-            t("Imprimer le bon serveur pour cette commande ?"),
-            t("Bon serveur"),
-        ):
-            return
-        user = getattr(self.state.current_user, "username", "") or ""
-        ok, msg = print_kitchen_for_order(order_id, cashier_name=user)
-        if ok:
-            info(self, msg, t("Bon serveur"))
-        else:
-            warn(self, msg, t("Bon serveur"))
 
     def refresh(self) -> None:
         if isinstance(self._catalog, PosCatalogPanel):
@@ -724,6 +719,72 @@ class POSPage(QWidget):
         self.client_search.clear()
         self._render_cart()
 
+    def _checkout_maquis(self) -> None:
+        total = self._cart_total()
+        if total <= 0:
+            warn(self, t("Montant total invalide"))
+            return
+        dialog = PaymentDialog(
+            total,
+            client_id=None,
+            client_phone="",
+            allow_credit=self.state.can(perms.SELL_ON_CREDIT),
+            max_credit=self._cashier_max_credit(),
+            parent=self,
+        )
+        if not dialog.exec():
+            return
+        credit_requested = dialog.use_credit or any(
+            p.method == config.PAYMENT_METHOD_CREDIT for p in dialog.result_payments
+        )
+        if credit_requested and (not self.state.can(perms.SELL_ON_CREDIT)):
+            warn(self, t("Vous n'avez pas l'autorisation de vendre à crédit."))
+            return
+        if credit_requested and not dialog.result_client_id:
+            warn(self, t("Sélectionnez un client pour la dette."))
+            return
+        tid, tlabel, wid, wname = self._maquis_table_context()
+        from app.services.maquis_order_service import MaquisOrderService
+        from app.services.order_service import OrderService
+
+        order = None
+        try:
+            order = OrderService.upsert_cart_for_table(
+                list(self.cart),
+                table_id=tid,
+                table_label=tlabel,
+                waitress_id=wid,
+                waitress_name=wname,
+                opened_by=self.state.user_id,
+            )
+            user = getattr(self.state.current_user, "username", "") or ""
+            MaquisOrderService.pay_order_lines(
+                order.id,
+                dialog.result_payments,
+                user_id=self.state.user_id,
+                user_name=user,
+                debt_client_id=dialog.result_client_id,
+                change_amount=float(dialog.change_due or 0),
+            )
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        except InsufficientStockError as exc:
+            warn(self, str(exc), t("Stock insuffisant"))
+            return
+        currency = settings_service.get_currency()
+        pid = order.public_id if order else ""
+        info(
+            self,
+            t("Commande {id} payée").format(id=pid)
+            + f"\n{t('Monnaie rendue')} : {format_money(dialog.change_due, currency)}",
+            t("Encaissement"),
+        )
+        self._clear_cart()
+        if isinstance(self._catalog, PosCatalogPanel):
+            self._catalog.refresh()
+        self.state.notify_data_changed()
+
     def _hold_sale(self) -> None:
         if not self.cart:
             warn(self, t('Le panier est vide.'))
@@ -771,6 +832,9 @@ class POSPage(QWidget):
         if not self.cart:
             warn(self, t('Le panier est vide.'))
             return
+        if self._maquis_mode:
+            self._checkout_maquis()
+            return
         total = self._cart_total()
         client_id: Optional[int] = self._current_client_id()
         phone = self._current_client_phone()
@@ -808,38 +872,7 @@ class POSPage(QWidget):
         audit_service.log_action('Vente', 'Sale', f'{result.ticket_number} total={result.total}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         currency = settings_service.get_currency()
         info(self, f'Vente enregistrée : {result.ticket_number}\nTotal : {format_money(result.total, currency)}\nMonnaie rendue : {format_money(result.change_due, currency)}', t('Vente réussie'))
-        if self._maquis_mode:
-            tid, tlabel, wid, wname = self._maquis_table_context()
-            from app.services.order_service import OrderService
-
-            user = getattr(self.state.current_user, "username", "") or ""
-            if tid:
-                order = OrderService.upsert_cart_for_table(
-                    list(self.cart),
-                    table_id=tid,
-                    table_label=tlabel,
-                    waitress_id=wid,
-                    waitress_name=wname,
-                    opened_by=self.state.user_id,
-                )
-            else:
-                order = OrderService.create_from_cart(
-                    list(self.cart),
-                    table_id=None,
-                    table_label="",
-                    waitress_id=wid,
-                    waitress_name=wname,
-                    opened_by=self.state.user_id,
-                    mark_paid=False,
-                )
-            OrderService.attach_sale_payment(
-                order.id,
-                result.sale_id,
-                dialog.result_payments,
-                user_id=self.state.user_id,
-                user_name=user,
-            )
-        elif not self._maquis_mode:
+        if not self._maquis_mode:
             sale = SaleController.get(result.sale_id)
             if sale:
                 if result.loyalty_credit_remaining is not None:

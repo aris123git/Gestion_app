@@ -2,7 +2,7 @@
 from __future__ import annotations
 from app.i18n import t
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout, QWidget
-from app.models.dining_table import STATUS_FREE, STATUS_OCCUPIED
+from app.models.dining_table import STATUS_CLEANING, STATUS_FREE, STATUS_OCCUPIED
 from app.services import order_service, table_service
 from app.ui.widgets.helpers import confirm, info, warn
 
@@ -56,6 +56,8 @@ class TablesPage(QWidget):
             card.setMinimumHeight(90)
             if table.status == STATUS_OCCUPIED:
                 card.setStyleSheet('QPushButton { background:#fee2e2; border:1px solid #f87171; border-radius:10px; font-weight:600; }')
+            elif table.status == STATUS_CLEANING:
+                card.setStyleSheet('QPushButton { background:#fef9c3; border:1px solid #eab308; border-radius:10px; font-weight:600; }')
             else:
                 card.setStyleSheet('QPushButton { background:#ecfdf5; border:1px solid #34d399; border-radius:10px; font-weight:600; }')
             tid = table.id
@@ -72,6 +74,11 @@ class TablesPage(QWidget):
             warn(self, str(exc))
 
     def _on_table(self, table_id: int, status: str) -> None:
+        if status == STATUS_CLEANING:
+            if confirm(self, t("Marquer cette table comme libre ?"), t("Table")):
+                table_service.TableService.set_status(table_id, STATUS_FREE)
+                self.refresh()
+            return
         if status == STATUS_FREE:
             if not confirm(self, t('Ouvrir une commande sur cette table ?'), t('Table')):
                 return

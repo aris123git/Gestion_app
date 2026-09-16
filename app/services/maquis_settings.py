@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from app.services import product_profile, settings_service
 
-SETTING_TABLES_ENABLED = "maquis_tables_enabled"
+SETTING_TABLES_ENABLED = "tables_enabled"
+_LEGACY_TABLES = "maquis_tables_enabled"
 SETTING_KITCHEN_AFTER_SAVE = "maquis_kitchen_prompt_after_save"
 
 
 def tables_enabled() -> bool:
     if not product_profile.is_maquis():
         return False
-    return settings_service.get_setting(SETTING_TABLES_ENABLED, "1") == "1"
+    raw = settings_service.get_setting(SETTING_TABLES_ENABLED, "")
+    if raw == "":
+        raw = settings_service.get_setting(_LEGACY_TABLES, "1")
+    return raw == "1"
 
 
 def set_tables_enabled(enabled: bool) -> None:

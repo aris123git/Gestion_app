@@ -155,6 +155,14 @@ class OrderService:
                 )
                 total += lt
             order.total = total
+            from app.services.maquis_order_service import consume_lines_stock
+
+            consume_lines_stock(
+                lines,
+                public_id=order.public_id,
+                user_id=opened_by,
+                session=session,
+            )
             if mark_paid:
                 order.paid_amount = total
                 if table_id and table:
@@ -218,6 +226,14 @@ class OrderService:
             session.flush()
             order.total = round(
                 sum(float(i.line_total or 0) for i in order.items), 2
+            )
+            from app.services.maquis_order_service import consume_lines_stock
+
+            consume_lines_stock(
+                lines,
+                public_id=order.public_id,
+                user_id=order.opened_by,
+                session=session,
             )
             session.flush()
             session.refresh(order)
@@ -366,7 +382,12 @@ class OrderService:
                 order.closed_at = datetime.utcnow()
             else:
                 order.status = STATUS_UNPAID
-            if order.status == STATUS_PAID and order.table_id:
+            from app.services import product_profile
+            from app.services.maquis_order_service import _set_table_after_pay
+
+            if product_profile.is_maquis():
+                _set_table_after_pay(session, order)
+            elif order.status == STATUS_PAID and order.table_id:
                 from app.models.dining_table import DiningTable
 
                 table = session.get(DiningTable, order.table_id)
@@ -392,6 +413,12 @@ class OrderService:
             order = session.get(OpenOrder, order_id)
             if not order or order.status not in _ORDER_EDITABLE:
                 raise ValueError("Commande non modifiable.")
+            from app.services.maquis_order_service import (
+                consume_lines_stock,
+                restore_order_stock,
+            )
+
+            restore_order_stock(order, user_id=order.opened_by, session=session)
             for old in list(order.items):
                 session.delete(old)
             total = 0.0
@@ -411,6 +438,19 @@ class OrderService:
                 )
                 total += lt
             order.total = total
+            paid = float(order.paid_amount or 0)
+            if paid <= 0:
+                order.status = STATUS_OPEN
+            elif paid + 0.009 < total:
+                order.status = STATUS_UNPAID
+            else:
+                order.status = STATUS_PAID
+            consume_lines_stock(
+                lines,
+                public_id=order.public_id,
+                user_id=order.opened_by,
+                session=session,
+            )
             session.flush()
             session.refresh(order)
             session.expunge(order)
@@ -450,22 +490,16 @@ class OrderService:
             order = session.get(OpenOrder, order_id)
             if not order:
                 raise ValueError("Commande introuvable.")
+            from app.models.dining_table import DiningTable, STATUS_CLEANING
+            from app.services.maquis_order_service import restore_order_stock
+
+            restore_order_stock(order, user_id=order.opened_by, session=session)
             order.status = STATUS_CANCELLED
             order.closed_at = datetime.utcnow()
             if order.table_id:
-                from app.models.dining_table import DiningTable
-
                 table = session.get(DiningTable, order.table_id)
                 if table:
-                    others = session.scalars(
-                        select(OpenOrder).where(
-                            OpenOrder.table_id == table.id,
-                            OpenOrder.status == STATUS_OPEN,
-                            OpenOrder.id != order.id,
-                        )
-                    ).first()
-                    if others is None:
-                        table.status = STATUS_FREE
+                    table.status = STATUS_CLEANING
             session.flush()
             session.refresh(order)
             session.expunge(order)

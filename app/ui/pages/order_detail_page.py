@@ -17,8 +17,10 @@ from PySide6.QtWidgets import (
 
 from app.i18n import t
 from app.models.open_order import STATUS_OPEN, STATUS_UNPAID
+from app.services import permissions as perms, settings_service
 from app.services.maquis_kitchen import print_kitchen_for_order
-from app.services import settings_service
+from app.services.order_status_labels import label_for_status
+from app.ui.widgets.helpers import confirm
 from app.services.order_checkout_service import checkout_open_order
 from app.services.order_service import OrderService
 from app.ui.dialogs.free_amount_dialog import FreeAmountDialog
@@ -69,8 +71,12 @@ class OrderDetailPage(QWidget):
         self.pay_btn = QPushButton(t("Marquer payée"))
         self.pay_btn.setObjectName("Primary")
         self.pay_btn.clicked.connect(self._pay)
+        self.cancel_btn = QPushButton(t("Annuler"))
+        self.cancel_btn.setObjectName("Danger")
+        self.cancel_btn.clicked.connect(self._cancel_order)
         actions.addWidget(self.kitchen_btn)
         actions.addStretch()
+        actions.addWidget(self.cancel_btn)
         actions.addWidget(self.pay_btn)
         rlay.addLayout(actions)
         root.addWidget(right, 4)
@@ -97,7 +103,9 @@ class OrderDetailPage(QWidget):
         if getattr(order, "table", None) is not None:
             table_name = order.table.display_name
         waitress = order.waitress_name or "—"
-        self.header.setText(f"{order.public_id} · {table_name} · {waitress}")
+        self.header.setText(
+            f"{order.public_id} · {table_name} · {waitress} · {label_for_status(order.status)}"
+        )
         currency = settings_service.get_currency()
         open_order = order.status in (STATUS_OPEN, STATUS_UNPAID)
         self.pay_btn.setVisible(open_order)
@@ -107,6 +115,8 @@ class OrderDetailPage(QWidget):
             else t("Marquer payée")
         )
         self.catalog.setEnabled(open_order)
+        is_admin = getattr(self.state.current_user, "role", "") == perms.ROLE_ADMIN
+        self.cancel_btn.setVisible(open_order and is_admin)
         items = list(order.items or [])
         self.lines.setRowCount(len(items))
         for row, it in enumerate(items):
@@ -139,6 +149,18 @@ class OrderDetailPage(QWidget):
     def _pay(self) -> None:
         if self.order_id and checkout_open_order(self.order_id, self.state, self):
             self._go_back()
+
+    def _cancel_order(self) -> None:
+        if not self.order_id:
+            return
+        if not confirm(self, t("Annuler cette commande ?"), t("Commande")):
+            return
+        try:
+            OrderService.cancel(self.order_id)
+            self.state.notify_data_changed()
+            self._go_back()
+        except Exception as exc:
+            warn(self, str(exc))
 
     def _remove_line(self, item_id: int) -> None:
         try:

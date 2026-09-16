@@ -1,23 +1,19 @@
-"""Encaissement commande table Maquis — vente en base, sans impression ticket."""
+"""Encaissement commande Maquis — parité mobile, sans ticket client."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
 from app import config
-from app.controllers.sale_controller import (
-    BelowMinPriceError,
-    CartLine,
-    InsufficientPaymentError,
-    InsufficientStockError,
-    SaleController,
-)
+from app.controllers.sale_controller import CartLine
 from app.i18n import t
 from app.models.open_order import STATUS_OPEN, STATUS_UNPAID
-from app.services import permissions as perms, settings_service
+from app.services import permissions as perms, product_profile, settings_service
+from app.services.maquis_order_service import MaquisOrderService
 from app.services.order_service import OrderService
 from app.ui.dialogs.payment_dialog import PaymentDialog
 from app.ui.widgets.helpers import info, warn
+from app.utils.helpers import format_money
 
 if TYPE_CHECKING:
     from app.ui.state import AppState
@@ -45,7 +41,6 @@ def checkout_open_order(
     *,
     confirm_payment: bool = True,
 ) -> bool:
-    """Encaisse la commande (PaymentDialog), crée la vente, marque payée — pas de ticket."""
     order = OrderService.get(order_id)
     if not order or order.status not in (STATUS_OPEN, STATUS_UNPAID):
         warn(parent, t("Commande introuvable ou déjà clôturée."))
@@ -53,8 +48,6 @@ def checkout_open_order(
     if not order.items:
         warn(parent, t("La commande ne contient aucun article."))
         return False
-    lines = order_to_cart_lines(order)
-    prior_paid = float(order.paid_amount or 0)
     total_due = float(order.remaining_amount)
     dialog = PaymentDialog(
         total_due,
@@ -66,52 +59,69 @@ def checkout_open_order(
     )
     if confirm_payment and not dialog.exec():
         return False
+    credit_requested = dialog.use_credit or any(
+        p.method == config.PAYMENT_METHOD_CREDIT for p in dialog.result_payments
+    )
+    if credit_requested and (not state.can(perms.SELL_ON_CREDIT)):
+        warn(parent, t("Vous n'avez pas l'autorisation de vendre à crédit."))
+        return False
+    if credit_requested and not dialog.result_client_id:
+        warn(parent, t("Sélectionnez un client pour la dette."))
+        return False
+    user = getattr(state.current_user, "username", "") or ""
     try:
-        credit_requested = dialog.use_credit or any(
-            p.method == config.PAYMENT_METHOD_CREDIT for p in dialog.result_payments
-        )
-        if credit_requested and (not state.can(perms.SELL_ON_CREDIT)):
-            warn(parent, t("Vous n'avez pas l'autorisation de vendre à crédit."))
-            return False
-        result = SaleController.create_sale(
-            lines=lines,
-            payments=dialog.result_payments,
-            amount_received=dialog.amount_received,
-            discount=prior_paid,
-            client_id=dialog.result_client_id,
-            user_id=state.user_id,
-            allow_credit=credit_requested,
-            debt_due_date=dialog.credit_due_date,
-            loyalty_credit=0,
-        )
-    except InsufficientPaymentError as exc:
-        warn(parent, str(exc), t("Paiement insuffisant"))
-        return False
-    except InsufficientStockError as exc:
-        warn(parent, str(exc), t("Stock insuffisant"))
-        return False
-    except BelowMinPriceError as exc:
-        warn(parent, str(exc), t("Prix minimum"))
-        return False
+        if product_profile.is_maquis():
+            MaquisOrderService.pay_order_lines(
+                order_id,
+                dialog.result_payments,
+                user_id=state.user_id,
+                user_name=user,
+                debt_client_id=dialog.result_client_id,
+                change_amount=float(dialog.change_due or 0),
+            )
+        else:
+            from app.controllers.sale_controller import (
+                BelowMinPriceError,
+                InsufficientPaymentError,
+                InsufficientStockError,
+                SaleController,
+            )
+
+            lines = order_to_cart_lines(order)
+            prior_paid = float(order.paid_amount or 0)
+            result = SaleController.create_sale(
+                lines=lines,
+                payments=dialog.result_payments,
+                amount_received=dialog.amount_received,
+                discount=prior_paid,
+                client_id=dialog.result_client_id,
+                user_id=state.user_id,
+                allow_credit=credit_requested,
+                debt_due_date=dialog.credit_due_date,
+                loyalty_credit=0,
+            )
+            OrderService.attach_sale_payment(
+                order_id,
+                result.sale_id,
+                dialog.result_payments,
+                user_id=state.user_id,
+                user_name=user,
+            )
     except ValueError as exc:
         warn(parent, str(exc))
         return False
-    user = getattr(state.current_user, "username", "") or ""
-    OrderService.attach_sale_payment(
-        order_id,
-        result.sale_id,
-        dialog.result_payments,
-        user_id=state.user_id,
-        user_name=user,
-    )
-    currency = settings_service.get_currency()
-    from app.utils.helpers import format_money
+    except Exception as exc:
+        if not product_profile.is_maquis():
+            warn(parent, str(exc))
+            return False
+        warn(parent, str(exc))
+        return False
 
+    currency = settings_service.get_currency()
     info(
         parent,
-        f"Vente enregistrée : {result.ticket_number}\n"
-        f"Total : {format_money(result.total, currency)}\n"
-        f"Commande {order.public_id} clôturée (sans impression ticket).",
+        f"{t('Commande')} {order.public_id} {t('clôturée')}.\n"
+        f"{t('Monnaie rendue')} : {format_money(dialog.change_due, currency)}",
         t("Encaissement"),
     )
     state.notify_data_changed()
