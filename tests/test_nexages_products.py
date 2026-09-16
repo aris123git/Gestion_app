@@ -24,7 +24,6 @@ from app.services import (  # noqa: E402
     product_profile,
     table_service,
 )
-from app.ui.main_window import build_nav_items  # noqa: E402
 
 
 class ProductProfileTestCase(unittest.TestCase):
@@ -52,6 +51,10 @@ class ProductProfileTestCase(unittest.TestCase):
         self.assertEqual(product_profile.product_label(), "Maquis Caisse")
 
     def test_nav_differs_by_product(self) -> None:
+        # Cette importation traduit les libellés et requiert la table settings,
+        # créée par setUpClass.
+        from app.ui.main_window import build_nav_items
+
         product_profile.set_product(product_profile.PRODUCT_GESTION)
         gestion_labels = {item[0] for item in build_nav_items()}
         self.assertIn("Avoirs", gestion_labels)
