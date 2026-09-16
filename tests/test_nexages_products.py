@@ -110,6 +110,13 @@ class MaquisTablesOrdersTestCase(unittest.TestCase):
         self.assertTrue(order.public_id.startswith("CMD-"))
         opens = order_service.OrderService.list_open()
         self.assertTrue(any(o.id == order.id for o in opens))
+        order_service.OrderService.add_item(
+            order.id,
+            product_id=None,
+            product_name="Produit test",
+            quantity=1,
+            unit_price=1000,
+        )
         order_service.OrderService.mark_paid(order.id)
         tables2 = table_service.TableService.list()
         t2 = next(t for t in tables2 if t.id == free.id)
