@@ -260,6 +260,12 @@ class POSPage(QWidget):
         self.discount_input.parentWidget().setVisible(False) if self.discount_input.parentWidget() else None
         if hasattr(self, "_pending_row"):
             self._pending_row.setVisible(False)
+        from app.services.maquis_cart_store import load_cart
+
+        saved = load_cart(self.state.user_id)
+        if saved:
+            self.cart = saved
+            self._render_cart()
 
     def _maquis_product_tap(self, product) -> None:
         from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
@@ -589,6 +595,10 @@ class POSPage(QWidget):
         self._updating = False
         self._refresh_loyalty_credit()
         self._apply_large_text()
+        if self._maquis_mode:
+            from app.services.maquis_cart_store import save_cart
+
+            save_cart(self.cart, self.state.user_id)
 
     def _remove_line(self, row: int) -> None:
         if 0 <= row < len(self.cart):
@@ -708,6 +718,10 @@ class POSPage(QWidget):
         self._pending_sale_id = None
         if pending_id:
             SaleController.delete_pending(pending_id, user_id=self.state.user_id)
+        if self._maquis_mode:
+            from app.services.maquis_cart_store import clear_cart
+
+            clear_cart(self.state.user_id)
         self.cart.clear()
         self.discount_input.blockSignals(True)
         self.discount_input.setMaximum(0)

@@ -11,6 +11,7 @@ from sqlalchemy.orm import joinedload
 
 from app import config
 from app.database.connection import session_scope
+from app.models.debt import DebtPayment
 from app.models.expense import Expense
 from app.models.open_order import STATUS_CANCELLED, STATUS_OPEN, STATUS_PAID, STATUS_UNPAID, OpenOrder
 from app.models.open_order_payment import OpenOrderPayment
@@ -63,9 +64,18 @@ class MaquisDashboardStats:
     cost_of_goods: float
     benefice: float
     expenses_total: float
+    repayment_revenue: float = 0.0
+    debt_created: float = 0.0
     top_products: List[ProductSalesRow] = field(default_factory=list)
     waitress_stats: List[WaitressStatsRow] = field(default_factory=list)
     caisse_du_jour: CaisseDuJour = field(default_factory=lambda: CaisseDuJour(0, 0, 0))
+
+    @property
+    def margin_percent(self) -> int:
+        base = float(self.ca_generated or 0) + float(self.expenses_total or 0)
+        if base <= 0:
+            return 0
+        return int(round(100.0 * float(self.benefice or 0) / base))
 
 
 def _today_bounds() -> Tuple[datetime, datetime]:
@@ -198,6 +208,32 @@ def _waitress_stats(orders: List[OpenOrder]) -> List[WaitressStatsRow]:
     return out
 
 
+def _repayment_revenue(session, start: datetime, end: datetime) -> float:
+    return float(
+        session.scalar(
+            select(func.coalesce(func.sum(DebtPayment.amount), 0)).where(
+                DebtPayment.payment_date >= start,
+                DebtPayment.payment_date <= end,
+            )
+        )
+        or 0
+    )
+
+
+def _debt_created(session, start: datetime, end: datetime) -> float:
+    from app.models.debt import Debt
+
+    return float(
+        session.scalar(
+            select(func.coalesce(func.sum(Debt.amount_initial), 0)).where(
+                Debt.created_at >= start,
+                Debt.created_at <= end,
+            )
+        )
+        or 0
+    )
+
+
 def _payments_between(session, start: datetime, end: datetime) -> List[OpenOrderPayment]:
     return list(
         session.scalars(
@@ -261,8 +297,14 @@ def dashboard_stats(
         paid = [o for o in orders if _is_paid_status(o.status)]
         open_count = sum(1 for o in orders if _is_open_status(o.status))
         debt_on_orders = sum(_debt_paid_on_order(o) for o in paid)
-        sales_ca = sum(float(o.total or 0) for o in paid) - debt_on_orders
-        sales_collected = sum(float(o.paid_amount or 0) for o in paid) - debt_on_orders
+        repayment = _repayment_revenue(session, start, end)
+        debt_created = _debt_created(session, start, end)
+        sales_ca = (
+            sum(float(o.total or 0) for o in paid) - debt_on_orders + repayment
+        )
+        sales_collected = (
+            sum(float(o.paid_amount or 0) for o in paid) - debt_on_orders + repayment
+        )
         to_collect = sum(float(o.remaining_amount) for o in orders if _is_open_status(o.status))
         products = _product_sales(orders, session)
         cost = sum(p.cost for p in products)
@@ -276,6 +318,15 @@ def dashboard_stats(
             or 0
         )
         caisse = _caisse_du_jour(session, start, end, user_id)
+        caisse = CaisseDuJour(
+            cash_today=caisse.cash_today + repayment,
+            mobile_today=caisse.mobile_today,
+            debt_today=debt_created,
+            avoir_today=caisse.avoir_today,
+            fond_de_caisse=caisse.fond_de_caisse,
+            especes_theoriques=caisse.especes_theoriques,
+            ecart=caisse.ecart,
+        )
         return MaquisDashboardStats(
             orders_count=len(orders),
             open_orders=open_count,
@@ -285,6 +336,8 @@ def dashboard_stats(
             cost_of_goods=cost,
             benefice=max(0.0, sales_ca - cost - expenses),
             expenses_total=expenses,
+            repayment_revenue=repayment,
+            debt_created=debt_created,
             top_products=products[:8],
             waitress_stats=_waitress_stats(orders),
             caisse_du_jour=caisse,

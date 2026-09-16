@@ -18,6 +18,7 @@ def build_maquis_nav_items() -> List[NavEntry]:
     from app.ui.pages.categories_page import CategoriesPage
     from app.ui.pages.dashboard_page import DashboardPage
     from app.ui.pages.debts_page import DebtsPage
+    from app.ui.pages.maquis_inventaire_page import MaquisInventairePage
     from app.ui.pages.order_history_page import OrderHistoryPage
     from app.ui.pages.orders_page import OrdersPage
     from app.ui.pages.pos_page import POSPage
@@ -44,7 +45,7 @@ def build_maquis_nav_items() -> List[NavEntry]:
         (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
         (t("nav.tables"), "🪑", TablesPage, perms.MANAGE_SETTINGS),
         (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
-        (t("Inventaire"), "📒", StockPage, perms.MANAGE_STOCK),
+        (t("Inventaire"), "📒", MaquisInventairePage, perms.MANAGE_STOCK),
         (t("Relève"), "💵", CaisseSessionPage, perms.VIEW_REPORTS),
         (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),

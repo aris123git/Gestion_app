@@ -85,6 +85,7 @@ class DashboardPage(QWidget):
         self.insights_label.setWordWrap(True)
         layout.addWidget(self.insights_label)
         layout.addStretch()
+        self._maquis_period_bar = None
         self._apply_permissions()
         self.state.layout_changed.connect(self._on_layout_changed)
         if self.state.layout is not None:
@@ -109,32 +110,46 @@ class DashboardPage(QWidget):
         for card in self._cards:
             card.setMinimumHeight(72 if profile.density == 'compact' else 120)
 
-    def _refresh_maquis(self) -> None:
-        from app.services.maquis_dashboard_service import month_stats, today_stats
+    def _ensure_maquis_period_bar(self) -> None:
+        if self._maquis_period_bar is not None:
+            return
+        from app.ui.widgets.maquis_period_bar import MaquisPeriodBar
 
+        self._maquis_period_bar = MaquisPeriodBar(self)
+        self._maquis_period_bar.period_changed.connect(lambda _sel: self._refresh_maquis())
+        self._page_layout.insertWidget(1, self._maquis_period_bar)
+
+    def _refresh_maquis(self) -> None:
+        from app.services.maquis_dashboard_service import dashboard_stats
+
+        self._ensure_maquis_period_bar()
+        selection = self._maquis_period_bar.selection()
+        start, end = selection.bounds()
+        period_label = selection.period.label
         currency = settings_service.get_currency()
         uid = getattr(self.state, "user_id", None)
-        day = today_stats(user_id=uid)
-        month = month_stats(user_id=uid)
-        self.card_revenue_today.set_title(t("CA généré (jour)"))
+        day = dashboard_stats(start=start, end=end, user_id=uid)
+        self.title.setText(f"{t('Tableau de bord')} — {period_label}")
+        self.card_revenue_today.set_title(t("CA généré"))
         self.card_revenue_today.set_value(format_money(day.ca_generated, currency))
-        self.card_revenue_month.set_title(t("CA encaissé (mois)"))
-        self.card_revenue_month.set_value(format_money(month.ca_collected, currency))
-        self.card_sales.set_title(t("Commandes (jour)"))
+        self.card_revenue_month.set_title(t("CA encaissé"))
+        self.card_revenue_month.set_value(format_money(day.ca_collected, currency))
+        self.card_sales.set_title(t("Commandes"))
         self.card_sales.set_value(str(day.orders_count))
-        self.card_profit.set_title(t("Bénéfice (jour)"))
-        self.card_profit.set_value(format_money(day.benefice, currency))
-        self.card_expenses.set_title(t("Dépenses (jour)"))
+        self.card_profit.set_title(t("Bénéfice"))
+        profit_hint = f" ({day.margin_percent} %)" if day.margin_percent else ""
+        self.card_profit.set_value(format_money(day.benefice, currency) + profit_hint)
+        self.card_expenses.set_title(t("Dépenses"))
         self.card_expenses.set_value(format_money(day.expenses_total, currency))
         self.card_treasury.set_title(t("À encaisser"))
         self.card_treasury.set_value(format_money(day.to_collect, currency))
         self.card_net.set_title(t("Commandes ouvertes"))
         self.card_net.set_value(str(day.open_orders))
-        self.card_low.set_title(t("Espèces (jour)"))
+        self.card_low.set_title(t("Espèces"))
         self.card_low.set_value(format_money(day.caisse_du_jour.cash_today, currency))
-        self.card_out.set_title(t("Mobile (jour)"))
+        self.card_out.set_title(t("Mobile"))
         self.card_out.set_value(format_money(day.caisse_du_jour.mobile_today, currency))
-        self.card_products.set_title(t("Dettes créées (jour)"))
+        self.card_products.set_title(t("Dettes créées"))
         self.card_products.set_value(format_money(day.caisse_du_jour.debt_today, currency))
         if day.caisse_du_jour.especes_theoriques is not None:
             self.card_debt.set_title(t("Espèces théoriques"))
@@ -146,7 +161,7 @@ class DashboardPage(QWidget):
                 hint = f"Écart : {format_money(day.caisse_du_jour.ecart, currency)}"
             self.card_debt.set_hint(hint or t("Session caisse ouverte"))
         if hasattr(self, "_top_section"):
-            self._top_section.setText(t("Serveuses (jour)"))
+            self._top_section.setText(t("Serveuses"))
         if hasattr(self, "_alert_section"):
             self._alert_section.setText(t("Top produits (commandes payées)"))
         self.top_table.setHorizontalHeaderLabels(
@@ -177,7 +192,8 @@ class DashboardPage(QWidget):
             )
         lines = [
             f"{t('Coût marchandises')} : {format_money(day.cost_of_goods, currency)}",
-            f"{t('CA encaissé jour')} : {format_money(day.ca_collected, currency)}",
+            f"{t('CA encaissé')} : {format_money(day.ca_collected, currency)}",
+            f"{t('Règlements dettes')} : {format_money(day.repayment_revenue, currency)}",
         ]
         if day.caisse_du_jour.fond_de_caisse is not None:
             lines.append(
