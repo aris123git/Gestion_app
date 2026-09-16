@@ -50,8 +50,12 @@ def _module_files_present(bundle_dir: Path) -> list[str]:
 
 
 def _pyz_modules(exe: Path) -> set[str]:
-    from PyInstaller.archive.readers import CArchiveReader
-    from PyInstaller.loader.pyimod01_archive import ZlibArchiveReader
+    """Lit le PYZ si présent. Sans PyInstaller installé → ensemble vide."""
+    try:
+        from PyInstaller.archive.readers import CArchiveReader
+        from PyInstaller.loader.pyimod01_archive import ZlibArchiveReader
+    except ImportError:
+        return set()
 
     archive = CArchiveReader(str(exe))
     pyz_name = next(
@@ -91,7 +95,12 @@ def main() -> int:
 
     bundle_dir = exe.parent
     file_hits = set(_module_files_present(bundle_dir))
-    pyz_hits = _pyz_modules(exe)
+    # Mode onedir + noarchive : les .pyc suffisent ; PYZ optionnel.
+    pyz_hits: set[str] = set()
+    missing_from_files = [name for name in REQUIRED if name not in file_hits]
+    if missing_from_files:
+        pyz_hits = _pyz_modules(exe)
+
     present = file_hits | {m for m in REQUIRED if m in pyz_hits}
     missing = [name for name in REQUIRED if name not in present]
 
