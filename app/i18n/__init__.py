@@ -221,9 +221,14 @@ def normalize_language(code: str | None) -> str:
 def get_language() -> str:
     global _current
     if _current is None:
-        _current = normalize_language(
-            settings_service.get_setting(SETTING_LANGUAGE, LANG_FR)
-        )
+        try:
+            _current = normalize_language(
+                settings_service.get_setting(SETTING_LANGUAGE, LANG_FR)
+            )
+        except Exception:
+            # Base pas encore initialisée (premier démarrage, import précoce) :
+            # français par défaut, sans mettre en cache pour relire plus tard.
+            return LANG_FR
     return _current
 
 
