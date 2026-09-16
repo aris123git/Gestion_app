@@ -23,7 +23,6 @@ from app.services import (  # noqa: E402
     product_profile,
     table_service,
 )
-from app.ui.main_window import build_nav_items  # noqa: E402
 
 
 class ProductProfileTestCase(unittest.TestCase):
@@ -51,6 +50,10 @@ class ProductProfileTestCase(unittest.TestCase):
         self.assertEqual(product_profile.product_label(), "Maquis Caisse")
 
     def test_nav_differs_by_product(self) -> None:
+        # Import ici : la traduction des libellés requiert la table settings,
+        # créée par setUpClass.
+        from app.ui.main_window import build_nav_items
+
         product_profile.set_product(product_profile.PRODUCT_GESTION)
         gestion_labels = {item[0] for item in build_nav_items()}
         self.assertIn("Avoirs", gestion_labels)
@@ -101,11 +104,26 @@ class MaquisTablesOrdersTestCase(unittest.TestCase):
         init_database()
         seed_all()
 
-    def test_defaults_and_open_order(self) -> None:
+    def _free_table(self):
         table_service.TableService.ensure_defaults()
-        tables = table_service.TableService.list()
-        self.assertGreaterEqual(len(tables), 1)
-        free = next(t for t in tables if t.status == "libre")
+        return next(
+            t for t in table_service.TableService.list() if t.status == "libre"
+        )
+
+    def _make_product(self, name: str, price: float = 1000, stock: float = 10):
+        from app.controllers.product_controller import ProductController
+
+        return ProductController.create(
+            {
+                "name": name,
+                "purchase_price": price / 2,
+                "sale_price": price,
+                "quantity": stock,
+            }
+        )
+
+    def test_defaults_and_open_order(self) -> None:
+        free = self._free_table()
         order = order_service.OrderService.open_on_table(free.id)
         self.assertTrue(order.public_id.startswith("CMD-"))
         opens = order_service.OrderService.list_open()
@@ -114,6 +132,68 @@ class MaquisTablesOrdersTestCase(unittest.TestCase):
         tables2 = table_service.TableService.list()
         t2 = next(t for t in tables2 if t.id == free.id)
         self.assertEqual(t2.status, "libre")
+
+    def test_add_products_and_quantities(self) -> None:
+        product = self._make_product("Bière Test", price=600, stock=5)
+        free = self._free_table()
+        order = order_service.OrderService.open_on_table(free.id)
+
+        order = order_service.OrderService.add_product(order.id, product.id)
+        order = order_service.OrderService.add_product(order.id, product.id)
+        self.assertEqual(len(order.items), 1)  # fusion des quantités
+        self.assertEqual(float(order.total), 1200)
+
+        item_id = order.items[0].id
+        order = order_service.OrderService.set_item_quantity(order.id, item_id, 4)
+        self.assertEqual(float(order.total), 2400)
+
+        # Stock max = 5 → 6 doit échouer.
+        with self.assertRaises(ValueError):
+            order_service.OrderService.set_item_quantity(order.id, item_id, 6)
+
+        order = order_service.OrderService.remove_item(order.id, item_id)
+        self.assertEqual(len(order.items), 0)
+        self.assertEqual(float(order.total), 0)
+        order_service.OrderService.cancel(order.id)
+
+    def test_settle_records_sale_and_frees_table(self) -> None:
+        from app.controllers.product_controller import ProductController
+        from app.controllers.sale_controller import SaleController
+
+        product = self._make_product("Sucrerie Test", price=500, stock=8)
+        free = self._free_table()
+        order = order_service.OrderService.open_on_table(free.id)
+        order = order_service.OrderService.add_product(order.id, product.id)
+        order = order_service.OrderService.add_product(order.id, product.id)
+
+        # Commande vide refusée sur une autre table.
+        other = self._free_table()
+        empty = order_service.OrderService.open_on_table(other.id)
+        with self.assertRaises(ValueError):
+            order_service.OrderService.settle(empty.id)
+        order_service.OrderService.cancel(empty.id)
+
+        result = order_service.OrderService.settle(order.id)
+        self.assertEqual(result.total, 1000)
+        sale = SaleController.get(result.sale_id)
+        self.assertIsNotNone(sale)
+        self.assertEqual(sale.status, "completed")
+        self.assertEqual(float(sale.total), 1000)
+
+        # Stock déduit : 8 − 2 = 6.
+        refreshed = ProductController.get(product.id)
+        self.assertEqual(float(refreshed.quantity), 6)
+
+        # Commande payée, table libérée.
+        paid = order_service.OrderService.get(order.id)
+        self.assertEqual(paid.status, "payée")
+        tables = table_service.TableService.list()
+        t2 = next(t for t in tables if t.id == free.id)
+        self.assertEqual(t2.status, "libre")
+
+        # Déjà clôturée → refus.
+        with self.assertRaises(ValueError):
+            order_service.OrderService.settle(order.id)
 
 
 if __name__ == "__main__":

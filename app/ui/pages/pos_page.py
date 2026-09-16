@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Dict, List, Optional
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget
 from app import config
 from app.controllers.client_controller import ClientController
@@ -18,6 +18,7 @@ from app.ui.responsive import LayoutProfile
 from app.ui.state import AppState
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.helpers import info, page_title, warn
+from app.ui.widgets.touch_pos import make_category_chip, make_product_card, make_qty_stepper
 from app.utils.helpers import format_money, format_quantity, to_float
 
 class POSPage(QWidget):
@@ -81,17 +82,17 @@ class POSPage(QWidget):
             self._catalog.setMinimumWidth(280)
             self._cart_panel.setMinimumWidth(260)
         if profile.content_width < 700 or stack:
-            self.cart_table.setColumnWidth(self.COL_QTY, 52)
+            self.cart_table.setColumnWidth(self.COL_QTY, 88)
             self.cart_table.setColumnWidth(self.COL_PRICE, 72)
             self.cart_table.setColumnWidth(self.COL_TOTAL, 80)
             self.cart_table.setColumnWidth(self.COL_DEL, 36)
         elif profile.content_width < 1100:
-            self.cart_table.setColumnWidth(self.COL_QTY, 60)
+            self.cart_table.setColumnWidth(self.COL_QTY, 92)
             self.cart_table.setColumnWidth(self.COL_PRICE, 84)
             self.cart_table.setColumnWidth(self.COL_TOTAL, 92)
             self.cart_table.setColumnWidth(self.COL_DEL, 40)
         else:
-            self.cart_table.setColumnWidth(self.COL_QTY, 70)
+            self.cart_table.setColumnWidth(self.COL_QTY, 96)
             self.cart_table.setColumnWidth(self.COL_PRICE, 100)
             self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
             self.cart_table.setColumnWidth(self.COL_DEL, 44)
@@ -196,7 +197,7 @@ class POSPage(QWidget):
         self.cart_table = QTableWidget(0, 5)
         self.cart_table.setHorizontalHeaderLabels([t('Produit'), t('Qté'), t('Prix U.'), t('Total'), ''])
         self.cart_table.horizontalHeader().setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Stretch)
-        self.cart_table.setColumnWidth(self.COL_QTY, 70)
+        self.cart_table.setColumnWidth(self.COL_QTY, 96)
         self.cart_table.setColumnWidth(self.COL_PRICE, 100)
         self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
         self.cart_table.setColumnWidth(self.COL_DEL, 44)
@@ -426,13 +427,7 @@ class POSPage(QWidget):
         self._chip_buttons = []
 
         def make_chip(label: str, cat_id):
-            btn = QToolButton()
-            btn.setText(label)
-            btn.setCheckable(True)
-            btn.setChecked(cat_id == current)
-            btn.setMinimumHeight(40)
-            btn.setStyleSheet('QToolButton { padding: 6px 14px; border-radius: 18px; border: 1px solid #cbd5e1; background: #f8fafc; }QToolButton:checked { background: #2563eb; color: white; border-color: #2563eb; }')
-            btn.clicked.connect(lambda _=False, cid=cat_id: self._select_category_chip(cid))
+            btn = make_category_chip(label, cat_id == current, lambda cid=cat_id: self._select_category_chip(cid))
             self.category_chips_layout.addWidget(btn)
             self._chip_buttons.append(btn)
         make_chip(t('pos.all_categories'), None)
@@ -463,46 +458,11 @@ class POSPage(QWidget):
         self._grid_product_ids = []
 
     def _make_product_card(self, product, currency: str) -> QFrame:
-        card = QFrame()
-        card.setObjectName('ProductCard')
-        card.setCursor(Qt.CursorShape.PointingHandCursor)
-        card.setFixedSize(148, 180)
-        card.setStyleSheet('#ProductCard { border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; }#ProductCard:hover { border: 2px solid #2563eb; }')
-        box = QVBoxLayout(card)
-        box.setContentsMargins(8, 8, 8, 8)
-        box.setSpacing(4)
-        img = QLabel()
-        img.setFixedSize(128, 96)
-        img.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        img.setStyleSheet('background: #f1f5f9; border-radius: 6px; color: #94a3b8;')
-        path = str(getattr(product, 'image_path', '') or '')
-        pix = QPixmap(path) if path else QPixmap()
-        if not pix.isNull():
-            img.setPixmap(pix.scaled(128, 96, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        else:
-            img.setText('•')
-        box.addWidget(img, alignment=Qt.AlignmentFlag.AlignCenter)
-        name = QLabel(product.name)
-        name.setWordWrap(True)
-        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name.setStyleSheet('font-weight: 600; font-size: 12px;')
-        box.addWidget(name)
-        if getattr(product, 'free_amount_sale', False):
-            price_txt = f'réf. {format_money(product.sale_price, currency)}' if float(product.sale_price or 0) > 0 else 'montant libre'
-        else:
-            price_txt = format_money(product.sale_price, currency)
-        price = QLabel(price_txt)
-        price.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        price.setStyleSheet('color: #0f172a; font-weight: 700;')
-        box.addWidget(price)
-        pid = product.id
-
-        def _click(_event=None, product_id=pid):
+        def _on_click(product_id: int) -> None:
             product_obj = ProductController.get(product_id)
             if product_obj:
                 self._add_product(product_obj)
-        card.mousePressEvent = _click
-        return card
+        return make_product_card(product, currency, _on_click)
 
     def _reload_products(self) -> None:
         products = ProductController.list(search=self.search_input.text().strip(), category_id=self.category_filter.currentData())
@@ -660,6 +620,9 @@ class POSPage(QWidget):
             self.cart_table.setItem(row, self.COL_QTY, qty_item)
             self.cart_table.setItem(row, self.COL_PRICE, price_item)
             self.cart_table.setItem(row, self.COL_TOTAL, total_item)
+            if not line.free_amount:
+                stepper = make_qty_stepper(format_quantity(line.quantity), lambda r=row: self._step_qty(r, -1), lambda r=row: self._step_qty(r, 1), lambda r=row: self._edit_qty(r))
+                self.cart_table.setCellWidget(row, self.COL_QTY, stepper)
             delete_button = QPushButton(t('✕'))
             delete_button.setObjectName('Danger')
             delete_button.clicked.connect(lambda _=False, r=row: self._remove_line(r))
@@ -673,6 +636,54 @@ class POSPage(QWidget):
             self.cart.pop(row)
             self._render_cart()
 
+    def _apply_qty(self, row: int, qty: float) -> None:
+        """Applique une nouvelle quantité à une ligne (contrôles stock / fidélité)."""
+        if not 0 <= row < len(self.cart):
+            return
+        line = self.cart[row]
+        if line.free_amount:
+            self._render_cart()
+            return
+        if qty <= 0:
+            self._remove_line(row)
+            return
+        if line.loyalty_reward:
+            unit = float(line.unit_price)
+            others = sum((float(l.reward_value) for i, l in enumerate(self.cart) if i != row))
+            from app.services.profit_loyalty_service import ProfitLoyaltyService
+            cid = self._current_client_id()
+            balance = ProfitLoyaltyService.credit_balance(int(cid)) if cid else 0.0
+            need = round(unit * qty, 2)
+            if need > balance - others + 0.009:
+                warn(self, t('Crédit fidélité insuffisant pour cette quantité.'))
+                self._render_cart()
+                return
+        if line.product_id:
+            stock = self._available_stock(line.product_id, exclude_cart=True)
+            if stock <= 0:
+                warn(self, f'Stock insuffisant : « {line.name} » est en rupture de stock.', t('Stock insuffisant'))
+                self._render_cart()
+                return
+            if qty > stock:
+                warn(self, f'Stock insuffisant pour « {line.name} » : disponible {format_quantity(stock)}, demandé {format_quantity(qty)}.', t('Stock insuffisant'))
+                self._render_cart()
+                return
+        line.quantity = qty
+        self._render_cart()
+
+    def _step_qty(self, row: int, delta: float) -> None:
+        if not 0 <= row < len(self.cart):
+            return
+        self._apply_qty(row, float(self.cart[row].quantity) + delta)
+
+    def _edit_qty(self, row: int) -> None:
+        if not 0 <= row < len(self.cart):
+            return
+        line = self.cart[row]
+        qty, ok = QInputDialog.getDouble(self, t('Quantité'), line.name, float(line.quantity), 0, 1000000, 3)
+        if ok:
+            self._apply_qty(row, float(qty))
+
     def _on_cart_edited(self, item: QTableWidgetItem) -> None:
         if self._updating:
             return
@@ -684,33 +695,7 @@ class POSPage(QWidget):
             self._render_cart()
             return
         if item.column() == self.COL_QTY:
-            qty = to_float(item.text())
-            if qty <= 0:
-                self._remove_line(row)
-                return
-            if line.loyalty_reward:
-                unit = float(line.unit_price)
-                others = sum((float(l.reward_value) for i, l in enumerate(self.cart) if i != row))
-                from app.services.profit_loyalty_service import ProfitLoyaltyService
-                cid = self._current_client_id()
-                balance = ProfitLoyaltyService.credit_balance(int(cid)) if cid else 0.0
-                need = round(unit * qty, 2)
-                if need > balance - others + 0.009:
-                    warn(self, t('Crédit fidélité insuffisant pour cette quantité.'))
-                    self._render_cart()
-                    return
-            if line.product_id:
-                stock = self._available_stock(line.product_id, exclude_cart=True)
-                if stock <= 0:
-                    warn(self, f'Stock insuffisant : « {line.name} » est en rupture de stock.', t('Stock insuffisant'))
-                    self._render_cart()
-                    return
-                if qty > stock:
-                    warn(self, f'Stock insuffisant pour « {line.name} » : disponible {format_quantity(stock)}, demandé {format_quantity(qty)}.', t('Stock insuffisant'))
-                    self._render_cart()
-                    return
-            line.quantity = qty
-            self._render_cart()
+            self._apply_qty(row, to_float(item.text()))
         elif item.column() == self.COL_PRICE:
             if line.loyalty_reward:
                 warn(self, t("Le prix d'un produit offert fidélité n'est pas modifiable."))
