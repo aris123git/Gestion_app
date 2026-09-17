@@ -30,10 +30,9 @@ séparé de l'UI : `models/` (ORM) → `controllers/` (logique) → `ui/` (PySid
   (`source .venv/bin/activate`).
 - **Packaging Windows** (`pyinstaller gestion_app.spec`, `installer.iss`) est
   prévu pour être exécuté **sous Windows**, pas dans le VM Linux. Le résultat
-  est un dossier `dist/GestionCommerciale/` (**onedir**). Pour transporter
-  **un seul fichier**, utiliser `GestionCommerciale_Setup.exe` (artefact CI
-  `GestionCommerciale-Setup`). Ne pas utiliser le mode PyInstaller onefile :
-  les antivirus cassent l'extraction `%TEMP%` (`main_window` introuvable).
+  est **un seul fichier** `dist/GestionCommerciale.exe` (onefile). Artefact CI :
+  `GestionCommerciale-Windows`. Si `ModuleNotFoundError: main_window` au
+  lancement : exclusion antivirus sur l'exe.
 - **Tests automatisés** : suite unitaire dans `tests/` (lancer avec
   `python -m unittest discover -s tests -v`). La CI Windows build l'exe ; la
   validation métier complète reste un flux caisse manuel (créer un produit,
