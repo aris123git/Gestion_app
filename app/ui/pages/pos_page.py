@@ -128,16 +128,18 @@ class POSPage(QWidget):
         clear.clicked.connect(self._clear_cart)
         header.addWidget(clear)
         layout.addLayout(header)
-        client_row = QHBoxLayout()
+        self._client_row_widget = QWidget()
+        client_row = QHBoxLayout(self._client_row_widget)
+        client_row.setContentsMargins(0, 0, 0, 0)
         client_row.addWidget(QLabel(t('pos.client')))
         self.client_search = ClientSearchField(placeholder='Tapez un nom ou un téléphone…')
         self.client_search.client_selected.connect(self._on_client_selected)
         client_row.addWidget(self.client_search, 1)
-        layout.addLayout(client_row)
-        hint = QLabel(t('Suggestions au fur et à mesure. Sélectionnez le client pour facturer ou mettre en dette.'))
-        hint.setWordWrap(True)
-        hint.setStyleSheet('color: #64748b; font-size: 12px;')
-        layout.addWidget(hint)
+        layout.addWidget(self._client_row_widget)
+        self._client_hint = QLabel(t('Suggestions au fur et à mesure. Sélectionnez le client pour facturer ou mettre en dette.'))
+        self._client_hint.setWordWrap(True)
+        self._client_hint.setStyleSheet('color: #64748b; font-size: 12px;')
+        layout.addWidget(self._client_hint)
         self.cart_table = QTableWidget(0, 5)
         self.cart_table.setHorizontalHeaderLabels([t('Produit'), t('Qté'), t('Prix U.'), t('Total'), ''])
         self.cart_table.horizontalHeader().setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Stretch)
@@ -149,7 +151,9 @@ class POSPage(QWidget):
         if self._maquis_mode:
             self.cart_table.cellDoubleClicked.connect(self._maquis_edit_qty)
         layout.addWidget(self.cart_table)
-        discount_row = QHBoxLayout()
+        self._discount_row_widget = QWidget()
+        discount_row = QHBoxLayout(self._discount_row_widget)
+        discount_row.setContentsMargins(0, 0, 0, 0)
         discount_row.addWidget(QLabel(t('pos.discount')))
         self.discount_input = QDoubleSpinBox()
         self.discount_input.setRange(0, 0)
@@ -167,7 +171,7 @@ class POSPage(QWidget):
         self.discount_hint = QLabel('')
         self.discount_hint.setStyleSheet('color: #b45309; font-size: 12px;')
         discount_row.addWidget(self.discount_hint, 1)
-        layout.addLayout(discount_row)
+        layout.addWidget(self._discount_row_widget)
         loyalty_row = QHBoxLayout()
         self.loyalty_hint = QLabel('')
         self.loyalty_hint.setStyleSheet('color: #64748b; font-size: 12px;')
@@ -261,13 +265,12 @@ class POSPage(QWidget):
         cat_layout = self._catalog.layout()
         if cat_layout is not None:
             cat_layout.insertWidget(1, host)
-        self.client_search.setVisible(False)
-        if self.client_search.parentWidget() is not None:
-            self.client_search.parentWidget().setVisible(False)
-        # Fidélité bénéfices aussi sur Maquis (comme paramétrable) — visible admin/caisse
+        # Masquer uniquement les blocs boutique (pas le panneau panier entier)
+        self._client_row_widget.setVisible(False)
+        self._client_hint.setVisible(False)
+        self._discount_row_widget.setVisible(False)
+        # Fidélité bénéfices aussi sur Maquis — visible si activée
         self._loyalty_row_widget.setVisible(product_profile.supports_profit_loyalty())
-        if self.discount_input.parentWidget() is not None:
-            self.discount_input.parentWidget().setVisible(False)
         if hasattr(self, "_pending_row"):
             self._pending_row.setVisible(False)
         from app.services.maquis_cart_store import load_cart
