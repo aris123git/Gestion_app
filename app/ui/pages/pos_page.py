@@ -46,6 +46,7 @@ class POSPage(QWidget):
         self._waitress_combo: Optional[QComboBox] = None
         self._table_combo: Optional[QComboBox] = None
         self._save_order_btn: Optional[QPushButton] = None
+        self._pay_button: Optional[QPushButton] = None
         self._cart_panel = self._build_cart()
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
@@ -59,7 +60,6 @@ class POSPage(QWidget):
         self._scroll_layout.addWidget(self._cart_panel, 4)
         self._scroll.setWidget(self._scroll_host)
         self._root.addWidget(self._scroll, 1)
-        self._pay_button: Optional[QPushButton] = None
         self.state.layout_changed.connect(self._on_layout_changed)
         if self.state.layout is not None:
             self._on_layout_changed(self.state.layout)
