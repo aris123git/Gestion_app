@@ -1,8 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Spécification PyInstaller — bundle Windows **onedir** allégé.
+"""Spécification PyInstaller — **un seul fichier** ``GestionCommerciale.exe``.
 
-Sans ``collect_all(PySide6)`` (WebEngine, QML, Multimedia… → +150–200 Mo inutiles).
-On n'embarque que Core/Gui/Widgets + plugins nécessaires (platforms, images).
+Comme au début : onefile, rien d'autre à copier (pas de dossier ``_internal``).
 
 Usage :
     pyinstaller gestion_app.spec
@@ -12,7 +11,6 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_submodules
 
-# Modules UI critiques : forcer l'inclusion même si l'analyse rate un import.
 _CRITICAL_UI = [
     "app.ui.app",
     "app.ui.main_window",
@@ -27,7 +25,6 @@ _CRITICAL_UI = [
     "app.ui.theme",
 ]
 
-# Modules Qt inutilisés — exclus pour réduire la taille drastiquement.
 _QT_EXCLUDES = [
     "PySide6.QtWebEngine",
     "PySide6.QtWebEngineCore",
@@ -75,7 +72,6 @@ _QT_EXCLUDES = [
 
 
 def _qt_plugin_datas() -> list[tuple[str, str]]:
-    """Plugins Qt minimaux (pas multimedia / qml / webengine)."""
     try:
         import PySide6
     except ImportError:
@@ -97,9 +93,7 @@ def _qt_plugin_datas() -> list[tuple[str, str]]:
     for name in wanted:
         src = plugins_root / name
         if src.is_dir():
-            # Dest alignée avec pyi_rth_pyside6.py → PySide6/Qt/plugins/...
             datas.append((str(src), f"PySide6/Qt/plugins/{name}"))
-    # Traductions Qt FR (messages boîtes de dialogue natives) — optionnel / léger
     for tr_root in (root / "Qt" / "translations", root / "translations"):
         if not tr_root.is_dir():
             continue
@@ -147,58 +141,32 @@ a = Analysis(
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
-    # Modules en fichiers → un antivirus qui bloque un fichier n'efface pas tout.
-    noarchive=True,
+    noarchive=False,
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 _icon = "app/assets/icon.ico" if Path("app/assets/icon.ico").is_file() else None
 
+# Un seul fichier autonome — rien d'autre à copier.
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name="GestionCommerciale",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon=_icon,
-)
-
-exe_console = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name="GestionCommerciale_console",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    console=True,
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=_icon,
-)
-
-coll = COLLECT(
-    exe,
-    exe_console,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name="GestionCommerciale",
 )

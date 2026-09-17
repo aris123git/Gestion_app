@@ -1,7 +1,5 @@
-; ===================================================================
-;  Installateur Windows — 1 fichier Setup.exe à copier sur clé / PC.
-;  Embarque le bundle onedir complet (exe + _internal).
-; ===================================================================
+; Installateur optionnel (Inno Setup) autour du seul GestionCommerciale.exe.
+; Préférer copier directement dist\GestionCommerciale.exe.
 
 #define MyAppName "Gestion Commerciale"
 #define MyAppVersion "1.0.0"
@@ -31,7 +29,7 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer une icône sur le bureau"; GroupDescription: "Icônes supplémentaires:"
 
 [Files]
-Source: "dist\GestionCommerciale\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\GestionCommerciale.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

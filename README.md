@@ -138,33 +138,25 @@ ou manuellement :
 pyinstaller gestion_app.spec --noconfirm
 ```
 
-L'application est générée en mode **onedir** :
-`dist/GestionCommerciale/` (`GestionCommerciale.exe` + `_internal`).
-Le pack est **allégé** (sans Qt WebEngine / QML / Multimedia) : typiquement
-très inférieur à l'ancien EXE onefile (~220 Mo).
+L'application est générée en **un seul fichier** :
+`dist/GestionCommerciale.exe` (PyInstaller **onefile**).
 
-**Un seul fichier à copier (recommandé) :** l'artefact CI
-`GestionCommerciale-Setup` → `GestionCommerciale_Setup.exe`.
-Sur le PC cible : double-clic → Installer. Pas d'EXE « onefile » :
-Windows Defender casse souvent l'extraction dans `%TEMP%` et provoque
-`ModuleNotFoundError: app.ui.main_window` (même si le module est dans l'EXE).
+Copiez **uniquement** cet EXE sur la clé USB ou le PC — rien d'autre
+(pas de dossier `_internal`, pas de ZIP obligatoire).
 
-**Alternative portable :** ZIP `GestionCommerciale_portable.zip` → Extraire tout
-→ `LANCER.bat`. Ne copiez jamais l'exe seul (sans `_internal`).
+Artefact CI : **GestionCommerciale-Windows** → `GestionCommerciale.exe`.
 
-**L'app ne démarre pas ?**
+**L'app ne démarre pas / erreur main_window ?**
 
-1. Lancez `GestionCommerciale_console.exe` dans le dossier installé.
-2. Exclusion antivirus sur le dossier d'installation.
-3. Journal : `%APPDATA%\GestionCommerciale\startup_error.log`.
+1. Exclusion antivirus sur `GestionCommerciale.exe` (souvent requis au 1er
+   lancement : extraction dans `%TEMP%`).
+2. Journal : `%APPDATA%\GestionCommerciale\startup_error.log`.
 
-## Génération de l'installateur Windows
+## Génération de l'installateur Windows (optionnel)
 
-1. `build_windows.bat` (produit aussi `Output\GestionCommerciale_Setup.exe`
-   si Inno Setup est installé).
-2. Sinon : installer [Inno Setup](https://jrsoftware.org/isinfo.php) puis
-   compiler `installer.iss`.
-3. Sur GitHub Actions : artefact **GestionCommerciale-Setup**.
+1. Générer d'abord `dist\GestionCommerciale.exe`.
+2. Installer [Inno Setup](https://jrsoftware.org/isinfo.php) puis compiler
+   `installer.iss` → `Output\GestionCommerciale_Setup.exe`.
 
 ---
 
