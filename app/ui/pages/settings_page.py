@@ -159,6 +159,23 @@ class SettingsPage(QWidget):
         self.catalog_categories.setChecked(catalog_features.category_browser_enabled())
         form.addRow('', self.catalog_images)
         form.addRow('', self.catalog_categories)
+        catalog_hint = QLabel(t('settings.catalog_actions_hint'))
+        catalog_hint.setWordWrap(True)
+        catalog_hint.setStyleSheet('color: #64748b; font-size: 12px;')
+        form.addRow('', catalog_hint)
+        catalog_actions = QHBoxLayout()
+        self._btn_add_category = QPushButton('+ ' + t('categories.new'))
+        self._btn_add_category.clicked.connect(self._quick_add_category)
+        self._btn_add_product_image = QPushButton(t('settings.catalog_add_product_image'))
+        self._btn_add_product_image.setObjectName('Primary')
+        self._btn_add_product_image.clicked.connect(self._quick_add_product_with_image)
+        catalog_actions.addWidget(self._btn_add_category)
+        catalog_actions.addWidget(self._btn_add_product_image)
+        catalog_actions.addStretch()
+        form.addRow('', catalog_actions)
+        self.catalog_images.toggled.connect(self._sync_catalog_action_buttons)
+        self.catalog_categories.toggled.connect(self._sync_catalog_action_buttons)
+        self._sync_catalog_action_buttons()
         from app.services import product_profile as _pp
 
         self._maquis_tables_cb = None
@@ -182,6 +199,50 @@ class SettingsPage(QWidget):
         outer.addWidget(save)
         outer.addStretch()
         return wrap
+
+    def _sync_catalog_action_buttons(self, *_args) -> None:
+        # Toujours disponibles : on prépare catégories / images puis on active l'affichage.
+        self._btn_add_category.setEnabled(True)
+        self._btn_add_product_image.setEnabled(True)
+
+    def _persist_catalog_flags(self) -> None:
+        from app.services import catalog_features
+
+        catalog_features.set_product_images_enabled(self.catalog_images.isChecked())
+        catalog_features.set_category_browser_enabled(self.catalog_categories.isChecked())
+
+    def _quick_add_category(self) -> None:
+        from app.controllers.category_controller import CategoryController
+        from app.ui.dialogs.category_dialog import CategoryDialog
+
+        self._persist_catalog_flags()
+        dialog = CategoryDialog(parent=self)
+        if dialog.exec() and dialog.data:
+            CategoryController.create(dialog.data['name'], dialog.data['description'])
+            self.state.notify_data_changed()
+            info(self, t('settings.catalog_category_added'), t('categories.new'))
+
+    def _quick_add_product_with_image(self) -> None:
+        from app.controllers.product_controller import ProductController
+        from app.services import permissions as perms
+        from app.ui.dialogs.product_dialog import ProductDialog
+
+        if not self.state.can(perms.MANAGE_PRODUCTS):
+            warn(self, t("Vous n'avez pas l'autorisation d'ajouter un produit."))
+            return
+        self._persist_catalog_flags()
+        dialog = ProductDialog(parent=self)
+        if dialog.exec() and dialog.data:
+            product = ProductController.create(dialog.data)
+            audit_service.log_action(
+                'Création produit',
+                'Product',
+                product.name,
+                self.state.user_id,
+                getattr(self.state.current_user, 'username', ''),
+            )
+            self.state.notify_data_changed()
+            info(self, t('settings.catalog_product_added'), t('pos.product'))
 
     def _pick_logo(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, 'Choisir un logo', '', 'Images (*.png *.jpg *.jpeg *.bmp)')

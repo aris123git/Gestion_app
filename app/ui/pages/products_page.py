@@ -35,6 +35,13 @@ class ProductsPage(QWidget):
         header.addWidget(self.export_button)
         header.addWidget(self.add_button)
         layout.addLayout(header)
+        from app.services import catalog_features
+
+        self._catalog_hint = QLabel('')
+        self._catalog_hint.setWordWrap(True)
+        self._catalog_hint.setStyleSheet('color: #1d4ed8; font-size: 12px;')
+        layout.addWidget(self._catalog_hint)
+        self._refresh_catalog_hint()
         filters = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText(t('Rechercher (nom, code-barres, référence)…'))
@@ -84,8 +91,20 @@ class ProductsPage(QWidget):
         self.delete_button.setVisible(can_delete)
         self.export_button.setVisible(self.state.can(perms.VIEW_PROFITS) or can_manage)
 
+    def _refresh_catalog_hint(self) -> None:
+        from app.services import catalog_features
+
+        bits = []
+        if catalog_features.product_images_enabled():
+            bits.append(t('product.upload_enabled_hint'))
+        if catalog_features.category_browser_enabled():
+            bits.append(t('product.add_category_tip'))
+        self._catalog_hint.setText(' '.join(bits))
+        self._catalog_hint.setVisible(bool(bits))
+
     def refresh(self) -> None:
         self._apply_permissions()
+        self._refresh_catalog_hint()
         self._reload_categories()
         products = ProductController.list(search=self.search.text().strip(), category_id=self.category_filter.currentData(), limit=self.LIST_LIMIT)
         self.limit_note.setText(f"Affichage limité aux {self.LIST_LIMIT} premiers produits. Affinez la recherche ou la catégorie si le produit recherché n'apparaît pas." if len(products) == self.LIST_LIMIT else '')
