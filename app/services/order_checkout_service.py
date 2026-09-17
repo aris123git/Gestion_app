@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.i18n import t
-from app.models.open_order import STATUS_OPEN, STATUS_UNPAID
+from app.models.open_order import STATUS_OPEN, STATUS_SERVED, STATUS_UNPAID
 from app.services import product_profile
 from app.services.maquis_payment_flow import checkout_order_maquis
 from app.services.order_service import OrderService
@@ -13,6 +13,8 @@ from app.ui.widgets.helpers import warn
 
 if TYPE_CHECKING:
     from app.ui.state import AppState
+
+_ACTIVE = (STATUS_OPEN, STATUS_SERVED, STATUS_UNPAID)
 
 
 def checkout_open_order(
@@ -23,7 +25,7 @@ def checkout_open_order(
     confirm_payment: bool = True,
 ) -> bool:
     order = OrderService.get(order_id)
-    if not order or order.status not in (STATUS_OPEN, STATUS_UNPAID):
+    if not order or order.status not in _ACTIVE:
         warn(parent, t("Commande introuvable ou déjà clôturée."))
         return False
     if not order.items:

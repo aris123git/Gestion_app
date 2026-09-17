@@ -13,7 +13,7 @@ from app import config
 from app.database.connection import session_scope
 from app.models.debt import DebtPayment
 from app.models.expense import Expense
-from app.models.open_order import STATUS_CANCELLED, STATUS_OPEN, STATUS_PAID, STATUS_UNPAID, OpenOrder
+from app.models.open_order import STATUS_CANCELLED, STATUS_OPEN, STATUS_PAID, STATUS_SERVED, STATUS_UNPAID, OpenOrder
 from app.models.open_order_payment import OpenOrderPayment
 from app.models.product import Product
 from app.services.cash_session_service import CashSessionService
@@ -113,7 +113,14 @@ _DEBT_LABELS = frozenset({config.PAYMENT_METHOD_CREDIT, "Dette", "DEBT"})
 
 
 def _is_open_status(status: str) -> bool:
-    return status in (STATUS_OPEN, STATUS_UNPAID, "EN_COURS", "NON_PAYEE")
+    return status in (
+        STATUS_OPEN,
+        STATUS_SERVED,
+        STATUS_UNPAID,
+        "EN_COURS",
+        "NON_PAYEE",
+        "SERVIE",
+    )
 
 
 def _is_paid_status(status: str) -> bool:

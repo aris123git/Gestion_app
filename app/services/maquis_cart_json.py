@@ -15,20 +15,23 @@ def _sanitize(name: str) -> str:
 
 
 def encode_cart(lines: List[CartLine]) -> str:
+    """Encode aussi montant libre (flag free=1) ; ignore offerts fidélité."""
     parts: List[str] = []
     for line in lines:
-        if line.free_amount or line.loyalty_reward:
+        if line.loyalty_reward:
             continue
-        if not line.product_id:
+        if not line.product_id and not line.free_amount:
             continue
+        free_flag = "1" if line.free_amount else "0"
+        pid = int(line.product_id or 0)
         parts.append(
             _FIELD_SEP.join(
                 [
-                    str(int(line.product_id)),
+                    str(pid),
                     _sanitize(line.name or ""),
                     str(line.unit_price),
                     str(line.quantity),
-                    "",
+                    free_flag,
                     str(line.purchase_price or 0),
                 ]
             )
@@ -51,16 +54,21 @@ def decode_cart(raw: str | None) -> List[CartLine]:
             name = fields[1]
             unit_price = float(fields[2])
             quantity = float(fields[3])
+            free_flag = fields[4] if len(fields) > 4 else ""
             purchase = float(fields[5]) if len(fields) > 5 and fields[5] else 0.0
             if quantity <= 0:
                 continue
+            free_amount = free_flag == "1"
+            if not pid and not free_amount:
+                continue
             out.append(
                 CartLine(
-                    product_id=pid,
+                    product_id=pid or None,
                     name=name,
                     unit_price=unit_price,
                     quantity=quantity,
                     purchase_price=purchase,
+                    free_amount=free_amount,
                 )
             )
     except (ValueError, TypeError):

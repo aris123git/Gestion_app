@@ -16,10 +16,13 @@ from PySide6.QtWidgets import (
 )
 
 from app.i18n import t
-from app.models.open_order import STATUS_OPEN
+from app.models.open_order import STATUS_CANCELLED, STATUS_PAID
 from app.services import settings_service
 from app.services.order_service import OrderService
+from app.services.order_status_labels import label_for_status
 from app.utils.helpers import format_money
+
+_CLOSED = frozenset({STATUS_PAID, STATUS_CANCELLED})
 
 
 class OrderHistoryPage(QWidget):
@@ -71,7 +74,7 @@ class OrderHistoryPage(QWidget):
         currency = settings_service.get_shop_info().currency or "FCFA"
         q = self.search.text().strip().lower()
         rows = OrderService.list_recent(limit=200)
-        rows = [o for o in rows if o.status != STATUS_OPEN]
+        rows = [o for o in rows if o.status in _CLOSED]
         if q:
             rows = [
                 o
@@ -94,7 +97,7 @@ class OrderHistoryPage(QWidget):
             self.table.setItem(i, 1, QTableWidgetItem(table_name))
             self.table.setItem(i, 2, QTableWidgetItem(waitress))
             self.table.setItem(i, 3, QTableWidgetItem(format_money(float(o.total or 0), currency)))
-            self.table.setItem(i, 4, QTableWidgetItem(o.status))
+            self.table.setItem(i, 4, QTableWidgetItem(label_for_status(o.status)))
             self.table.setItem(i, 5, QTableWidgetItem(closed))
 
     def _open_selected(self) -> None:

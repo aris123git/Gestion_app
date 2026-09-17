@@ -11,7 +11,7 @@ from app import config
 from app.controllers.category_controller import CategoryController
 from app.controllers.unit_controller import UnitController
 from app.i18n import t
-from app.services import catalog_features
+from app.services import catalog_features, product_profile
 from app.ui.widgets.helpers import warn
 
 class ProductDialog(QDialog):
@@ -20,9 +20,10 @@ class ProductDialog(QDialog):
     def __init__(self, product=None, parent=None):
         super().__init__(parent)
         self.product = product
+        self._maquis = product_profile.is_maquis()
         self.setWindowTitle(t('pos.product'))
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(480 if self._maquis else 520)
         self.data: Optional[dict] = None
         self._image_path = ''
         layout = QVBoxLayout(self)
@@ -46,13 +47,13 @@ class ProductDialog(QDialog):
         self.pack_content = self._qty_spin()
         self.quantity = self._qty_spin()
         self.min_stock = self._qty_spin()
-        self.free_amount_sale = QCheckBox('Vente : montant libre')
+        self.free_amount_sale = QCheckBox(t('Vente : montant libre'))
         self.free_amount_sale.setToolTip(t("Le caissier saisit un montant (ex. 300 F) au lieu d'une quantité. Le prix de vente sert à estimer la marge."))
         self.free_hint = QLabel(t('Exemple poissonnerie : achat 10 000 F/carton, contenu 10 kg, vente 1 500 F/kg → à la caisse on saisit « 300 F ».'))
         self.free_hint.setWordWrap(True)
         self.free_hint.setStyleSheet('color: #64748b; font-size: 12px;')
         self.free_amount_sale.toggled.connect(self._toggle_free_mode)
-        self.is_active = QCheckBox('Produit actif')
+        self.is_active = QCheckBox(t('Produit actif'))
         self.is_active.setChecked(True)
         form.addRow(t('Nom *'), self.name)
         cat_row = QHBoxLayout()
@@ -63,13 +64,26 @@ class ProductDialog(QDialog):
         self._add_category_btn.clicked.connect(self._add_category)
         cat_row.addWidget(self._add_category_btn)
         form.addRow(t('Catégorie'), cat_row)
-        form.addRow(t('Code-barres'), self.barcode)
-        form.addRow(t('Référence'), self.reference)
-        form.addRow(t("Prix d'achat (ex. F / carton)"), self.purchase_price)
-        form.addRow(t('Contenu estimatif (ex. kg / carton)'), self.pack_content)
-        form.addRow(t('Prix de vente (ex. F / kg)'), self.sale_price)
+        # Maquis tablette : pas de code-barres / référence boutique
+        self._barcode_label = QLabel(t('Code-barres'))
+        self._ref_label = QLabel(t('Référence'))
+        form.addRow(self._barcode_label, self.barcode)
+        form.addRow(self._ref_label, self.reference)
+        if self._maquis:
+            buy_label = t("Prix d'achat")
+            sale_label = t('Prix de vente')
+            stock_label = t('Stock')
+            pack_label = t('Contenu / pack')
+        else:
+            buy_label = t("Prix d'achat (ex. F / carton)")
+            sale_label = t('Prix de vente (ex. F / kg)')
+            stock_label = t('Stock (ex. cartons)')
+            pack_label = t('Contenu estimatif (ex. kg / carton)')
+        form.addRow(buy_label, self.purchase_price)
+        form.addRow(pack_label, self.pack_content)
+        form.addRow(sale_label, self.sale_price)
         form.addRow(t('Prix minimum'), self.min_price)
-        form.addRow(t('Stock (ex. cartons)'), self.quantity)
+        form.addRow(stock_label, self.quantity)
         form.addRow(t('Stock minimum'), self.min_stock)
         form.addRow(t('Unité de stock'), self.unit)
         form.addRow(t('Mode de vente'), self.free_amount_sale)
@@ -97,6 +111,14 @@ class ProductDialog(QDialog):
         img_wrap.addWidget(self._image_hint)
         form.addRow(t('product.image'), img_wrap)
         self._apply_catalog_feature_ui()
+        if self._maquis:
+            self.barcode.setVisible(False)
+            self.reference.setVisible(False)
+            self._barcode_label.setVisible(False)
+            self._ref_label.setVisible(False)
+            # Masquer aussi les labels de ligne FormLayout
+            self.barcode.hide()
+            self.reference.hide()
         layout.addLayout(form)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('common.cancel'))

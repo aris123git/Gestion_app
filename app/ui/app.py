@@ -64,6 +64,8 @@ class AppController:
         dialog.exec()
         ok = bool(dialog.selected)
         dialog.deleteLater()
+        if ok:
+            apply_theme(self.app, self.state.dark)
         self.app.processEvents()
         return ok
 

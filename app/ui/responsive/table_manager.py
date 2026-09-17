@@ -124,6 +124,14 @@ PRODUCT_COLUMNS: tuple[ColumnSpec, ...] = (
     ColumnSpec("unit", 2, 70),
 )
 
+PRODUCT_COLUMNS_MAQUIS: tuple[ColumnSpec, ...] = (
+    ColumnSpec("name", 1, 160, stretch=True),
+    ColumnSpec("category", 2, 110),
+    ColumnSpec("sale_price", 1, 100),
+    ColumnSpec("stock", 1, 80),
+    ColumnSpec("unit", 2, 70),
+)
+
 CLIENT_COLUMNS: tuple[ColumnSpec, ...] = (
     ColumnSpec("name", 1, 140, stretch=True),
     ColumnSpec("phone", 1, 110),

@@ -6,20 +6,22 @@ from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeader
 from app.controllers.category_controller import CategoryController
 from app.controllers.product_controller import ProductController
 from app.reports.excel_report import export_products_excel
-from app.services import audit_service, permissions as perms, settings_service
+from app.services import audit_service, permissions as perms, product_profile, settings_service
 from app.ui.dialogs.product_dialog import ProductDialog
-from app.ui.responsive import PRODUCT_COLUMNS, LayoutProfile, TableColumnController
+from app.ui.responsive import PRODUCT_COLUMNS, PRODUCT_COLUMNS_MAQUIS, LayoutProfile, TableColumnController
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, page_title, warn
 from app.utils.helpers import format_money, format_quantity
 
 class ProductsPage(QWidget):
     HEADERS = ['Nom', 'Catégorie', 'Code-barres', 'Prix vente', 'Stock', 'Unité']
+    HEADERS_MAQUIS = ['Nom', 'Catégorie', 'Prix vente', 'Stock', 'Unité']
     LIST_LIMIT = 5000
 
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
+        self._maquis = product_profile.is_maquis()
         self._ids: list[int] = []
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -44,7 +46,12 @@ class ProductsPage(QWidget):
         self._refresh_catalog_hint()
         filters = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText(t('Rechercher (nom, code-barres, référence)…'))
+        placeholder = (
+            t('Rechercher (nom)…')
+            if self._maquis
+            else t('Rechercher (nom, code-barres, référence)…')
+        )
+        self.search.setPlaceholderText(placeholder)
         self.search.textChanged.connect(self.refresh)
         self.category_filter = QComboBox()
         self.category_filter.currentIndexChanged.connect(self.refresh)
@@ -55,14 +62,17 @@ class ProductsPage(QWidget):
         self.limit_note.setStyleSheet('color: #b45309; font-size: 12px;')
         self.limit_note.setWordWrap(True)
         layout.addWidget(self.limit_note)
-        self.table = QTableWidget(0, len(self.HEADERS))
-        self.table.setHorizontalHeaderLabels(self.HEADERS)
+        headers = self.HEADERS_MAQUIS if self._maquis else self.HEADERS
+        self.table = QTableWidget(0, len(headers))
+        self.table.setHorizontalHeaderLabels([t(h) for h in headers])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
-        self._columns = TableColumnController(self.table, PRODUCT_COLUMNS)
+        self._columns = TableColumnController(
+            self.table, PRODUCT_COLUMNS_MAQUIS if self._maquis else PRODUCT_COLUMNS
+        )
         actions = QHBoxLayout()
         actions.addStretch()
         self.edit_button = QPushButton(t('Modifier'))
@@ -117,19 +127,29 @@ class ProductsPage(QWidget):
                 name = f'{product.name} · montant libre'
             self.table.setItem(row, 0, QTableWidgetItem(name))
             self.table.setItem(row, 1, QTableWidgetItem(product.category_name))
-            self.table.setItem(row, 2, QTableWidgetItem(product.barcode))
             if getattr(product, 'free_amount_sale', False):
                 price_txt = f'réf. {format_money(product.sale_price, currency)}/kg'
             else:
                 price_txt = format_money(product.sale_price, currency)
-            self.table.setItem(row, 3, QTableWidgetItem(price_txt))
-            stock_item = QTableWidgetItem(format_quantity(product.quantity))
-            if product.is_out_of_stock:
-                stock_item.setForeground(Qt.GlobalColor.red)
-            elif product.is_low_stock:
-                stock_item.setForeground(Qt.GlobalColor.darkYellow)
-            self.table.setItem(row, 4, stock_item)
-            self.table.setItem(row, 5, QTableWidgetItem(product.unit_name))
+            if self._maquis:
+                self.table.setItem(row, 2, QTableWidgetItem(price_txt))
+                stock_item = QTableWidgetItem(format_quantity(product.quantity))
+                if product.is_out_of_stock:
+                    stock_item.setForeground(Qt.GlobalColor.red)
+                elif product.is_low_stock:
+                    stock_item.setForeground(Qt.GlobalColor.darkYellow)
+                self.table.setItem(row, 3, stock_item)
+                self.table.setItem(row, 4, QTableWidgetItem(product.unit_name))
+            else:
+                self.table.setItem(row, 2, QTableWidgetItem(product.barcode))
+                self.table.setItem(row, 3, QTableWidgetItem(price_txt))
+                stock_item = QTableWidgetItem(format_quantity(product.quantity))
+                if product.is_out_of_stock:
+                    stock_item.setForeground(Qt.GlobalColor.red)
+                elif product.is_low_stock:
+                    stock_item.setForeground(Qt.GlobalColor.darkYellow)
+                self.table.setItem(row, 4, stock_item)
+                self.table.setItem(row, 5, QTableWidgetItem(product.unit_name))
 
     def _reload_categories(self) -> None:
         current = self.category_filter.currentData()
