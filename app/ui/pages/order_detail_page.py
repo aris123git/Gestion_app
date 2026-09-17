@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.i18n import t
-from app.models.open_order import STATUS_OPEN, STATUS_UNPAID
+from app.models.open_order import STATUS_OPEN, STATUS_SERVED, STATUS_UNPAID
 from app.services import permissions as perms, settings_service
 from app.services.maquis_kitchen import print_kitchen_for_order
 from app.services.order_status_labels import label_for_status
@@ -29,6 +29,8 @@ from app.ui.state import AppState
 from app.ui.widgets.helpers import info, warn
 from app.ui.widgets.pos_catalog_panel import PosCatalogPanel
 from app.utils.helpers import format_money, format_quantity
+
+_ACTIVE = (STATUS_OPEN, STATUS_SERVED, STATUS_UNPAID)
 
 
 class OrderDetailPage(QWidget):
@@ -69,8 +71,10 @@ class OrderDetailPage(QWidget):
         actions = QHBoxLayout()
         self.kitchen_btn = QPushButton(t("Bon serveur"))
         self.kitchen_btn.clicked.connect(self._print_kitchen)
+        self.served_btn = QPushButton(t("Marquer servie"))
+        self.served_btn.clicked.connect(self._mark_served)
         self.pay_btn = QPushButton(t("Marquer payée"))
-        self.pay_btn.setObjectName("Primary")
+        self.pay_btn.setObjectName("MaquisEncaisser")
         self.pay_btn.clicked.connect(self._pay)
         self.cancel_btn = QPushButton(t("Annuler"))
         self.cancel_btn.setObjectName("Danger")
@@ -82,6 +86,7 @@ class OrderDetailPage(QWidget):
         self.save_edit_btn.clicked.connect(self._save_edits)
         self.save_edit_btn.setVisible(False)
         actions.addWidget(self.kitchen_btn)
+        actions.addWidget(self.served_btn)
         actions.addStretch()
         actions.addWidget(self.edit_btn)
         actions.addWidget(self.save_edit_btn)
@@ -118,11 +123,11 @@ class OrderDetailPage(QWidget):
             f"{order.public_id} · {table_name} · {waitress} · {label_for_status(order.status)}"
         )
         currency = settings_service.get_currency()
-        open_order = order.status in (STATUS_OPEN, STATUS_UNPAID)
+        open_order = order.status in _ACTIVE
         self._edit_qty.clear()
         self.pay_btn.setText(
             t("Encaisser")
-            if order.status == STATUS_UNPAID
+            if order.status in (STATUS_UNPAID, STATUS_SERVED)
             else t("Marquer payée")
         )
         is_admin = getattr(self.state.current_user, "role", "") == perms.ROLE_ADMIN
@@ -130,6 +135,9 @@ class OrderDetailPage(QWidget):
         self.edit_btn.setVisible(open_order and is_admin and not self._editing)
         self.save_edit_btn.setVisible(open_order and is_admin and self._editing)
         self.pay_btn.setVisible(open_order and not self._editing)
+        self.served_btn.setVisible(
+            open_order and order.status == STATUS_OPEN and not self._editing
+        )
         self.catalog.setEnabled(open_order and not self._editing)
         items = list(order.items or [])
         self.lines.setRowCount(len(items))
@@ -170,6 +178,17 @@ class OrderDetailPage(QWidget):
     def _pay(self) -> None:
         if self.order_id and checkout_open_order(self.order_id, self.state, self):
             self._go_back()
+
+    def _mark_served(self) -> None:
+        if not self.order_id:
+            return
+        try:
+            OrderService.mark_served(self.order_id)
+            self.state.notify_data_changed()
+            self._reload_lines()
+            info(self, t("Commande marquée comme servie."), t("Servie"))
+        except Exception as exc:
+            warn(self, str(exc))
 
     def _toggle_edit(self) -> None:
         if getattr(self.state.current_user, "role", "") != perms.ROLE_ADMIN:

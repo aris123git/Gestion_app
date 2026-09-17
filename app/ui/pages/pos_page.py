@@ -32,7 +32,7 @@ class POSPage(QWidget):
         self._updating = False
         self._client_map: Dict[int, int] = {}
         self._pending_sale_id: Optional[int] = None
-        self._chip_buttons: list[QToolButton] = []
+        self._chip_buttons: list = []
         self._grid_product_ids: list[int] = []
         self._root = QHBoxLayout(self)
         self._root.setContentsMargins(12, 12, 12, 12)
@@ -146,6 +146,8 @@ class POSPage(QWidget):
         self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
         self.cart_table.setColumnWidth(self.COL_DEL, 44)
         self.cart_table.itemChanged.connect(self._on_cart_edited)
+        if self._maquis_mode:
+            self.cart_table.cellDoubleClicked.connect(self._maquis_edit_qty)
         layout.addWidget(self.cart_table)
         discount_row = QHBoxLayout()
         discount_row.addWidget(QLabel(t('pos.discount')))
@@ -203,18 +205,23 @@ class POSPage(QWidget):
         layout.addWidget(pay_button)
         self._pay_button = pay_button
         if product_profile.is_maquis():
-            save_btn = QPushButton("Enregistrer commande")
+            save_btn = QPushButton(t("Enregistrer commande"))
+            save_btn.setObjectName("MaquisEnregistrer")
             save_btn.clicked.connect(self._save_maquis_order)
             layout.insertWidget(layout.indexOf(pay_button), save_btn)
             self._save_order_btn = save_btn
-            pay_button.setText("Encaisser")
+            pay_button.setText(t("Encaisser"))
+            pay_button.setObjectName("MaquisEncaisser")
+            pay_button.setMinimumHeight(56)
         return panel
 
     def _apply_maquis_caisse_ui(self) -> None:
         """Alignement écran Caisse sur l'app tablette (serveuse, table, pas de ticket auto)."""
+        self.setObjectName("MaquisCaissePage")
         bar = QHBoxLayout()
         self._waitress_combo = QComboBox()
-        self._waitress_combo.addItem("Aucune", None)
+        self._waitress_combo.setMinimumHeight(40)
+        self._waitress_combo.addItem(t("Aucune"), None)
         from sqlalchemy import select
 
         from app.database.connection import session_scope
@@ -232,7 +239,8 @@ class POSPage(QWidget):
             if u.is_waitress or u.role in (perms.ROLE_CASHIER, perms.ROLE_MANAGER):
                 self._waitress_combo.addItem(u.full_name or u.username, u.id)
         self._table_combo = QComboBox()
-        self._table_combo.addItem("Aucune", None)
+        self._table_combo.setMinimumHeight(40)
+        self._table_combo.addItem(t("Aucune"), None)
         from app.services.table_service import TableService
 
         from app.services.maquis_settings import tables_enabled
@@ -244,9 +252,9 @@ class POSPage(QWidget):
         else:
             self._table_combo.setEnabled(False)
             self._table_combo.addItem(t("Tables désactivées"), None)
-        bar.addWidget(QLabel("Serveuse"))
+        bar.addWidget(QLabel(t("Serveuse")))
         bar.addWidget(self._waitress_combo, 1)
-        bar.addWidget(QLabel("Table"))
+        bar.addWidget(QLabel(t("Table")))
         bar.addWidget(self._table_combo, 1)
         host = QWidget()
         host.setLayout(bar)
@@ -254,10 +262,12 @@ class POSPage(QWidget):
         if cat_layout is not None:
             cat_layout.insertWidget(1, host)
         self.client_search.setVisible(False)
-        self.client_search.parentWidget().setVisible(False) if self.client_search.parentWidget() else None
-        for w in (self._loyalty_row_widget,):
-            w.setVisible(False)
-        self.discount_input.parentWidget().setVisible(False) if self.discount_input.parentWidget() else None
+        if self.client_search.parentWidget() is not None:
+            self.client_search.parentWidget().setVisible(False)
+        # Fidélité bénéfices aussi sur Maquis (comme paramétrable) — visible admin/caisse
+        self._loyalty_row_widget.setVisible(product_profile.supports_profit_loyalty())
+        if self.discount_input.parentWidget() is not None:
+            self.discount_input.parentWidget().setVisible(False)
         if hasattr(self, "_pending_row"):
             self._pending_row.setVisible(False)
         from app.services.maquis_cart_store import load_cart
@@ -266,6 +276,30 @@ class POSPage(QWidget):
         if saved:
             self.cart = saved
             self._render_cart()
+
+    def _maquis_edit_qty(self, row: int, column: int) -> None:
+        """Double-clic quantité → pavé tactile (parité tablette)."""
+        if column != self.COL_QTY or row < 0 or row >= len(self.cart):
+            return
+        line = self.cart[row]
+        if line.free_amount or line.loyalty_reward:
+            return
+        from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
+
+        dlg = QuantityPadDialog(line.name, parent=self, initial=float(line.quantity))
+        if not dlg.exec() or dlg.quantity <= 0:
+            return
+        if line.product_id:
+            stock = self._available_stock(line.product_id, exclude_cart=True)
+            if dlg.quantity > stock + 0.0001:
+                warn(
+                    self,
+                    t("Stock insuffisant"),
+                    t("Stock insuffisant"),
+                )
+                return
+        line.quantity = dlg.quantity
+        self._render_cart()
 
     def _maquis_product_tap(self, product) -> None:
         from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
@@ -326,10 +360,11 @@ class POSPage(QWidget):
             )
             from app.printers.ticket.options import is_kitchen_ticket_enabled
             from app.services.maquis_kitchen import print_kitchen_for_order
+            from app.services.maquis_settings import kitchen_prompt_after_save
             from app.ui.dialogs.saved_order_prompt_dialog import SavedOrderPromptDialog
 
             user = getattr(self.state.current_user, "username", "") or ""
-            print_enabled = is_kitchen_ticket_enabled()
+            print_enabled = is_kitchen_ticket_enabled() and kitchen_prompt_after_save()
             print_message = None
             if print_enabled:
                 ok, print_message = print_kitchen_for_order(
@@ -337,15 +372,16 @@ class POSPage(QWidget):
                 )
                 if ok:
                     print_message = print_message or t("Ticket imprimé")
-            prompt = SavedOrderPromptDialog(
-                order.public_id,
-                print_enabled,
-                print_message or "",
-                parent=self,
-            )
-            prompt.exec()
-            if prompt.reprint_requested:
-                print_kitchen_for_order(order.id, cashier_name=user)
+            if print_enabled or is_kitchen_ticket_enabled():
+                prompt = SavedOrderPromptDialog(
+                    order.public_id,
+                    is_kitchen_ticket_enabled(),
+                    print_message or "",
+                    parent=self,
+                )
+                prompt.exec()
+                if prompt.reprint_requested:
+                    print_kitchen_for_order(order.id, cashier_name=user)
             self._clear_cart()
             self.state.notify_data_changed()
         except Exception as exc:
@@ -577,9 +613,12 @@ class POSPage(QWidget):
             else:
                 qty_item = QTableWidgetItem(format_quantity(line.quantity))
                 qty_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if self._maquis_mode:
+                    qty_item.setFlags(qty_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    qty_item.setToolTip(t("Double-clic pour modifier la quantité (pavé)"))
                 price_item = QTableWidgetItem(f'{float(line.unit_price):g}')
                 price_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if not self.state.can(perms.MANAGE_PRICES):
+                if self._maquis_mode or not self.state.can(perms.MANAGE_PRICES):
                     price_item.setFlags(price_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 total_item = QTableWidgetItem(format_money(line.total, currency))
             total_item.setFlags(total_item.flags() & ~Qt.ItemFlag.ItemIsEditable)

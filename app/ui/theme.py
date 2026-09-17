@@ -9,6 +9,9 @@ from __future__ import annotations
 
 PRIMARY = "#2563eb"
 PRIMARY_DARK = "#1d4ed8"
+# Accent Maquis Caisse (tablette / restaurant) — distinct de Gestion App.
+MAQUIS_PRIMARY = "#ea580c"
+MAQUIS_PRIMARY_DARK = "#c2410c"
 SUCCESS = "#16a34a"
 DANGER = "#dc2626"
 WARNING = "#f59e0b"
@@ -40,9 +43,13 @@ DARK = {
 }
 
 
-def build_stylesheet(dark: bool = False) -> str:
+def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     """Construit la QSS complète pour le thème demandé."""
     c = DARK if dark else LIGHT
+    primary = MAQUIS_PRIMARY if maquis else PRIMARY
+    primary_dark = MAQUIS_PRIMARY_DARK if maquis else PRIMARY_DARK
+    c = dict(c)
+    c["sidebar_active"] = primary
     return f"""
     QWidget {{
         background-color: {c['bg']};
@@ -129,11 +136,11 @@ def build_stylesheet(dark: bool = False) -> str:
         border: 1px solid {c['border']};
         border-radius: 8px;
         padding: 8px 10px;
-        selection-background-color: {PRIMARY};
+        selection-background-color: {primary};
     }}
     QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus,
     QDateEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
-        border: 1px solid {PRIMARY};
+        border: 1px solid {primary};
     }}
     QComboBox::drop-down {{
         subcontrol-origin: padding;
@@ -159,11 +166,11 @@ def build_stylesheet(dark: bool = False) -> str:
         padding: 9px 16px;
         font-weight: 600;
     }}
-    QPushButton:hover {{ border-color: {PRIMARY}; }}
+    QPushButton:hover {{ border-color: {primary}; }}
     QPushButton#Primary {{
-        background-color: {PRIMARY}; color: #ffffff; border: none;
+        background-color: {primary}; color: #ffffff; border: none;
     }}
-    QPushButton#Primary:hover {{ background-color: {PRIMARY_DARK}; }}
+    QPushButton#Primary:hover {{ background-color: {primary_dark}; }}
     QPushButton#Success {{ background-color: {SUCCESS}; color: #ffffff; border: none; }}
     QPushButton#Danger {{ background-color: {DANGER}; color: #ffffff; border: none; }}
     QPushButton:disabled {{ color: {c['muted']}; }}
@@ -174,7 +181,7 @@ def build_stylesheet(dark: bool = False) -> str:
         border: 1px solid {c['border']};
         border-radius: 10px;
         gridline-color: {c['border']};
-        selection-background-color: {PRIMARY};
+        selection-background-color: {primary};
         selection-color: #ffffff;
     }}
     QHeaderView::section {{
@@ -196,14 +203,55 @@ def build_stylesheet(dark: bool = False) -> str:
         border-top-right-radius: 8px;
         margin-right: 2px;
     }}
-    QTabBar::tab:selected {{ background: {PRIMARY}; color: #ffffff; }}
+    QTabBar::tab:selected {{ background: {primary}; color: #ffffff; }}
 
     QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
     QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 5px; min-height: 30px; }}
     QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
+
+    /* Maquis — pavé quantité / caisse tactile */
+    #MaquisPadDisplay {{
+        background-color: {c['surface']};
+        border: 2px solid {primary};
+        border-radius: 12px;
+        font-size: 36px;
+        font-weight: 800;
+        padding: 8px;
+    }}
+    QPushButton#MaquisPadKey {{
+        font-size: 22px;
+        font-weight: 700;
+        border-radius: 12px;
+        min-height: 64px;
+    }}
+    QPushButton#MaquisEncaisser {{
+        background-color: {SUCCESS};
+        color: #ffffff;
+        border: none;
+        border-radius: 12px;
+        font-size: 18px;
+        font-weight: 800;
+        min-height: 56px;
+    }}
+    QPushButton#MaquisEnregistrer {{
+        background-color: {primary};
+        color: #ffffff;
+        border: none;
+        border-radius: 12px;
+        font-size: 16px;
+        font-weight: 700;
+        min-height: 52px;
+    }}
     """
 
 
 def apply_theme(app, dark: bool = False) -> None:
-    """Applique le thème à l'application Qt."""
-    app.setStyleSheet(build_stylesheet(dark))
+    """Applique le thème à l'application Qt (accent Maquis si produit Maquis)."""
+    maquis = False
+    try:
+        from app.services import product_profile
+
+        maquis = product_profile.is_product_chosen() and product_profile.is_maquis()
+    except Exception:
+        maquis = False
+    app.setStyleSheet(build_stylesheet(dark, maquis=maquis))

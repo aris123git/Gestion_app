@@ -25,8 +25,9 @@ from PySide6.QtWidgets import (
 
 from app.controllers.product_controller import ProductController
 from app.i18n import t
-from app.services import catalog_features, settings_service
+from app.services import catalog_features, product_profile, settings_service
 from app.ui.responsive import LayoutProfile
+from app.ui.theme import MAQUIS_PRIMARY, PRIMARY
 from app.ui.widgets.helpers import page_title, warn
 from app.utils.helpers import format_money, format_quantity
 
@@ -39,6 +40,8 @@ class PosCatalogPanel(QFrame):
     def __init__(self, parent: QWidget | None = None, *, show_pos_title: bool = True):
         super().__init__(parent)
         self.setObjectName("Card")
+        self._maquis = product_profile.is_maquis()
+        self._accent = MAQUIS_PRIMARY if self._maquis else PRIMARY
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
@@ -49,7 +52,11 @@ class PosCatalogPanel(QFrame):
         self.barcode_input.setPlaceholderText(t("pos.barcode"))
         self.barcode_input.returnPressed.connect(self._add_by_barcode)
         search_row.addWidget(self.barcode_input)
-        layout.addLayout(search_row)
+        self._barcode_row = QWidget()
+        self._barcode_row.setLayout(search_row)
+        layout.addWidget(self._barcode_row)
+        if self._maquis:
+            self._barcode_row.setVisible(False)
         filter_row = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(t("pos.search_product"))
@@ -135,7 +142,10 @@ class PosCatalogPanel(QFrame):
         self.category_chips_scroll.setVisible(use_chips)
         self.product_table.setVisible(not use_images)
         self.product_grid_scroll.setVisible(use_images)
-        self.add_to_cart_btn.setVisible(not use_images)
+        # Tablette Maquis : tap carte = ajout (pas de bouton « Ajouter »)
+        self.add_to_cart_btn.setVisible(not use_images and not self._maquis)
+        if self._maquis:
+            self._barcode_row.setVisible(False)
 
     def _reload_categories(self) -> None:
         from app.controllers.category_controller import CategoryController
@@ -170,8 +180,8 @@ class PosCatalogPanel(QFrame):
             btn.setStyleSheet(
                 "QToolButton { padding: 6px 14px; border-radius: 18px; "
                 "border: 1px solid #cbd5e1; background: #f8fafc; }"
-                "QToolButton:checked { background: #2563eb; color: white; "
-                "border-color: #2563eb; }"
+                f"QToolButton:checked {{ background: {self._accent}; color: white; "
+                f"border-color: {self._accent}; }}"
             )
             btn.clicked.connect(lambda _=False, cid=cat_id: self._select_category_chip(cid))
             self.category_chips_layout.addWidget(btn)
@@ -209,7 +219,7 @@ class PosCatalogPanel(QFrame):
         card.setStyleSheet(
             "#ProductCard { border: 1px solid #e2e8f0; border-radius: 10px; "
             "background: #ffffff; }"
-            "#ProductCard:hover { border: 2px solid #2563eb; }"
+            f"#ProductCard:hover {{ border: 2px solid {self._accent}; }}"
         )
         box = QVBoxLayout(card)
         box.setContentsMargins(8, 8, 8, 8)

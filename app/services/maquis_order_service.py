@@ -10,7 +10,14 @@ from sqlalchemy import select
 from app import config
 from app.database.connection import session_scope
 from app.models.dining_table import STATUS_CLEANING, STATUS_FREE, STATUS_OCCUPIED
-from app.models.open_order import STATUS_CANCELLED, STATUS_OPEN, STATUS_PAID, STATUS_UNPAID, OpenOrder
+from app.models.open_order import (
+    STATUS_CANCELLED,
+    STATUS_OPEN,
+    STATUS_PAID,
+    STATUS_SERVED,
+    STATUS_UNPAID,
+    OpenOrder,
+)
 from app.models.open_order_payment import OpenOrderPayment
 from app.models.product import Product
 from app.models.stock import MOVEMENT_CORRECTION, MOVEMENT_SALE, StockMovement
@@ -119,7 +126,7 @@ def _set_table_after_pay(session, order: OpenOrder) -> None:
         return
     if order.status == STATUS_PAID:
         table.status = STATUS_CLEANING
-    elif order.status in (STATUS_OPEN, STATUS_UNPAID):
+    elif order.status in (STATUS_OPEN, STATUS_SERVED, STATUS_UNPAID):
         table.status = STATUS_OCCUPIED
 
 
@@ -158,7 +165,7 @@ class MaquisOrderService:
     ) -> OpenOrder:
         with session_scope() as session:
             order = session.get(OpenOrder, order_id)
-            if not order or order.status not in (STATUS_OPEN, STATUS_UNPAID):
+            if not order or order.status not in (STATUS_OPEN, STATUS_SERVED, STATUS_UNPAID):
                 raise ValueError("Commande non payable")
             paid_delta = 0.0
             debt_total = 0.0

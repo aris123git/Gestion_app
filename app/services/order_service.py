@@ -15,12 +15,15 @@ from app.models.open_order import (
     STATUS_CANCELLED,
     STATUS_OPEN,
     STATUS_PAID,
+    STATUS_SERVED,
     STATUS_UNPAID,
     OpenOrder,
     OpenOrderItem,
 )
 
-_ORDER_EDITABLE = frozenset({STATUS_OPEN, STATUS_UNPAID})
+# Ouverte, servie ou non payée : encore modifiable / encaissable.
+_ORDER_ACTIVE = frozenset({STATUS_OPEN, STATUS_SERVED, STATUS_UNPAID})
+_ORDER_EDITABLE = _ORDER_ACTIVE
 from app.services import table_service
 
 
@@ -54,7 +57,7 @@ class OrderService:
                 .options(joinedload(OpenOrder.items))
                 .where(
                     OpenOrder.table_id == table_id,
-                    OpenOrder.status.in_((STATUS_OPEN, STATUS_UNPAID)),
+                    OpenOrder.status.in_(tuple(_ORDER_ACTIVE)),
                 )
                 .order_by(OpenOrder.id.desc())
             ).first()
@@ -73,7 +76,7 @@ class OrderService:
                         joinedload(OpenOrder.table),
                         joinedload(OpenOrder.items),
                     )
-                    .where(OpenOrder.status.in_((STATUS_OPEN, STATUS_UNPAID)))
+                    .where(OpenOrder.status.in_(tuple(_ORDER_ACTIVE)))
                     .order_by(OpenOrder.id.desc())
                     .limit(limit)
                 )
@@ -395,7 +398,7 @@ class OrderService:
                     others = session.scalars(
                         select(OpenOrder).where(
                             OpenOrder.table_id == table.id,
-                            OpenOrder.status.in_((STATUS_OPEN, STATUS_UNPAID)),
+                            OpenOrder.status.in_(tuple(_ORDER_ACTIVE)),
                             OpenOrder.id != order.id,
                         )
                     ).first()
@@ -457,6 +460,24 @@ class OrderService:
             return order
 
     @staticmethod
+    def mark_served(order_id: int) -> OpenOrder:
+        """Marque la commande comme servie (parité tablette)."""
+        with session_scope() as session:
+            order = session.get(OpenOrder, order_id)
+            if not order:
+                raise ValueError("Commande introuvable.")
+            if order.status not in _ORDER_ACTIVE:
+                raise ValueError("Commande déjà clôturée.")
+            if order.status == STATUS_SERVED:
+                session.expunge(order)
+                return order
+            order.status = STATUS_SERVED
+            session.flush()
+            session.refresh(order)
+            session.expunge(order)
+            return order
+
+    @staticmethod
     def mark_paid(order_id: int) -> OpenOrder:
         with session_scope() as session:
             order = session.get(OpenOrder, order_id)
@@ -473,7 +494,7 @@ class OrderService:
                     others = session.scalars(
                         select(OpenOrder).where(
                             OpenOrder.table_id == table.id,
-                            OpenOrder.status == STATUS_OPEN,
+                            OpenOrder.status.in_(tuple(_ORDER_ACTIVE)),
                             OpenOrder.id != order.id,
                         )
                     ).first()

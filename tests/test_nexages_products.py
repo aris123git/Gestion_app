@@ -122,6 +122,20 @@ class MaquisTablesOrdersTestCase(unittest.TestCase):
         t2 = next(t for t in tables2 if t.id == free.id)
         self.assertEqual(t2.status, "libre")
 
+    def test_mark_served(self) -> None:
+        from app.models.open_order import STATUS_SERVED
+        from app.services.order_service import OrderService
+        from app.services.table_service import TableService
+
+        TableService.ensure_defaults()
+        tables = TableService.list()
+        self.assertTrue(tables)
+        order = OrderService.open_on_table(tables[0].id)
+        served = OrderService.mark_served(order.id)
+        self.assertEqual(served.status, STATUS_SERVED)
+        open_ids = {o.id for o in OrderService.list_open()}
+        self.assertIn(served.id, open_ids)
+
     def test_upsert_cart_merges_on_same_table(self) -> None:
         from app.controllers.sale_controller import CartLine
 
