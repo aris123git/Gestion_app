@@ -198,6 +198,54 @@ _STRINGS: Dict[str, Dict[str, str]] = {
         "or Threads, Buttons…), then the products in that category.",
         "zh": "收银时先选分类（如汽水、果汁、啤酒，或线材、纽扣等），再选该分类下的商品。",
     },
+    "settings.catalog_actions_hint": {
+        "fr": "Une fois coché : créez des catégories et uploadez des images "
+        "produit ci-dessous (ou depuis Produits).",
+        "en": "Once checked: create categories and upload product images "
+        "below (or from Products).",
+        "zh": "勾选后：可在下方（或「商品」页）创建分类并上传商品图片。",
+    },
+    "settings.catalog_add_product_image": {
+        "fr": "Nouveau produit + upload image",
+        "en": "New product + upload image",
+        "zh": "新建商品并上传图片",
+    },
+    "settings.catalog_category_added": {
+        "fr": "Catégorie ajoutée. Elle apparaîtra en caisse si la navigation "
+        "par catégories est active.",
+        "en": "Category added. It will show at the POS if category browsing "
+        "is enabled.",
+        "zh": "分类已添加。若已启用按分类浏览，将显示在收银界面。",
+    },
+    "settings.catalog_product_added": {
+        "fr": "Produit enregistré. Ajoutez une image sur la fiche pour la grille caisse.",
+        "en": "Product saved. Add an image on the form for the POS grid.",
+        "zh": "商品已保存。请在资料中添加图片以用于收银网格。",
+    },
+    "product.upload_image": {
+        "fr": "Uploader une image…",
+        "en": "Upload an image…",
+        "zh": "上传图片…",
+    },
+    "product.upload_enabled_hint": {
+        "fr": "Mode images caisse actif : uploadez une photo (png, jpg, webp).",
+        "en": "POS image mode on: upload a photo (png, jpg, webp).",
+        "zh": "已启用收银图片模式：请上传照片（png、jpg、webp）。",
+    },
+    "product.upload_disabled_hint": {
+        "fr": "Activez « Afficher les produits avec images » dans Paramètres "
+        "pour la grille visuelle en caisse.",
+        "en": "Enable “Show product images at the POS” in Settings for the "
+        "visual grid.",
+        "zh": "在设置中启用「在收银界面显示商品图片」以使用可视化网格。",
+    },
+    "product.add_category_tip": {
+        "fr": "Créer une catégorie sans quitter cette fiche (utile pour la "
+        "navigation par catégories en caisse).",
+        "en": "Create a category without leaving this form (useful for POS "
+        "category browsing).",
+        "zh": "无需离开本页即可创建分类（便于收银按分类浏览）。",
+    },
     "settings.language_saved": {
         "fr": "Langue enregistrée.\n\n{restart}",
         "en": "Language saved.\n\n{restart}",

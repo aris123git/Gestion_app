@@ -55,7 +55,14 @@ class ProductDialog(QDialog):
         self.is_active = QCheckBox('Produit actif')
         self.is_active.setChecked(True)
         form.addRow(t('Nom *'), self.name)
-        form.addRow(t('Catégorie'), self.category)
+        cat_row = QHBoxLayout()
+        cat_row.setSpacing(8)
+        cat_row.addWidget(self.category, 1)
+        self._add_category_btn = QPushButton('+ ' + t('categories.new'))
+        self._add_category_btn.setToolTip(t('product.add_category_tip'))
+        self._add_category_btn.clicked.connect(self._add_category)
+        cat_row.addWidget(self._add_category_btn)
+        form.addRow(t('Catégorie'), cat_row)
         form.addRow(t('Code-barres'), self.barcode)
         form.addRow(t('Référence'), self.reference)
         form.addRow(t("Prix d'achat (ex. F / carton)"), self.purchase_price)
@@ -74,19 +81,22 @@ class ProductDialog(QDialog):
         self._image_preview.setStyleSheet('border: 1px dashed #cbd5e1; border-radius: 8px; color: #94a3b8;')
         self._image_preview.setScaledContents(False)
         img_btns = QHBoxLayout()
-        pick = QPushButton(t('product.choose_image'))
-        pick.clicked.connect(self._pick_image)
+        self._pick_image_btn = QPushButton(t('product.upload_image'))
+        self._pick_image_btn.setObjectName('Primary')
+        self._pick_image_btn.clicked.connect(self._pick_image)
         clear = QPushButton(t('product.clear_image'))
         clear.clicked.connect(self._clear_image)
-        img_btns.addWidget(pick)
+        img_btns.addWidget(self._pick_image_btn)
         img_btns.addWidget(clear)
         img_wrap = QVBoxLayout()
+        self._image_hint = QLabel('')
+        self._image_hint.setWordWrap(True)
+        self._image_hint.setStyleSheet('color: #64748b; font-size: 12px;')
         img_wrap.addWidget(self._image_preview, alignment=Qt.AlignmentFlag.AlignLeft)
         img_wrap.addLayout(img_btns)
+        img_wrap.addWidget(self._image_hint)
         form.addRow(t('product.image'), img_wrap)
-        show_images = catalog_features.product_images_enabled()
-        self._image_preview.setVisible(True)
-        pick.setToolTip(t('settings.catalog_images_tip') if show_images else "Activez « produits avec images » dans Paramètres pour l'afficher en caisse.")
+        self._apply_catalog_feature_ui()
         layout.addLayout(form)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('common.cancel'))
@@ -119,6 +129,52 @@ class ProductDialog(QDialog):
     def _toggle_free_mode(self, enabled: bool) -> None:
         self.free_hint.setVisible(bool(enabled))
         self.pack_content.setEnabled(bool(enabled) or self.pack_content.value() > 0)
+
+    def _apply_catalog_feature_ui(self) -> None:
+        """Met en avant upload / catégorie si les options caisse sont actives."""
+        images_on = catalog_features.product_images_enabled()
+        cats_on = catalog_features.category_browser_enabled()
+        self._add_category_btn.setVisible(True)
+        if images_on:
+            self._pick_image_btn.setText(t('product.upload_image'))
+            self._pick_image_btn.setToolTip(t('settings.catalog_images_tip'))
+            self._image_hint.setText(t('product.upload_enabled_hint'))
+            self._image_preview.setStyleSheet(
+                'border: 2px dashed #2563eb; border-radius: 8px; color: #64748b; background: #eff6ff;'
+            )
+        else:
+            self._pick_image_btn.setText(t('product.choose_image'))
+            self._pick_image_btn.setToolTip(t('settings.catalog_images_tip'))
+            self._image_hint.setText(t('product.upload_disabled_hint'))
+            self._image_preview.setStyleSheet(
+                'border: 1px dashed #cbd5e1; border-radius: 8px; color: #94a3b8;'
+            )
+        if cats_on:
+            self._add_category_btn.setToolTip(t('product.add_category_tip'))
+
+    def _reload_categories(self, select_id: Optional[int] = None) -> None:
+        current = select_id if select_id is not None else self.category.currentData()
+        self.category.blockSignals(True)
+        self.category.clear()
+        self.category.addItem(t('— Aucune —'), None)
+        for category in CategoryController.list():
+            self.category.addItem(category.name, category.id)
+        if current is not None:
+            idx = self.category.findData(current)
+            if idx >= 0:
+                self.category.setCurrentIndex(idx)
+        self.category.blockSignals(False)
+
+    def _add_category(self) -> None:
+        from app.ui.dialogs.category_dialog import CategoryDialog
+
+        dialog = CategoryDialog(parent=self)
+        if not dialog.exec() or not dialog.data:
+            return
+        category = CategoryController.create(
+            dialog.data['name'], dialog.data['description']
+        )
+        self._reload_categories(select_id=category.id)
 
     def _show_image_preview(self, path: str) -> None:
         if path and Path(path).is_file():
