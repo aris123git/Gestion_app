@@ -28,8 +28,7 @@ from app.ui.pages.suppliers_page import SuppliersPage
 from app.ui.pages.tables_page import TablesPage
 from app.ui.pages.users_page import UsersPage
 from app.ui.dialogs.global_search_dialog import GlobalSearchDialog
-from app.ui.responsive import SIDEBAR_DRAWER, SIDEBAR_FULL, SIDEBAR_ICONS, SIDEBAR_WIDTH_FULL, SIDEBAR_WIDTH_ICONS, LayoutProfile
-from app.ui.responsive.auto_responsive import apply_generic_responsiveness
+from app.ui.responsive import SIDEBAR_DRAWER, SIDEBAR_FULL, SIDEBAR_ICONS, SIDEBAR_WIDTH_FULL, SIDEBAR_WIDTH_ICONS, LayoutProfile, apply_generic_responsiveness
 from app.ui.state import AppState
 logger = logging.getLogger(__name__)
 
