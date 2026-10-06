@@ -157,6 +157,11 @@ def run() -> int:
                 QLocale(QLocale.Language.French, QLocale.Country.France)
             )
 
+        # Échelle proportionnelle de toute l'interface (avant QApplication).
+        from app.ui.scaling import apply_ui_scale
+
+        apply_ui_scale()
+
         app = QApplication.instance() or QApplication([])
         app.setApplicationName(product_profile.PARENT_NAME)
         app.setOrganizationName(product_profile.PARENT_VENDOR)
