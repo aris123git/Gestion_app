@@ -643,6 +643,238 @@ class POSPage(QWidget):
         font.setBold(large)
         price_font = QFont(font)
         if large:
+            price_font.setPoled(False)
+        self.loyalty_offer_btn.clicked.connect(self._offer_selected_loyalty_product)
+        loyalty_row.addWidget(self.loyalty_offer_btn)
+        self._loyalty_row_widget = QWidget()
+        self._loyalty_row_widget.setLayout(loyalty_row)
+        layout.addWidget(self._loyalty_row_widget)
+        from app.services import product_profile
+        self._loyalty_row_widget.setVisible(product_profile.supports_profit_loyalty())
+        self.total_label = QLabel(t('Total : 0'))
+        self.total_label.setStyleSheet('font-size: 26px; font-weight: 800;')
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self.total_label)
+        pending_row = QHBoxLayout()
+        hold_btn = QPushButton(t('pos.hold'))
+        hold_btn.clicked.connect(self._hold_sale)
+        resume_btn = QPushButton(t('pos.resume'))
+        resume_btn.clicked.connect(self._resume_pending)
+        pending_row.addWidget(hold_btn)
+        pending_row.addWidget(resume_btn)
+        self._pending_row = QWidget()
+        self._pending_row.setLayout(pending_row)
+        layout.addWidget(self._pending_row)
+        pay_button = QPushButton(t('pos.checkout'))
+        pay_button.setObjectName('Success')
+        pay_button.setMinimumHeight(52)
+        pay_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        pay_button.clicked.connect(self._checkout)
+        layout.addWidget(pay_button)
+        self._pay_button = pay_button
+        if product_profile.is_maquis():
+            save_btn = QPushButton(t("Enregistrer commande"))
+            save_btn.setObjectName("MaquisEnregistrer")
+            save_btn.clicked.connect(self._save_maquis_order)
+            layout.insertWidget(layout.indexOf(pay_button), save_btn)
+            self._save_order_btn = save_btn
+            pay_button.setText(t("Encaisser"))
+            pay_button.setObjectName("MaquisEncaisser")
+            pay_button.setMinimumHeight(56)
+        return panel
+
+    def _apply_maquis_caisse_ui(self) -> None:
+        """Alignement écran Caisse sur l'app tablette (serveuse, table, pas de ticket auto)."""
+        self.setObjectName("MaquisCaissePage")
+        bar = QHBoxLayout()
+        self._waitress_combo = QComboBox()
+        self._waitress_combo.setMinimumHeight(40)
+        self._waitress_combo.addItem(t("Aucune"), None)
+        from sqlalchemy import select
+
+        from app.database.connection import session_scope
+        from app.models.user import User
+
+        with session_scope() as session:
+            users = list(
+                session.scalars(
+                    select(User)
+                    .where(User.is_active.is_(True))
+                    .order_by(User.full_name)
+                ).all()
+            )
+        for u in users:
+            if u.is_waitress or u.role in (perms.ROLE_CASHIER, perms.ROLE_MANAGER):
+                self._waitress_combo.addItem(u.full_name or u.username, u.id)
+        self._table_combo = QComboBox()
+        self._table_combo.setMinimumHeight(40)
+        self._table_combo.addItem(t("Aucune"), None)
+        from app.services.table_service import TableService
+
+        from app.services.maquis_settings import tables_enabled
+
+        self._tables_enabled = tables_enabled()
+        if self._tables_enabled:
+            for table in TableService.list():
+                self._table_combo.addItem(table.display_name, table.id)
+        else:
+            self._table_combo.setEnabled(False)
+            self._table_combo.addItem(t("Tables désactivées"), None)
+        bar.addWidget(QLabel(t("Serveuse")))
+        bar.addWidget(self._waitress_combo, 1)
+        bar.addWidget(QLabel(t("Table")))
+        bar.addWidget(self._table_combo, 1)
+        host = QWidget()
+        host.setLayout(bar)
+        cat_layout = self._catalog.layout()
+        if cat_layout is not None:
+            cat_layout.insertWidget(1, host)
+        # Masquer uniquement les blocs boutique (pas le panneau panier entier)
+        self._client_row_widget.setVisible(False)
+        self._client_hint.setVisible(False)
+        self._discount_row_widget.setVisible(False)
+        # Fidélité bénéfices aussi sur Maquis — visible si activée
+        self._loyalty_row_widget.setVisible(product_profile.supports_profit_loyalty())
+        if hasattr(self, "_pending_row"):
+            self._pending_row.setVisible(False)
+        from app.services.maquis_cart_store import load_cart
+
+        saved = load_cart(self.state.user_id)
+        if saved:
+            self.cart = saved
+            self._render_cart()
+
+    def _maquis_edit_qty(self, row: int, column: int) -> None:
+        """Double-clic quantité → pavé tactile (parité tablette)."""
+        if column != self.COL_QTY or row < 0 or row >= len(self.cart):
+            return
+        line = self.cart[row]
+        if line.free_amount or line.loyalty_reward:
+            return
+        from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
+
+        dlg = QuantityPadDialog(line.name, parent=self, initial=float(line.quantity))
+        if not dlg.exec() or dlg.quantity <= 0:
+            return
+        if line.product_id:
+            stock = self._available_stock(line.product_id, exclude_cart=True)
+            if dlg.quantity > stock + 0.0001:
+                warn(
+                    self,
+                    t("Stock insuffisant"),
+                    t("Stock insuffisant"),
+                )
+                return
+        line.quantity = dlg.quantity
+        self._render_cart()
+
+    def _maquis_product_tap(self, product) -> None:
+        from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
+
+        if getattr(product, "free_amount_sale", False):
+            self._add_product(product)
+            return
+        dlg = QuantityPadDialog(product.name, parent=self)
+        if not dlg.exec() or dlg.quantity <= 0:
+            return
+        min_price = float(product.min_price or 0)
+        sale_price = float(product.sale_price)
+        if min_price > 0 and sale_price < min_price:
+            warn(self, t("Prix minimum"))
+            return
+        available = self._available_stock(product.id)
+        if available + 0.0001 < dlg.quantity:
+            warn(self, t("Stock insuffisant"), t("Stock insuffisant"))
+            return
+        for line in self.cart:
+            if line.product_id == product.id and (not line.free_amount) and (not line.loyalty_reward):
+                line.quantity += dlg.quantity
+                self._render_cart()
+                return
+        self.cart.append(
+            CartLine(
+                product_id=product.id,
+                name=product.name,
+                unit_price=sale_price,
+                quantity=dlg.quantity,
+                purchase_price=float(product.purchase_price),
+            )
+        )
+        self._render_cart()
+
+    def _maquis_table_context(self) -> tuple[Optional[int], str, Optional[int], str]:
+        wid = self._waitress_combo.currentData() if self._waitress_combo else None
+        wname = self._waitress_combo.currentText() if self._waitress_combo and wid else ""
+        tid = self._table_combo.currentData() if self._table_combo else None
+        tlabel = self._table_combo.currentText() if self._table_combo and tid else ""
+        return tid, tlabel, wid, wname
+
+    def _save_maquis_order(self) -> None:
+        if not self.cart:
+            warn(self, t("Le panier est vide."))
+            return
+        tid, tlabel, wid, wname = self._maquis_table_context()
+        try:
+            from app.services.order_service import OrderService
+
+            order = OrderService.upsert_cart_for_table(
+                self.cart,
+                table_id=tid,
+                table_label=tlabel,
+                waitress_id=wid,
+                waitress_name=wname,
+                opened_by=self.state.user_id,
+            )
+            from app.printers.ticket.options import is_kitchen_ticket_enabled
+            from app.services.maquis_kitchen import print_kitchen_for_order
+            from app.services.maquis_settings import kitchen_prompt_after_save
+            from app.ui.dialogs.saved_order_prompt_dialog import SavedOrderPromptDialog
+
+            user = getattr(self.state.current_user, "username", "") or ""
+            print_enabled = is_kitchen_ticket_enabled() and kitchen_prompt_after_save()
+            print_message = None
+            if print_enabled:
+                ok, print_message = print_kitchen_for_order(
+                    order.id, cashier_name=user
+                )
+                if ok:
+                    print_message = print_message or t("Ticket imprimé")
+            if print_enabled or is_kitchen_ticket_enabled():
+                prompt = SavedOrderPromptDialog(
+                    order.public_id,
+                    is_kitchen_ticket_enabled(),
+                    print_message or "",
+                    parent=self,
+                )
+                prompt.exec()
+                if prompt.reprint_requested:
+                    print_kitchen_for_order(order.id, cashier_name=user)
+            self._clear_cart()
+            self.state.notify_data_changed()
+        except Exception as exc:
+            warn(self, str(exc))
+
+    def refresh(self) -> None:
+        if isinstance(self._catalog, PosCatalogPanel):
+            self._catalog.refresh()
+        self._reload_clients()
+        self._apply_large_text()
+
+    def _apply_large_text(self) -> None:
+        """Agrandit noms/prix catalogue + panier si activé dans Paramètres."""
+        large = settings_service.get_setting('pos_catalog_large_text', '0') == '1'
+        size_key = settings_service.get_setting('pos_catalog_text_size', 'large')
+        if large:
+            pt = 22 if size_key == 'xlarge' else 18
+            row_h = 46 if size_key == 'xlarge' else 38
+        else:
+            pt = 14
+            row_h = 30
+        font = QFont()
+        font.setPointSize(pt)
+        font.setBold(large)
+        price_font = QFont(font)
+        if large:
             price_font.setPointSize(pt + 2)
         self.cart_table.setFont(font)
         self.cart_table.verticalHeader().setDefaultSectionSize(row_h)
