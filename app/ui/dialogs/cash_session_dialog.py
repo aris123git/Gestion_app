@@ -52,7 +52,7 @@ class CloseCashSessionDialog(QDialog):
         currency = settings_service.get_currency()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.addWidget(QLabel(f'Espèces attendues (fond + encaissements) : <b>{format_money(expected, currency)}</b><br/>Comptez le tiroir et saisissez le montant trouvé.'))
+        layout.addWidget(QLabel(f'Montant attendu (fond + encaissements espèces/Mobile Money − dépenses) : <b>{format_money(expected, currency)}</b><br/>Comptez tout (tiroir + Mobile Money) et saisissez le total trouvé.'))
         form = QFormLayout()
         self.counted = QDoubleSpinBox()
         self.counted.setRange(0, 1000000000)
