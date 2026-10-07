@@ -8,11 +8,13 @@ from typing import List, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
+from app import config
 from app.database.connection import session_scope
 from app.models.cash_session import STATUS_CLOSED, STATUS_OPEN, CashSession
 from app.models.debt import DebtPayment
 from app.models.expense import Expense
 from app.models.sale import Payment, Sale
+from app.models.supplier_debt import SupplierDebtPayment
 from app.services import audit_service
 from app.utils.helpers import to_float
 
@@ -71,7 +73,12 @@ class CashSessionService:
 
     @staticmethod
     def compute_expected(session_id: int) -> float:
-        """Fond + encaissements espèces (ventes + règlements dettes) − dépenses."""
+        """Montant attendu en caisse (tous modes de paiement).
+
+        Fond + encaissements (espèces, Mobile Money, carte… hors vente à crédit)
+        + règlements de dettes clients − dépenses − règlements fournisseurs
+        saisis par le même utilisateur pendant la session.
+        """
         with session_scope() as session:
             cash = session.get(CashSession, session_id)
             if not cash:
@@ -90,7 +97,7 @@ class CashSessionService:
                         Sale.status == "completed",
                         Sale.date >= lo,
                         Sale.date <= hi,
-                        Payment.method == "Espèces",
+                        Payment.method != config.PAYMENT_METHOD_CREDIT,
                     )
                 )
                 or 0
@@ -101,7 +108,6 @@ class CashSessionService:
                         DebtPayment.created_by == user_id,
                         DebtPayment.payment_date >= lo,
                         DebtPayment.payment_date <= hi,
-                        DebtPayment.payment_method == "Espèces",
                     )
                 )
                 or 0
@@ -109,16 +115,24 @@ class CashSessionService:
             expenses = float(
                 session.scalar(
                     select(func.coalesce(func.sum(Expense.amount), 0)).where(
+                        Expense.user_id == user_id,
                         Expense.date >= lo,
                         Expense.date <= hi,
                     )
                 )
                 or 0
             )
-            # Les dépenses ne sont pas toujours liées à un user : on les ignore
-            # pour l'écart perso caissier (sinon fausse accusation).
-            _ = expenses
-            return round(opening + sales_cash + debt_cash, 2)
+            supplier_paid = float(
+                session.scalar(
+                    select(func.coalesce(func.sum(SupplierDebtPayment.amount), 0)).where(
+                        SupplierDebtPayment.created_by == user_id,
+                        SupplierDebtPayment.payment_date >= lo,
+                        SupplierDebtPayment.payment_date <= hi,
+                    )
+                )
+                or 0
+            )
+            return round(opening + sales_cash + debt_cash - expenses - supplier_paid, 2)
 
     @staticmethod
     def close_session(
