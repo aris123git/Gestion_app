@@ -37,6 +37,8 @@ class TicketDesign(ABC):
     description: ClassVar[str] = ""
     uses_logo: ClassVar[bool] = True
     preferred_feed: ClassVar[int | None] = None
+    # Style d'impression « image » (futuriste) ; None = ticket texte classique.
+    raster_style: ClassVar[str | None] = None
 
     @abstractmethod
     def render(

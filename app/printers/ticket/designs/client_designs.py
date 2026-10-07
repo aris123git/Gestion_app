@@ -552,3 +552,7 @@ CLIENT_DESIGN_CLASSES = (
     FactureTableauDesign,
     FactureTableauArrondiDesign,
 )
+
+from app.printers.ticket.designs.futuriste_designs import FUTURISTE_DESIGN_CLASSES  # noqa: E402
+
+CLIENT_DESIGN_CLASSES = CLIENT_DESIGN_CLASSES + FUTURISTE_DESIGN_CLASSES
