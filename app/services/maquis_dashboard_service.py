@@ -72,7 +72,7 @@ class MaquisDashboardStats:
 
     @property
     def margin_percent(self) -> int:
-        base = float(self.ca_generated or 0) + float(self.expenses_total or 0)
+        base = float(self.ca_generated or 0)
         if base <= 0:
             return 0
         return int(round(100.0 * float(self.benefice or 0) / base))
@@ -337,11 +337,56 @@ def dashboard_stats(
         return MaquisDashboardStats(
             orders_count=len(orders),
             open_orders=open_count,
-            ca_generated=max(0.0, sales_ca - expenses),
-            ca_collected=max(0.0, sales_collected - expenses),
+            # Le CA n'est jamais diminué des dépenses : elles ne touchent que le bénéfice.
+            ca_generated=max(0.0, sales_ca),
+            ca_collected=max(0.0, sales_collected),
             to_collect=max(0.0, to_collect),
             cost_of_goods=cost,
-            benefice=max(0.0, sales_ca - cost - expenses),
+            # Bénéfice = CA − coût des marchandises − dépenses ; une perte reste négative.
+            benefice=sales_ca - cost - expenses,
+            expenses_total=expenses,
+            repayment_revenue=repayment,
+            debt_created=debt_created,
+            top_products=products[:8],
+            waitress_stats=_waitress_stats(orders),
+            caisse_du_jour=caisse,
+        )
+
+
+def today_stats(user_id: Optional[int] = None) -> MaquisDashboardStats:
+    start, end = _today_bounds()
+    return dashboard_stats(start=start, end=end, user_id=user_id)
+
+
+def month_stats(user_id: Optional[int] = None) -> MaquisDashboardStats:
+    start, end = _month_bounds()
+    return dashboard_stats(start=start, end=end, user_id=user_id)
+            Expense.date >= start,
+                    Expense.date <= end,
+                )
+            )
+            or 0
+        )
+        caisse = _caisse_du_jour(session, start, end, user_id)
+        caisse = CaisseDuJour(
+            cash_today=caisse.cash_today + repayment,
+            mobile_today=caisse.mobile_today,
+            debt_today=debt_created,
+            avoir_today=caisse.avoir_today,
+            fond_de_caisse=caisse.fond_de_caisse,
+            especes_theoriques=caisse.especes_theoriques,
+            ecart=caisse.ecart,
+        )
+        return MaquisDashboardStats(
+            orders_count=len(orders),
+            open_orders=open_count,
+            # Le CA n'est jamais diminué des dépenses : elles ne touchent que le bénéfice.
+            ca_generated=max(0.0, sales_ca),
+            ca_collected=max(0.0, sales_collected),
+            to_collect=max(0.0, to_collect),
+            cost_of_goods=cost,
+            # Bénéfice = CA − coût des marchandises − dépenses ; une perte reste négative.
+            benefice=sales_ca - cost - expenses,
             expenses_total=expenses,
             repayment_revenue=repayment,
             debt_created=debt_created,
