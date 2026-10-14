@@ -28,7 +28,7 @@ from app.ui.pages.suppliers_page import SuppliersPage
 from app.ui.pages.tables_page import TablesPage
 from app.ui.pages.users_page import UsersPage
 from app.ui.dialogs.global_search_dialog import GlobalSearchDialog
-from app.ui.responsive import SIDEBAR_DRAWER, SIDEBAR_FULL, SIDEBAR_ICONS, SIDEBAR_WIDTH_FULL, SIDEBAR_WIDTH_ICONS, LayoutProfile, apply_generic_responsiveness
+from app.ui.responsive import SIDEBAR_DRAWER, SIDEBAR_FULL, SIDEBAR_ICONS, SIDEBAR_WIDTH_FULL, SIDEBAR_WIDTH_ICONS, LayoutProfile
 from app.ui.state import AppState
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ def build_nav_items():
         (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
         *common_tail,
     ]
-NAV_ITEMS = build_nav_items()
+NAV_ITEMS: list = []  # calculé au bon moment dans MainWindow.__init__, une fois la base initialisée
 
 class MainWindow(QWidget):
 
@@ -380,7 +380,6 @@ class MainWindow(QWidget):
             page = page_class(self.state)
             self.pages.append(page)
             self.stack.addWidget(page)
-            apply_generic_responsiveness(page, self.state)
             if product_profile.is_maquis() and hasattr(page, "set_order_opener"):
                 page.set_order_opener(self.open_maquis_order)
         self._maquis_order_detail = None
@@ -390,7 +389,6 @@ class MainWindow(QWidget):
             self._maquis_order_detail = OrderDetailPage(self.state)
             self._maquis_order_detail.set_back_handler(self._close_maquis_order)
             self.stack.addWidget(self._maquis_order_detail)
-            apply_generic_responsiveness(self._maquis_order_detail, self.state)
 
     def select_page(self, index: int, refresh_auth: bool=True) -> Optional[QWidget]:
         if refresh_auth and (not self._refresh_auth_user()):
