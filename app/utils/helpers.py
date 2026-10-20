@@ -5,13 +5,24 @@ from __future__ import annotations
 from datetime import datetime
 
 
+def format_amount(value: float) -> str:
+    """Montant sans devise : décimales seulement si nécessaires (1500 / 1 250,50).
+
+    Séparateur de milliers = espace ASCII (sûr pour les imprimantes ESC/POS).
+    """
+    value = float(value)
+    if round(value, 2) == round(value):
+        return f"{value:,.0f}".replace(",", " ")
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+
+
 def format_money(amount, currency: str = "FCFA") -> str:
     """Formate un montant avec séparateur de milliers et devise."""
     try:
         value = float(amount)
     except (TypeError, ValueError):
         value = 0.0
-    formatted = f"{value:,.0f}".replace(",", " ")
+    formatted = format_amount(value)
     return f"{formatted} {currency}".strip()
 
 

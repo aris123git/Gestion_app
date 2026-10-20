@@ -9,7 +9,7 @@ from app.printers.ticket.data import TicketData, TicketLineItem
 from app.printers.ticket.layout import fit_left_right, row, sep, wrap_text
 from app.printers.ticket.options import HEADER_ALIGN_LEFT, TicketOptions
 from app.printers.ticket.styled import StyledLine
-from app.utils.helpers import format_money, format_quantity
+from app.utils.helpers import format_amount, format_money, format_quantity
 
 MONTHS_FR = (
     "",
@@ -71,7 +71,7 @@ def money(amount: float, currency: str, *, with_currency: bool = True) -> str:
         value = float(amount)
     except (TypeError, ValueError):
         value = 0.0
-    return f"{value:,.0f}".replace(",", " ")
+    return format_amount(value)
 
 
 def qty_label(item: TicketLineItem) -> str:

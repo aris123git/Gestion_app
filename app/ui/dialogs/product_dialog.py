@@ -137,8 +137,9 @@ class ProductDialog(QDialog):
     def _money_spin(self) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
         spin.setRange(0, 1000000000)
-        spin.setDecimals(0)
+        spin.setDecimals(2)  # virgule autorisée (la base stocke 2 décimales)
         spin.setSingleStep(100)
+        spin.setStepType(QDoubleSpinBox.StepType.DefaultStepType)
         return spin
 
     def _qty_spin(self) -> QDoubleSpinBox:
