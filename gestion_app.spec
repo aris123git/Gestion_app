@@ -131,6 +131,8 @@ a = Analysis(
     binaries=[],
     datas=[
         ("app/assets/shop_logos", "app/assets/shop_logos"),
+        ("app/assets/fonts", "app/assets/fonts"),
+        ("app/assets/invoice_templates", "app/assets/invoice_templates"),
     ]
     + _qt_plugin_datas(),
     hiddenimports=hidden_imports,

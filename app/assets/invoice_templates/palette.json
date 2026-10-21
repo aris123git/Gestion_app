@@ -1,0 +1,26 @@
+{
+  "services_bleu": {
+    "ink": "#13234c",
+    "accent": "#7fc5ff",
+    "dark": "#13234c"
+  },
+  "services_vert": {
+    "ink": "#134c36",
+    "accent": "#7fffac",
+    "dark": "#134c36"
+  },
+  "medical_bleu": {
+    "ink": "#19242e",
+    "blue": "#0054ae",
+    "band": "#cfeaf5",
+    "footer": "#0056a5",
+    "item": "#4f4f4f"
+  },
+  "medical_vert": {
+    "ink": "#192e22",
+    "blue": "#00ae54",
+    "band": "#cff5d9",
+    "footer": "#00a549",
+    "item": "#4f4f4f"
+  }
+}
