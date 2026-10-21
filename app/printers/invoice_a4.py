@@ -10,7 +10,7 @@ Les modèles sont dessinés avec ReportLab (aucun fichier image externe).
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -40,6 +40,7 @@ MARGIN = 14 * mm
 
 SETTING_STYLE = "invoice_style"
 SETTING_FONT = "invoice_font_size"
+SETTING_COLOR = "invoice_color"  # « #rrggbb » ; vide = couleur du modèle
 DEFAULT_STYLE = "recu"
 DEFAULT_FONT = 10
 MIN_FONT, MAX_FONT = 7, 20
@@ -69,6 +70,47 @@ _STYLES_BY_ID = {s.id: s for s in INVOICE_STYLES}
 def get_style(style_id: str | None = None) -> InvoiceStyle:
     key = (style_id or settings_service.get_setting(SETTING_STYLE, DEFAULT_STYLE)).strip()
     return _STYLES_BY_ID.get(key, _STYLES_BY_ID[DEFAULT_STYLE])
+
+
+def _mix(hex_color: str, with_white: float) -> str:
+    """Éclaircit une couleur (0 = inchangée, 1 = blanc)."""
+    c = HexColor(hex_color)
+    r, g, b = (c.red + (1 - c.red) * with_white, c.green + (1 - c.green) * with_white, c.blue + (1 - c.blue) * with_white)
+    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+
+def _is_dark(hex_color: str) -> bool:
+    c = HexColor(hex_color)
+    return (0.299 * c.red + 0.587 * c.green + 0.114 * c.blue) < 0.55
+
+
+def text_on(hex_color: str):
+    """Couleur de texte lisible (blanc ou foncé) sur un fond de cette couleur."""
+    return colors.white if _is_dark(hex_color) else HexColor("#1f2937")
+
+
+def normalize_color(value: str | None) -> str:
+    """Retourne « #rrggbb » valide ou « » (couleur du modèle)."""
+    text = (value or "").strip()
+    if len(text) == 7 and text[0] == "#":
+        try:
+            int(text[1:], 16)
+            return text.lower()
+        except ValueError:
+            return ""
+    return ""
+
+
+def get_custom_color() -> str:
+    return normalize_color(settings_service.get_setting(SETTING_COLOR, ""))
+
+
+def apply_color(style: InvoiceStyle, color: str) -> InvoiceStyle:
+    """Style avec la couleur principale choisie par l'utilisateur."""
+    color = normalize_color(color)
+    if not color:
+        return style
+    return replace(style, primary=color, light=_mix(color, 0.88))
 
 
 def get_font_size() -> int:
@@ -272,7 +314,7 @@ def _wave(canvas, y_base, height, up: bool, color):
 def _decor_vagues(canvas, ctx):
     st, shop = ctx["style"], ctx["shop"]
     primary = HexColor(st.primary)
-    light = HexColor("#7fc1ea")
+    light = HexColor(_mix(st.primary, 0.45))
     _wave(canvas, PAGE_H - 46 * mm, 20 * mm, False, light)
     _wave(canvas, PAGE_H - 40 * mm, 18 * mm, False, primary)
     # Logo dans un disque blanc
@@ -280,12 +322,12 @@ def _decor_vagues(canvas, ctx):
     canvas.setFillColor(colors.white)
     canvas.circle(cx, cy, r, stroke=0, fill=1)
     if not _draw_logo(canvas, shop, cx - r + 2 * mm, cy - r + 2 * mm, 2 * r - 4 * mm):
-        canvas.setFillColor(primary)
+        canvas.setFillColor(primary if _is_dark(st.primary) else HexColor("#1f2937"))
         canvas.setFont("Helvetica-Bold", 22)
         initial = (str(shop.name or "C").strip()[:1] or "C").upper()
         canvas.drawCentredString(cx, cy - 2.7 * mm, initial)
     name = str(shop.name or "Commerce")
-    canvas.setFillColor(colors.white)
+    canvas.setFillColor(text_on(st.primary))
     size = _fit(canvas, name, "Helvetica-Bold", 13, 62 * mm)
     canvas.setFont("Helvetica-Bold", size)
     canvas.drawString(cx + r + 4 * mm, cy - 1.5 * mm, name)
@@ -294,7 +336,7 @@ def _decor_vagues(canvas, ctx):
     # Pied
     _wave(canvas, 20 * mm, 14 * mm, True, light)
     _wave(canvas, 14 * mm, 12 * mm, True, primary)
-    canvas.setFillColor(colors.white)
+    canvas.setFillColor(text_on(st.primary))
     canvas.setFont("Helvetica", 9)
     lines = _contact_lines(shop)
     canvas.drawString(MARGIN, 8.5 * mm, "  ·  ".join(lines)[:110])
@@ -376,7 +418,8 @@ def _decor_diagonal(canvas, ctx):
         p.lineTo((x0 + 14) * mm, PAGE_H - h)
         p.close()
         canvas.drawPath(p, stroke=0, fill=1)
-    canvas.setFillColor(HexColor("#2b2b2b"))
+    on_band = HexColor("#ffffff") if _is_dark(st.primary) else HexColor("#2b2b2b")
+    canvas.setFillColor(on_band)
     canvas.setFont("Helvetica-Bold", 30)
     canvas.drawString(MARGIN, PAGE_H - 22 * mm, "FACTURE")
     name = str(shop.name or "Commerce").upper()
@@ -416,12 +459,13 @@ _ZONES = {
 
 
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
-                     style_id: str | None = None, font_size: int | None = None) -> Path:
+                     style_id: str | None = None, font_size: int | None = None,
+                     color: str | None = None) -> Path:
     """Génère la facture A4 portrait et retourne le chemin du PDF."""
     config.ensure_directories()
     shop = shop or settings_service.get_shop_info()
     currency = shop.currency or "FCFA"
-    style = get_style(style_id)
+    style = apply_color(get_style(style_id), get_custom_color() if color is None else color)
     fs = max(MIN_FONT, min(MAX_FONT, int(font_size or get_font_size())))
 
     if path is None:
@@ -518,7 +562,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             ]
         elif layout == "vagues":
             cmds += [
-                ("BACKGROUND", (0, 0), (-1, 0), primary), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("BACKGROUND", (0, 0), (-1, 0), primary), ("TEXTCOLOR", (0, 0), (-1, 0), text_on(style.primary)),
                 ("LINEBELOW", (0, 1), (-1, -1), 0.5, HexColor("#cbd5e1")),
                 ("ROUNDEDCORNERS", [8, 8, 0, 0]),
             ]
@@ -529,7 +573,8 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             ]
         else:  # diagonal : cellules colorées
             cmds += [
-                ("BACKGROUND", (0, 0), (-1, 0), primary), ("TEXTCOLOR", (0, 0), (-1, 0), dark),
+                ("BACKGROUND", (0, 0), (-1, 0), primary),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white if _is_dark(style.primary) else dark),
                 ("BACKGROUND", (0, 1), (-1, -1), light),
                 ("LINEBELOW", (0, 1), (-1, -1), 2.2, colors.white),
                 ("LINEBELOW", (0, -1), (-1, -1), 1.4, dark),
@@ -563,7 +608,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     ]
     if layout == "vagues":
         t_cmds += [("BACKGROUND", (0, total_label_row), (-1, total_label_row), primary),
-                   ("TEXTCOLOR", (0, total_label_row), (-1, total_label_row), colors.white)]
+                   ("TEXTCOLOR", (0, total_label_row), (-1, total_label_row), text_on(style.primary))]
     totals_t.setStyle(TableStyle(t_cmds))
 
     # Bloc gauche du pied : arrêté + moyens de paiement
@@ -582,7 +627,8 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     bottom = Table([[left, [totals_t, Spacer(1, 6 * mm), sign]]], colWidths=[frame_w - 100 * mm, 100 * mm])
     bottom.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 8 * mm),
+        ("RIGHTPADDING", (1, 0), (1, 0), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
 

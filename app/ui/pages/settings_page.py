@@ -365,6 +365,19 @@ class SettingsPage(QWidget):
         self.invoice_font.setRange(MIN_FONT, MAX_FONT)
         self.invoice_font.setSuffix(' pt')
         self.invoice_font.setToolTip(t('Taille du texte de la facture (désignations, prix, totaux). Plus grand = lecture plus facile.'))
+        self._invoice_color = ''
+        self.invoice_color_btn = QPushButton()
+        self.invoice_color_btn.setMinimumWidth(150)
+        self.invoice_color_btn.setToolTip(t('Choisir la couleur principale de la facture (en-tête, tableau, total).'))
+        self.invoice_color_btn.clicked.connect(self._pick_invoice_color)
+        invoice_color_reset = QPushButton(t('Couleur du modèle'))
+        invoice_color_reset.setToolTip(t('Revenir à la couleur d\'origine du modèle choisi.'))
+        invoice_color_reset.clicked.connect(lambda: self._set_invoice_color(''))
+        invoice_color_row = QHBoxLayout()
+        invoice_color_row.addWidget(self.invoice_color_btn)
+        invoice_color_row.addWidget(invoice_color_reset)
+        invoice_color_row.addStretch()
+        self._set_invoice_color('')
         invoice_preview = QPushButton(t('Aperçu de la facture'))
         invoice_preview.setToolTip(t('Ouvre un exemple de facture avec le modèle et la police choisis.'))
         invoice_preview.clicked.connect(self._preview_invoice)
@@ -392,6 +405,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Imprimante facture (encre / laser)'), invoice_row)
         form.addRow('', self.printers_status)
         form.addRow(t('Modèle de facture'), invoice_style_row)
+        form.addRow(t('Couleur de la facture'), invoice_color_row)
         form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Avance papier'), self.feed_lines)
         form.addRow(t('Coupe'), self.cut_mode)
@@ -888,6 +902,7 @@ class SettingsPage(QWidget):
         settings_service.set_setting('invoice_printer_name', self._invoice_printer_value())
         settings_service.set_setting('invoice_style', self.invoice_style.currentData() or 'recu')
         settings_service.set_setting('invoice_font_size', str(self.invoice_font.value()))
+        settings_service.set_setting('invoice_color', self._invoice_color)
         settings_service.set_setting('ticket_feed_lines', str(self.feed_lines.value()))
         settings_service.set_setting('ticket_cut_mode', self.cut_mode.currentData())
         settings_service.set_setting('auto_print_ticket', '1' if self.auto_print.isChecked() else '0')
@@ -895,6 +910,32 @@ class SettingsPage(QWidget):
         self.state.notify_data_changed()
         if not silent:
             info(self, t('Préférences appliquées.'))
+
+    def _set_invoice_color(self, color: str) -> None:
+        """Mémorise la couleur choisie ('' = couleur du modèle) et met à jour le bouton."""
+        from app.printers.invoice_a4 import normalize_color
+        self._invoice_color = normalize_color(color)
+        if self._invoice_color:
+            self.invoice_color_btn.setText(f'  {self._invoice_color.upper()}  ')
+            fg = '#ffffff' if self._is_dark_hex(self._invoice_color) else '#111111'
+            self.invoice_color_btn.setStyleSheet(f'background: {self._invoice_color}; color: {fg}; border: 1px solid #94a3b8; padding: 6px 10px;')
+        else:
+            self.invoice_color_btn.setText(t('Couleur du modèle'))
+            self.invoice_color_btn.setStyleSheet('')
+
+    @staticmethod
+    def _is_dark_hex(color: str) -> bool:
+        r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
+        return (0.299 * r + 0.587 * g + 0.114 * b) < 140
+
+    def _pick_invoice_color(self) -> None:
+        from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QColorDialog
+        from app.printers.invoice_a4 import apply_color, get_style
+        start = self._invoice_color or get_style(self.invoice_style.currentData()).primary
+        chosen = QColorDialog.getColor(QColor(start), self, t('Couleur de la facture'))
+        if chosen.isValid():
+            self._set_invoice_color(chosen.name())
 
     def _preview_invoice(self) -> None:
         """Génère un exemple de facture avec le modèle / la police choisis et l'ouvre."""
@@ -909,7 +950,7 @@ class SettingsPage(QWidget):
         sale = NS(ticket_number='APERCU-0001', date=datetime.now(), cashier_name='Caissier', client_name='Client exemple', client_phone='', items=items, subtotal=18000.5, discount=0, total=18000.5, amount_received=20000, change_due=1999.5, payments=[NS(method='Espèces', amount=18000.5)])
         try:
             config.ensure_directories()
-            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value())
+            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value(), color=self._invoice_color)
         except Exception as exc:
             warn(self, f'Impossible de générer l\'aperçu : {exc}')
             return
@@ -1478,6 +1519,8 @@ class SettingsPage(QWidget):
         if _si >= 0:
             self.invoice_style.setCurrentIndex(_si)
         self.invoice_font.setValue(get_font_size())
+        from app.printers.invoice_a4 import get_custom_color
+        self._set_invoice_color(get_custom_color())
         size_index = self.pos_text_size.findData(settings_service.get_setting('pos_catalog_text_size', 'large'))
         if size_index >= 0:
             self.pos_text_size.setCurrentIndex(size_index)
