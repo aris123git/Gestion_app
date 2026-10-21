@@ -40,7 +40,6 @@ MARGIN = 14 * mm
 
 SETTING_STYLE = "invoice_style"
 SETTING_FONT = "invoice_font_size"
-SETTING_COLOR = "invoice_color"  # « #rrggbb » ; vide = couleur du modèle
 DEFAULT_STYLE = "recu"
 DEFAULT_FONT = 10
 MIN_FONT, MAX_FONT = 7, 20
@@ -57,12 +56,14 @@ class InvoiceStyle:
 
 
 INVOICE_STYLES: tuple[InvoiceStyle, ...] = (
-    InvoiceStyle("recu", "Reçu classique (bleu marine, tableau encadré)", "recu", "#1e1b8f", "#eef0fb"),
-    InvoiceStyle("vagues", "Vagues bleues (en-tête et pied courbes)", "vagues", "#1473b8", "#e6f1fa"),
-    InvoiceStyle("moderne_bleu", "Moderne bleu (épuré, bande sombre en bas)", "moderne", "#1f6fa8", "#eef4f9"),
-    InvoiceStyle("moderne_orange", "Moderne orange (épuré, bande sombre en bas)", "moderne", "#c8714f", "#faf0ea"),
-    InvoiceStyle("diagonal_bleu", "Bandeau diagonal bleu-gris", "diagonal", "#a9b9cc", "#dfe7f0"),
-    InvoiceStyle("diagonal_beige", "Bandeau diagonal beige", "diagonal", "#b59c85", "#efe5db"),
+    InvoiceStyle("recu", "Reçu classique — bleu marine", "recu", "#1e1b8f", "#eef0fb"),
+    InvoiceStyle("recu_bordeaux", "Reçu classique — bordeaux", "recu", "#8b1a2b", "#f8e9ec"),
+    InvoiceStyle("vagues", "Vagues — bleu", "vagues", "#1473b8", "#e6f1fa"),
+    InvoiceStyle("vagues_vert", "Vagues — vert", "vagues", "#15803d", "#e6f4ea"),
+    InvoiceStyle("moderne_bleu", "Moderne — bleu", "moderne", "#1f6fa8", "#eef4f9"),
+    InvoiceStyle("moderne_orange", "Moderne — orange", "moderne", "#c8714f", "#faf0ea"),
+    InvoiceStyle("diagonal_bleu", "Bandeau diagonal — bleu-gris", "diagonal", "#a9b9cc", "#dfe7f0"),
+    InvoiceStyle("diagonal_beige", "Bandeau diagonal — beige", "diagonal", "#b59c85", "#efe5db"),
 )
 _STYLES_BY_ID = {s.id: s for s in INVOICE_STYLES}
 
@@ -87,30 +88,6 @@ def _is_dark(hex_color: str) -> bool:
 def text_on(hex_color: str):
     """Couleur de texte lisible (blanc ou foncé) sur un fond de cette couleur."""
     return colors.white if _is_dark(hex_color) else HexColor("#1f2937")
-
-
-def normalize_color(value: str | None) -> str:
-    """Retourne « #rrggbb » valide ou « » (couleur du modèle)."""
-    text = (value or "").strip()
-    if len(text) == 7 and text[0] == "#":
-        try:
-            int(text[1:], 16)
-            return text.lower()
-        except ValueError:
-            return ""
-    return ""
-
-
-def get_custom_color() -> str:
-    return normalize_color(settings_service.get_setting(SETTING_COLOR, ""))
-
-
-def apply_color(style: InvoiceStyle, color: str) -> InvoiceStyle:
-    """Style avec la couleur principale choisie par l'utilisateur."""
-    color = normalize_color(color)
-    if not color:
-        return style
-    return replace(style, primary=color, light=_mix(color, 0.88))
 
 
 def get_font_size() -> int:
@@ -459,13 +436,12 @@ _ZONES = {
 
 
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
-                     style_id: str | None = None, font_size: int | None = None,
-                     color: str | None = None) -> Path:
+                     style_id: str | None = None, font_size: int | None = None) -> Path:
     """Génère la facture A4 portrait et retourne le chemin du PDF."""
     config.ensure_directories()
     shop = shop or settings_service.get_shop_info()
     currency = shop.currency or "FCFA"
-    style = apply_color(get_style(style_id), get_custom_color() if color is None else color)
+    style = get_style(style_id)
     fs = max(MIN_FONT, min(MAX_FONT, int(font_size or get_font_size())))
 
     if path is None:
