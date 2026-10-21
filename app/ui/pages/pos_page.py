@@ -20,6 +20,7 @@ from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.helpers import info, page_title, warn
 from app.ui.widgets.pos_catalog_panel import PosCatalogPanel
 from app.utils.helpers import format_money, format_quantity, to_float
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class POSPage(QWidget):
     """Écran de caisse : catalogue à gauche, panier à droite."""
@@ -155,9 +156,9 @@ class POSPage(QWidget):
         discount_row = QHBoxLayout(self._discount_row_widget)
         discount_row.setContentsMargins(0, 0, 0, 0)
         discount_row.addWidget(QLabel(t('pos.discount')))
-        self.discount_input = QDoubleSpinBox()
+        self.discount_input = MoneySpinBox()
         self.discount_input.setRange(0, 0)
-        self.discount_input.setDecimals(0)
+        self.discount_input.setDecimals(3)
         self.discount_input.setSingleStep(100)
         self.discount_input.valueChanged.connect(self._update_total)
         if not self.state.can(perms.APPLY_DISCOUNT):
@@ -674,7 +675,7 @@ class POSPage(QWidget):
                 from app.services.profit_loyalty_service import ProfitLoyaltyService
                 cid = self._current_client_id()
                 balance = ProfitLoyaltyService.credit_balance(int(cid)) if cid else 0.0
-                need = round(unit * qty, 2)
+                need = round(unit * qty, 3)
                 if need > balance - others + 0.009:
                     warn(self, t('Crédit fidélité insuffisant pour cette quantité.'))
                     self._render_cart()

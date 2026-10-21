@@ -7,6 +7,7 @@ from app.services import settings_service
 from app.services.cash_session_service import CashSessionService
 from app.ui.widgets.helpers import info, warn
 from app.utils.helpers import format_money
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class OpenCashSessionDialog(QDialog):
 
@@ -21,9 +22,9 @@ class OpenCashSessionDialog(QDialog):
         currency = settings_service.get_currency()
         layout.addWidget(QLabel(t('Indiquez le <b>fond de caisse</b> (espèces déjà dans le tiroir) avant de commencer.')))
         form = QFormLayout()
-        self.amount = QDoubleSpinBox()
+        self.amount = MoneySpinBox()
         self.amount.setRange(0, 1000000000)
-        self.amount.setDecimals(0)
+        self.amount.setDecimals(3)
         self.amount.setSuffix(f' {currency}')
         form.addRow(t('Fond de caisse'), self.amount)
         layout.addLayout(form)
@@ -54,9 +55,9 @@ class CloseCashSessionDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.addWidget(QLabel(f'Montant attendu (fond + encaissements espèces/Mobile Money − dépenses) : <b>{format_money(expected, currency)}</b><br/>Comptez tout (tiroir + Mobile Money) et saisissez le total trouvé.'))
         form = QFormLayout()
-        self.counted = QDoubleSpinBox()
+        self.counted = MoneySpinBox()
         self.counted.setRange(0, 1000000000)
-        self.counted.setDecimals(0)
+        self.counted.setDecimals(3)
         self.counted.setValue(expected)
         self.counted.setSuffix(f' {currency}')
         self.note = QLineEdit()

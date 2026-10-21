@@ -21,8 +21,8 @@ class CustomerPoints(Base, TimestampMixin):
     client_id: Mapped[int] = mapped_column(
         ForeignKey("clients.id"), nullable=False, unique=True, index=True
     )
-    points: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    lifetime_points: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    points: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    lifetime_points: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
 
     client: Mapped["Client"] = relationship()  # noqa: F821
 
@@ -34,8 +34,8 @@ class CustomerPointsHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
-    delta: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    balance_after: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    delta: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    balance_after: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     reason: Mapped[str] = mapped_column(String(120), default="")
     sale_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sales.id"), nullable=True)
     note: Mapped[str] = mapped_column(Text, default="")

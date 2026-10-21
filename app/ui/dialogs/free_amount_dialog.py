@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from app.i18n import t
 from app.services import cash_controls, settings_service
 from app.utils.helpers import format_money
+from app.ui.widgets.money_spin import MoneySpinBox
 
 
 class FreeAmountDialog(QDialog):
@@ -71,9 +72,9 @@ class FreeAmountDialog(QDialog):
 
         other_row = QHBoxLayout()
         other_row.addWidget(QLabel(t("Autre montant :")))
-        self.custom = QDoubleSpinBox()
+        self.custom = MoneySpinBox()
         self.custom.setRange(0, 1_000_000_000)
-        self.custom.setDecimals(0)
+        self.custom.setDecimals(3)
         self.custom.setSingleStep(50)
         self.custom.setSuffix(f" {self.currency}")
         other_row.addWidget(self.custom, 1)

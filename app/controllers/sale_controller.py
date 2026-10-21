@@ -18,6 +18,7 @@ from app.models.product import Product
 from app.models.sale import Payment, Sale, SaleItem
 from app.models.stock import MOVEMENT_IN, MOVEMENT_SALE, StockMovement
 from app.utils.helpers import generate_ticket_number, to_float
+from app.utils.helpers import format_amount
 
 
 @dataclass
@@ -40,8 +41,8 @@ class CartLine:
         if self.loyalty_reward:
             return 0.0
         if self.free_amount:
-            return round(float(self.amount), 2)
-        return round(self.unit_price * self.quantity, 2)
+            return round(float(self.amount), 3)
+        return round(self.unit_price * self.quantity, 3)
 
     @property
     def reward_value(self) -> float:
@@ -49,8 +50,8 @@ class CartLine:
         if not self.loyalty_reward:
             return 0.0
         if self.free_amount:
-            return round(float(self.amount), 2)
-        return round(float(self.unit_price) * float(self.quantity), 2)
+            return round(float(self.amount), 3)
+        return round(float(self.unit_price) * float(self.quantity), 3)
 
     @property
     def stock_quantity(self) -> float:
@@ -63,9 +64,9 @@ class CartLine:
     def line_profit(self) -> float:
         if self.loyalty_reward:
             # Offert : pas de CA, coût d'achat supporté par le magasin.
-            return round(0.0 - float(self.purchase_price) * float(self.quantity), 2)
+            return round(0.0 - float(self.purchase_price) * float(self.quantity), 3)
         if self.free_amount:
-            return round(float(self.amount) - float(self.purchase_price) * float(self.quantity), 2)
+            return round(float(self.amount) - float(self.purchase_price) * float(self.quantity), 3)
         return round((float(self.unit_price) - float(self.purchase_price)) * float(self.quantity), 2)
 
 
@@ -151,7 +152,7 @@ class SaleController:
                 CustomerPointsHistory.delta > 0,
             )
         )
-        points_to_reverse = round(float(points or 0), 2)
+        points_to_reverse = round(float(points or 0), 3)
         if points_to_reverse <= 0:
             return
         account = session.scalar(
@@ -167,7 +168,7 @@ class SaleController:
         session.add(
             CustomerPointsHistory(
                 client_id=sale.client_id,
-                delta=round(float(account.points) - before, 2),
+                delta=round(float(account.points) - before, 3),
                 balance_after=float(account.points),
                 reason="Annulation vente",
                 sale_id=sale.id,
@@ -217,10 +218,10 @@ class SaleController:
                     f"(besoin {loyalty_credit:g}, disponible {available:g})."
                 )
 
-        subtotal = round(sum(line.total for line in lines), 2)
+        subtotal = round(sum(line.total for line in lines), 3)
         # Remise manuelle uniquement — la fidélité n'ajoute pas d'argent remisé.
         discount = min(subtotal, max(0.0, to_float(discount)))
-        total = round(max(0.0, subtotal - discount), 2)
+        total = round(max(0.0, subtotal - discount), 3)
 
         credit_method = config.PAYMENT_METHOD_CREDIT
         for pay in payments:
@@ -242,7 +243,7 @@ class SaleController:
             ),
             2,
         )
-        covered = round(cash_paid + credit_marked, 2)
+        covered = round(cash_paid + credit_marked, 3)
 
         # Plafonds caissier + permissions (remise manuelle / crédit / montant libre).
         if user_id:
@@ -261,7 +262,7 @@ class SaleController:
                     user = loaded
             credit_for_limit = credit_marked
             if covered < total and allow_credit:
-                credit_for_limit = max(credit_for_limit, round(total - cash_paid, 2))
+                credit_for_limit = max(credit_for_limit, round(total - cash_paid, 3))
             assert_sale_permissions(
                 user=user,
                 discount=discount,
@@ -282,7 +283,7 @@ class SaleController:
 
         if covered < total and not allow_credit:
             raise InsufficientPaymentError(
-                f"Paiement insuffisant : {cash_paid:,.0f} reçu pour un total de {total:,.0f}."
+                f"Paiement insuffisant : {format_amount(cash_paid)} reçu pour un total de {format_amount(total)}."
             )
         if credit_marked > 0 and not client_id:
             raise ValueError(
@@ -290,16 +291,16 @@ class SaleController:
             )
         if covered < total and allow_credit and client_id:
             # Reste non saisi → complété automatiquement en dette (ticket).
-            credit_marked = round(total - cash_paid, 2)
-            covered = round(cash_paid + credit_marked, 2)
+            credit_marked = round(total - cash_paid, 3)
+            covered = round(cash_paid + credit_marked, 3)
         if covered > total + 0.01:
             raise ValueError("Paiement supérieur au total.")
 
         # Montant réellement porté au ledger dette (= non encaissé).
-        credit_amount = round(max(0.0, total - cash_paid), 2)
+        credit_amount = round(max(0.0, total - cash_paid), 3)
         if credit_amount > 0 and not client_id:
             raise InsufficientPaymentError(
-                f"Paiement insuffisant : {cash_paid:,.0f} reçu pour un total de {total:,.0f}."
+                f"Paiement insuffisant : {format_amount(cash_paid)} reçu pour un total de {format_amount(total)}."
             )
 
         cash_due = round(
@@ -308,7 +309,7 @@ class SaleController:
         )
         amount_received_value = to_float(amount_received)
         change_due = (
-            round(max(0.0, amount_received_value - cash_due), 2)
+            round(max(0.0, amount_received_value - cash_due), 3)
             if cash_due > 0 and amount_received_value > 0
             else 0.0
         )
@@ -484,7 +485,7 @@ class SaleController:
                 )
                 stored_payments.append(PaymentLine(credit_method, credit_amount))
 
-            sale.profit = round(profit - discount, 2)
+            sale.profit = round(profit - discount, 3)
 
             # Crédit : crée une dette (ledger) et synchronise le cache Client.debt.
             if credit_amount > 0 and client_id:
@@ -571,9 +572,9 @@ class SaleController:
         if not lines:
             raise ValueError("Le panier est vide.")
         cls._validate_lines(lines)
-        subtotal = round(sum(line.total for line in lines), 2)
+        subtotal = round(sum(line.total for line in lines), 3)
         discount = min(subtotal, max(0.0, to_float(discount)))
-        total = round(max(0.0, subtotal - discount), 2)
+        total = round(max(0.0, subtotal - discount), 3)
         if user_id and discount > 0.009:
             from app.models.user import User
             from app.services.cash_controls import (
@@ -665,7 +666,7 @@ class SaleController:
         unit_price = float(item.unit_price or 0)
         quantity = float(item.quantity or 0)
         line_total = float(item.line_total or 0)
-        expected = round(unit_price * quantity, 2)
+        expected = round(unit_price * quantity, 3)
         free_amount = abs(expected - line_total) > 0.01 and line_total > 0
         pack_content = 0.0
         if item.product_id:

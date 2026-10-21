@@ -5,6 +5,7 @@ from typing import Optional
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QCheckBox, QDateEdit, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout
 from app.ui.widgets.helpers import warn
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class ContactDialog(QDialog):
     """Formulaire nom/téléphone/adresse/email (+ dette pour les clients)."""
@@ -33,9 +34,9 @@ class ContactDialog(QDialog):
         form.addRow(t('Adresse'), self.address)
         form.addRow(t('Email'), self.email)
         if with_debt:
-            self.debt = QDoubleSpinBox()
+            self.debt = MoneySpinBox()
             self.debt.setRange(0, 1000000000)
-            self.debt.setDecimals(0)
+            self.debt.setDecimals(3)
             label = "Solde d'ouverture" if contact is None else 'Solde dû (lecture seule)'
             form.addRow(label, self.debt)
             if contact is not None:

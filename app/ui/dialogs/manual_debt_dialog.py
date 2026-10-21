@@ -8,6 +8,7 @@ from app.controllers.client_controller import ClientController
 from app.ui.dialogs.contact_dialog import ContactDialog
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.helpers import warn
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class ManualDebtDialog(QDialog):
     """Enregistre une dette manuelle pour un client existant (ou à créer)."""
@@ -29,9 +30,9 @@ class ManualDebtDialog(QDialog):
         form.setSpacing(10)
         self.client_search = ClientSearchField(self)
         form.addRow(t('Client'), self.client_search)
-        self.amount = QDoubleSpinBox()
+        self.amount = MoneySpinBox()
         self.amount.setRange(0, 1000000000)
-        self.amount.setDecimals(0)
+        self.amount.setDecimals(3)
         self.amount.setValue(0)
         form.addRow(t('Montant'), self.amount)
         self.due_enabled = QCheckBox('Définir une échéance')

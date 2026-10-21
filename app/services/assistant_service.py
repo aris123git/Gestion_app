@@ -16,6 +16,7 @@ from app.models.sale import Sale, SaleItem
 from app.services.dashboard_service import DashboardService
 from app.services.inventory_service import InventoryService
 from app.services.supplier_debt_service import SupplierDebtService
+from app.utils.helpers import format_amount
 
 
 @dataclass
@@ -108,7 +109,7 @@ class AssistantService:
                     Recommendation(
                         "warning",
                         f"Dette échue — {name}",
-                        f"Reste dû {float(d.amount_remaining):,.0f}. Relancer le client.",
+                        f"Reste dû {format_amount(float(d.amount_remaining))}. Relancer le client.",
                         "dette",
                     )
                 )
@@ -181,7 +182,7 @@ class AssistantService:
             Recommendation(
                 "info",
                 "Dettes fournisseurs",
-                f"Solde dû aux fournisseurs : {total:,.0f}.",
+                f"Solde dû aux fournisseurs : {format_amount(total)}.",
                 "fournisseur",
             )
         ]

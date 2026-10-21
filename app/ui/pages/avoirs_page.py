@@ -7,6 +7,7 @@ from app.services.avoir_service import AvoirService
 from app.services import settings_service
 from app.ui.widgets.helpers import confirm, info, warn
 from app.utils.helpers import format_money
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class AvoirsPage(QWidget):
 
@@ -23,9 +24,9 @@ class AvoirsPage(QWidget):
         form = QFormLayout()
         self.customer = QLineEdit()
         self.customer.setPlaceholderText(t('Nom du client (optionnel)'))
-        self.amount = QDoubleSpinBox()
+        self.amount = MoneySpinBox()
         self.amount.setRange(1, 50000000)
-        self.amount.setDecimals(0)
+        self.amount.setDecimals(3)
         self.amount.setValue(1000)
         self.reason = QLineEdit()
         self.reason.setPlaceholderText(t('Motif (rendu monnaie, geste commercial…)'))

@@ -19,6 +19,6 @@ class ClientProfitLoyalty(Base, TimestampMixin):
         ForeignKey("clients.id"), nullable=False, unique=True, index=True
     )
     # Bénéfice cumulé déjà utilisé pour déclencher des paliers de remise.
-    profit_rewarded: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    profit_rewarded: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
 
     client: Mapped["Client"] = relationship()  # noqa: F821

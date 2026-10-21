@@ -22,7 +22,7 @@ class Client(Base, TimestampMixin):
     phone2: Mapped[str] = mapped_column(String(80), default="")
     address: Mapped[str] = mapped_column(String(300), default="")
     email: Mapped[str] = mapped_column(String(150), default="")
-    debt: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    debt: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     notes: Mapped[str] = mapped_column(Text, default="")
     # CRM (Sprint 9) — cache mis à jour par CustomerService
     last_visit: Mapped[Optional[str]] = mapped_column(String(40), default="")

@@ -168,7 +168,7 @@ class MaquisPaymentDialog(QDialog):
 
     @staticmethod
     def _round(v: float) -> float:
-        return round(float(v), 2)
+        return round(float(v), 3)
 
     def _parse(self, s: str) -> float:
         s = (s or "").strip().replace(",", ".")

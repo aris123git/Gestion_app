@@ -46,7 +46,7 @@ class DashboardController:
             )
             or 0
         )
-        return round(sales_cash + debt_repayments, 2)
+        return round(sales_cash + debt_repayments, 3)
 
     @staticmethod
     def _profit(session, start: date, end: date) -> float:
@@ -73,7 +73,7 @@ class DashboardController:
             )
             or 0
         )
-        return round(sales_profit + manual, 2)
+        return round(sales_profit + manual, 3)
 
     @staticmethod
     def _sales_count(session, start: date, end: date) -> int:

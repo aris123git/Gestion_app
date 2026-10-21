@@ -13,6 +13,7 @@ from app.controllers.unit_controller import UnitController
 from app.i18n import t
 from app.services import catalog_features, product_profile
 from app.ui.widgets.helpers import warn
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class ProductDialog(QDialog):
     """Formulaire complet d'un produit (utilisé pour l'ajout et l'édition)."""
@@ -135,9 +136,9 @@ class ProductDialog(QDialog):
         self._toggle_free_mode(self.free_amount_sale.isChecked())
 
     def _money_spin(self) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
+        spin = MoneySpinBox()
         spin.setRange(0, 1000000000)
-        spin.setDecimals(2)  # virgule autorisée (la base stocke 2 décimales)
+        spin.setDecimals(3)  # virgule autorisée, jusqu'à 3 décimales
         spin.setSingleStep(100)
         spin.setStepType(QDoubleSpinBox.StepType.DefaultStepType)
         return spin

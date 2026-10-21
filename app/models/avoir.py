@@ -34,8 +34,8 @@ class Avoir(Base, TimestampMixin):
     )
     customer_name: Mapped[str] = mapped_column(String(200), default="")
     avoir_type: Mapped[str] = mapped_column(String(20), default=TYPE_CASH)
-    amount_initial: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    amount_remaining: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    amount_initial: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    amount_remaining: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     product_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("products.id"), nullable=True
     )
@@ -70,7 +70,7 @@ class AvoirRedemption(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     avoir_id: Mapped[int] = mapped_column(ForeignKey("avoirs.id"), nullable=False, index=True)
     sale_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sales.id"), nullable=True)
-    amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    amount: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

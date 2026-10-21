@@ -31,8 +31,8 @@ class SupplierDebt(Base, TimestampMixin):
     purchase_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("purchases.id"), nullable=True, index=True
     )
-    amount_initial: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    amount_remaining: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    amount_initial: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    amount_remaining: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(40), default=STATUS_OPEN, index=True)
     note: Mapped[str] = mapped_column(Text, default="")
@@ -63,7 +63,7 @@ class SupplierDebtPayment(Base):
     debt_id: Mapped[int] = mapped_column(
         ForeignKey("supplier_debts.id"), nullable=False, index=True
     )
-    amount: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    amount: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     payment_method: Mapped[str] = mapped_column(String(50), default="Espèces")
     payment_date: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.now, index=True

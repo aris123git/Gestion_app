@@ -46,7 +46,7 @@ class StockMovement(Base):
     quantity: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     quantity_before: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     quantity_after: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
-    unit_cost: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    unit_cost: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     reason: Mapped[str] = mapped_column(Text, default="")
     comment: Mapped[str] = mapped_column(Text, default="")
     invoice_number: Mapped[str] = mapped_column(String(80), default="")

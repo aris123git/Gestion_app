@@ -20,6 +20,7 @@ from app.models.supplier import Supplier
 from app.models.supplier_debt import SupplierDebt, SupplierDebtPayment
 from app.services import audit_service
 from app.utils.helpers import to_float
+from app.utils.helpers import format_amount
 
 
 class SupplierDebtService:
@@ -116,7 +117,7 @@ class SupplierDebtService:
                 raise ValueError("Aucune dette active pour ce fournisseur.")
             total_due = sum(float(d.amount_remaining) for d in debts)
             if amount > total_due + 0.001:
-                raise ValueError(f"Montant trop élevé : solde dû {total_due:,.0f}.")
+                raise ValueError(f"Montant trop élevé : solde dû {format_amount(total_due)}.")
             left = amount
             for debt in debts:
                 if left <= 0:

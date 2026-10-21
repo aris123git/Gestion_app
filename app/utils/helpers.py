@@ -6,14 +6,16 @@ from datetime import datetime
 
 
 def format_amount(value: float) -> str:
-    """Montant sans devise : décimales seulement si nécessaires (1500 / 1 250,50).
+    """Montant sans devise, jusqu'à 3 décimales sans zéros inutiles.
 
+    1500 -> '1 500' ; 1250.5 -> '1 250,5' ; 0.125 -> '0,125'.
     Séparateur de milliers = espace ASCII (sûr pour les imprimantes ESC/POS).
     """
     value = float(value)
-    if round(value, 2) == round(value):
-        return f"{value:,.0f}".replace(",", " ")
-    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+    text = f"{value:,.3f}".replace(",", " ")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text.replace(".", ",")
 
 
 def format_money(amount, currency: str = "FCFA") -> str:

@@ -7,6 +7,7 @@ from app import config
 from app.services import settings_service
 from app.ui.widgets.helpers import warn
 from app.utils.helpers import format_money
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class DebtPaymentDialog(QDialog):
     """Saisie d'un remboursement (montant, mode, note)."""
@@ -27,9 +28,9 @@ class DebtPaymentDialog(QDialog):
         layout.addWidget(info)
         form = QFormLayout()
         form.setSpacing(10)
-        self.amount = QDoubleSpinBox()
+        self.amount = MoneySpinBox()
         self.amount.setRange(0, max(ceiling, 0))
-        self.amount.setDecimals(0)
+        self.amount.setDecimals(3)
         self.amount.setValue(ceiling if ceiling > 0 else 0)
         self.method = QComboBox()
         self.method.addItems(config.PAYMENT_METHODS)

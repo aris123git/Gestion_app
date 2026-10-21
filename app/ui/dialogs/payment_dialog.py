@@ -11,6 +11,7 @@ from app.services import settings_service
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.utils.helpers import format_money
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class PaymentDialog(QDialog):
     """Recueille les paiements (éventuellement mixtes) pour une vente.
@@ -142,9 +143,9 @@ class PaymentDialog(QDialog):
             self.quick_debt.setVisible(False)
         layout.addLayout(quick_row)
         received_row = QFormLayout()
-        self.received_input = QDoubleSpinBox()
+        self.received_input = MoneySpinBox()
         self.received_input.setRange(0, 1000000000)
-        self.received_input.setDecimals(0)
+        self.received_input.setDecimals(3)
         self.received_input.setSingleStep(500)
         self.received_input.setSuffix(f' {self.currency}')
         self.received_input.valueChanged.connect(self._recalculate)
@@ -170,9 +171,9 @@ class PaymentDialog(QDialog):
         self._recalculate()
 
     def _make_spin(self) -> QDoubleSpinBox:
-        spin = QDoubleSpinBox()
+        spin = MoneySpinBox()
         spin.setRange(0, 1000000000)
-        spin.setDecimals(0)
+        spin.setDecimals(3)
         spin.setSingleStep(500)
         spin.setSuffix(f' {self.currency}')
         spin.valueChanged.connect(self._recalculate)

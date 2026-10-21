@@ -110,7 +110,7 @@ class ReportController:
                 )
                 or 0
             )
-            profit = round(profit + manual_debt_profit, 2)
+            profit = round(profit + manual_debt_profit, 3)
             sales_count = int(
                 session.scalar(
                     select(func.count()).select_from(Sale).where(*sale_filters)
@@ -224,11 +224,11 @@ class ReportController:
         by_method = sorted(method_totals.items(), key=lambda item: item[0])
 
         # CA encaissé = paiements de ventes (hors Dette) + règlements de dettes.
-        cash_revenue = round(sales_cash + debt_repayments, 2)
+        cash_revenue = round(sales_cash + debt_repayments, 3)
 
         vat_rate = settings_service.get_vat_rate()
         vat_included = (
-            round(total_sales * vat_rate / (100 + vat_rate), 2)
+            round(total_sales * vat_rate / (100 + vat_rate), 3)
             if vat_rate > 0
             else 0.0
         )

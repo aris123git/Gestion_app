@@ -28,9 +28,9 @@ class Product(Base, TimestampMixin):
         ForeignKey("units.id"), nullable=True
     )
 
-    purchase_price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    sale_price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
-    min_price: Mapped[float] = mapped_column(Numeric(14, 2), default=0)
+    purchase_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    sale_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    min_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
 
     quantity: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     min_stock: Mapped[float] = mapped_column(Numeric(14, 3), default=0)

@@ -9,6 +9,7 @@ from app.ui.responsive import EXPENSE_COLUMNS, LayoutProfile, TableColumnControl
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_money
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class ExpensesPage(QWidget):
     HEADERS = ['Date', 'Catégorie', 'Libellé', 'Montant']
@@ -28,9 +29,9 @@ class ExpensesPage(QWidget):
         self.category.addItems(config.EXPENSE_CATEGORIES)
         self.label = QLineEdit()
         self.label.setPlaceholderText(t('Libellé'))
-        self.amount = QDoubleSpinBox()
+        self.amount = MoneySpinBox()
         self.amount.setRange(0, 1000000000)
-        self.amount.setDecimals(0)
+        self.amount.setDecimals(3)
         self.amount.setSingleStep(500)
         add = QPushButton(t('Enregistrer la dépense'))
         add.setObjectName('Primary')

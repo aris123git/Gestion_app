@@ -11,6 +11,7 @@ from app.ui.responsive import LayoutProfile, STOCK_HISTORY_COLUMNS, TableColumnC
 from app.ui.state import AppState
 from app.ui.widgets.helpers import info, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_quantity
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class StockPage(QWidget):
     HISTORY_LIMIT = 1000
@@ -41,9 +42,9 @@ class StockPage(QWidget):
         self.quantity = QDoubleSpinBox()
         self.quantity.setRange(0, 10000000)
         self.quantity.setDecimals(3)
-        self.unit_cost = QDoubleSpinBox()
+        self.unit_cost = MoneySpinBox()
         self.unit_cost.setRange(0, 1000000000)
-        self.unit_cost.setDecimals(0)
+        self.unit_cost.setDecimals(3)
         self.invoice_number = QLineEdit()
         self.invoice_number.setPlaceholderText(t('Facultatif'))
         self.reason = QLineEdit()

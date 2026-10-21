@@ -9,6 +9,7 @@ from app.services.purchase_service import PurchaseLine, PurchaseService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_money, format_quantity
+from app.ui.widgets.money_spin import MoneySpinBox
 
 class PurchasesPage(QWidget):
 
@@ -30,9 +31,9 @@ class PurchasesPage(QWidget):
         self.qty.setRange(0.001, 10000000)
         self.qty.setDecimals(3)
         self.qty.setValue(1)
-        self.cost = QDoubleSpinBox()
+        self.cost = MoneySpinBox()
         self.cost.setRange(0, 1000000000)
-        self.paid = QDoubleSpinBox()
+        self.paid = MoneySpinBox()
         self.paid.setRange(0, 1000000000)
         self.note = QLineEdit()
         form.addRow(t('Fournisseur'), self.supplier)

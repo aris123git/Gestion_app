@@ -25,6 +25,7 @@ from app.models.debt import (
 )
 from app.services import audit_service
 from app.utils.helpers import to_float
+from app.utils.helpers import format_amount
 
 
 class DebtService:
@@ -140,7 +141,7 @@ class DebtService:
                 raise ValueError("Cette dette est déjà soldée.")
             if amount > remaining:
                 raise ValueError(
-                    f"Montant trop élevé : reste dû {remaining:,.0f}."
+                    f"Montant trop élevé : reste dû {format_amount(remaining)}."
                 )
             payment = DebtPayment(
                 debt_id=debt.id,
@@ -203,7 +204,7 @@ class DebtService:
             total_due = sum(float(d.amount_remaining) for d in debts)
             if amount > total_due + 0.001:
                 raise ValueError(
-                    f"Montant trop élevé : solde dû {total_due:,.0f}."
+                    f"Montant trop élevé : solde dû {format_amount(total_due)}."
                 )
             left = amount
             for debt in debts:
