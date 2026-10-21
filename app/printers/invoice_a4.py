@@ -193,6 +193,35 @@ def _vat_included(sale, items) -> tuple[float, float]:
     return 0.0, 0.0
 
 
+def client_refs(sale) -> dict:
+    """Références du client de la vente : nom, contact(s), adresse, e-mail.
+
+    Lit ``sale.client`` (fiche client) ; à défaut, les attributs simples
+    ``client_name`` / ``client_phone`` / ``client_address`` (ventes de test).
+    """
+    try:
+        client = getattr(sale, "client", None)
+    except Exception:  # fiche non chargée (session fermée)
+        client = None
+    if client is not None:
+        name = str(getattr(client, "name", "") or "")
+        phones = [str(getattr(client, a, "") or "").strip() for a in ("phone", "phone2")]
+        address = str(getattr(client, "address", "") or "").strip()
+        email = str(getattr(client, "email", "") or "").strip()
+    else:
+        name = str(getattr(sale, "client_name", "") or "")
+        phones = [str(getattr(sale, "client_phone", "") or "").strip()]
+        address = str(getattr(sale, "client_address", "") or "").strip()
+        email = str(getattr(sale, "client_email", "") or "").strip()
+    return {
+        "name": name.strip() or "Client de passage",
+        "contact": " / ".join(p for p in phones if p),
+        "address": address,
+        "email": email,
+        "known": client is not None or bool(name.strip() and name.strip() != "Client de passage"),
+    }
+
+
 def _line_cells(item, currency: str):
     quantity = float(item.quantity or 0)
     unit_price = float(item.unit_price or 0)
@@ -496,12 +525,29 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     story = []
 
     # Bloc client / références
-    client_name = getattr(sale, "client_name", "") or ""
-    client_lines = [Paragraph("<b>Facturé à</b>", small)]
-    client_lines.append(Paragraph(f"<b>{client_name or 'Client comptoir'}</b>", ParagraphStyle("c", parent=body, fontSize=fs + 2, leading=(fs + 2) * 1.3)))
-    client_phone = getattr(sale, "client_phone", "") or ""
-    if client_phone:
-        client_lines.append(Paragraph(f"Contact : {client_phone}", small))
+    refs_client = client_refs(sale)
+    if style.layout == "recu":
+        # Comme le reçu d'origine : « De : » puis Nom / Contact / Adresse.
+        client_lines = [Paragraph("<b>De :</b>", ParagraphStyle("de", parent=body, fontSize=fs + 3, leading=(fs + 3) * 1.3, textColor=primary))]
+        rows_c = [("Nom", refs_client["name"])]
+        if refs_client["contact"]:
+            rows_c.append(("Contact", refs_client["contact"]))
+        if refs_client["address"]:
+            rows_c.append(("Adresse", refs_client["address"]))
+        if refs_client["email"]:
+            rows_c.append(("E-mail", refs_client["email"]))
+        ref_t = Table([[Paragraph(a, small), Paragraph(f"<b>{b}</b>" if a == "Nom" else b, body)] for a, b in rows_c], colWidths=[20 * mm, 78 * mm])
+        ref_t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
+        client_lines.append(ref_t)
+    else:
+        client_lines = [Paragraph("<b>Facturé à</b>", small)]
+        client_lines.append(Paragraph(f"<b>{refs_client['name']}</b>", ParagraphStyle("c", parent=body, fontSize=fs + 2, leading=(fs + 2) * 1.3)))
+        if refs_client["contact"]:
+            client_lines.append(Paragraph(f"Contact : {refs_client['contact']}", small))
+        if refs_client["address"]:
+            client_lines.append(Paragraph(f"Adresse : {refs_client['address']}", small))
+        if refs_client["email"]:
+            client_lines.append(Paragraph(f"E-mail : {refs_client['email']}", small))
     refs = [
         Paragraph(f"<b>Facture N°</b> {sale.ticket_number}", ParagraphStyle("r", parent=body, alignment=2)),
         Paragraph(f"<b>Date</b> {moment:%d/%m/%Y}  {moment:%H:%M}", ParagraphStyle("r2", parent=body, alignment=2)),

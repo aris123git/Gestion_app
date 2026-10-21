@@ -149,6 +149,9 @@ def _context(sale, shop):
         payments.append(f"Reçu : {format_money(sale.amount_received, currency)}")
         payments.append(f"Monnaie rendue : {format_money(sale.change_due, currency)}")
     logo = Path(str(getattr(shop, "logo_path", "") or ""))
+    from app.printers.invoice_a4 import client_refs
+
+    _refs = client_refs(sale)
     return {
         "currency": currency,
         "rows": rows,
@@ -156,9 +159,9 @@ def _context(sale, shop):
         "date": f"{moment:%d/%m/%Y}",
         "datetime": f"{moment:%d/%m/%Y %H:%M}",
         "cashier": getattr(sale, "cashier_name", "") or "",
-        "client": getattr(sale, "client_name", "") or "Client comptoir",
-        "client_phone": getattr(sale, "client_phone", "") or "",
-        "client_address": getattr(sale, "client_address", "") or "",
+        "client": _refs["name"],
+        "client_phone": _refs["contact"],
+        "client_address": _refs["address"],
         "shop": shop,
         "logo": logo if logo.is_file() else None,
         "subtotal": format_money(sale.subtotal, currency),
