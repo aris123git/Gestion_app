@@ -151,6 +151,7 @@ class ProductController:
                 quantity=quantity,
                 min_stock=to_float(data.get("min_stock")),
                 free_amount_sale=bool(data.get("free_amount_sale", False)),
+                allow_negative_stock=bool(data.get("allow_negative_stock", False)),
                 image_path=str(data.get("image_path") or "").strip(),
                 is_active=bool(data.get("is_active", True)),
             )
@@ -208,6 +209,8 @@ class ProductController:
             product.free_amount_sale = bool(
                 data.get("free_amount_sale", product.free_amount_sale)
             )
+            if "allow_negative_stock" in data:
+                product.allow_negative_stock = bool(data.get("allow_negative_stock"))
             if "image_path" in data:
                 product.image_path = str(data.get("image_path") or "").strip()
             product.is_active = bool(data.get("is_active", True))

@@ -49,7 +49,7 @@ def _apply_stock_delta(
         return
     before = float(product.quantity or 0)
     after = before + delta_qty
-    if delta_qty < 0 and after < -0.0001:
+    if delta_qty < 0 and after < -0.0001 and not getattr(product, "allow_negative_stock", False):
         raise ValueError(f"Stock insuffisant : « {product.name} »")
     product.quantity = after
     session.add(

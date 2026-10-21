@@ -41,6 +41,8 @@ class Product(Base, TimestampMixin):
     # - purchase_price = prix d'achat par unité de stock (carton)
     # - pack_content = contenu estimatif (kg / carton)
     # - sale_price = prix de vente de référence (F / kg) pour marge estimée
+    # Autorise la vente même sans stock (le stock peut devenir négatif).
+    allow_negative_stock: Mapped[bool] = mapped_column(Boolean, default=False)
     free_amount_sale: Mapped[bool] = mapped_column(Boolean, default=False)
     pack_content: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
 

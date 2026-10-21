@@ -359,7 +359,7 @@ class SaleController:
                 if product is None:
                     raise ValueError("Produit introuvable pendant la vérification du stock.")
                 available = float(product.quantity)
-                if available <= 0 or available < needed:
+                if not getattr(product, "allow_negative_stock", False) and (available <= 0 or available < needed):
                     raise InsufficientStockError(
                         f"Stock insuffisant pour « {product.name} » : "
                         f"disponible {available:g}, demandé {needed:g}."
