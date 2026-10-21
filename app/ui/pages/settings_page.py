@@ -314,7 +314,7 @@ class SettingsPage(QWidget):
         self.theme.addItem(t('Sombre'), 'dark')
         self.default_printer_kind = QComboBox()
         self.default_printer_kind.addItem(t('Thermique (ticket 58/80 mm)'), 'thermique')
-        self.default_printer_kind.addItem(t('Encre / laser (facture demi-A4)'), 'encre')
+        self.default_printer_kind.addItem(t('Encre / laser (facture A4)'), 'encre')
         self.default_printer_kind.setToolTip(t("Choix proposé par défaut après chaque vente. Le caissier peut toujours changer ticket ↔ facture à l'encaissement."))
         self.default_printer_kind.currentIndexChanged.connect(self._on_default_printer_kind_changed)
         self.thermal_width = QComboBox()
@@ -356,6 +356,21 @@ class SettingsPage(QWidget):
         self.printers_status.setWordWrap(True)
         self.printers_status.setStyleSheet('color: #64748b; font-size: 12px;')
         self.printers_status.setToolTip(t("Résultat de la dernière recherche d'imprimantes sur ce poste."))
+        from app.printers.invoice_a4 import INVOICE_STYLES, MAX_FONT, MIN_FONT
+        self.invoice_style = QComboBox()
+        for _style in INVOICE_STYLES:
+            self.invoice_style.addItem(t(_style.label), _style.id)
+        self.invoice_style.setToolTip(t('Modèle de la facture A4 (portrait, page remplie) imprimée sur l\'imprimante encre / laser.'))
+        self.invoice_font = QSpinBox()
+        self.invoice_font.setRange(MIN_FONT, MAX_FONT)
+        self.invoice_font.setSuffix(' pt')
+        self.invoice_font.setToolTip(t('Taille du texte de la facture (désignations, prix, totaux). Plus grand = lecture plus facile.'))
+        invoice_preview = QPushButton(t('Aperçu de la facture'))
+        invoice_preview.setToolTip(t('Ouvre un exemple de facture avec le modèle et la police choisis.'))
+        invoice_preview.clicked.connect(self._preview_invoice)
+        invoice_style_row = QHBoxLayout()
+        invoice_style_row.addWidget(self.invoice_style, 1)
+        invoice_style_row.addWidget(invoice_preview)
         self.footer = QLineEdit()
         self.feed_lines = QSpinBox()
         self.feed_lines.setRange(0, 20)
@@ -376,6 +391,8 @@ class SettingsPage(QWidget):
         form.addRow(t('Imprimante ticket (thermique 58/80)'), printer_row)
         form.addRow(t('Imprimante facture (encre / laser)'), invoice_row)
         form.addRow('', self.printers_status)
+        form.addRow(t('Modèle de facture'), invoice_style_row)
+        form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Avance papier'), self.feed_lines)
         form.addRow(t('Coupe'), self.cut_mode)
         form.addRow(t('Après vente'), self.auto_print)
@@ -869,6 +886,8 @@ class SettingsPage(QWidget):
         settings_service.set_setting('pos_catalog_text_size', self.pos_text_size.currentData() or 'large')
         settings_service.set_setting('printer_name', self._printer_value())
         settings_service.set_setting('invoice_printer_name', self._invoice_printer_value())
+        settings_service.set_setting('invoice_style', self.invoice_style.currentData() or 'recu')
+        settings_service.set_setting('invoice_font_size', str(self.invoice_font.value()))
         settings_service.set_setting('ticket_feed_lines', str(self.feed_lines.value()))
         settings_service.set_setting('ticket_cut_mode', self.cut_mode.currentData())
         settings_service.set_setting('auto_print_ticket', '1' if self.auto_print.isChecked() else '0')
@@ -876,6 +895,25 @@ class SettingsPage(QWidget):
         self.state.notify_data_changed()
         if not silent:
             info(self, t('Préférences appliquées.'))
+
+    def _preview_invoice(self) -> None:
+        """Génère un exemple de facture avec le modèle / la police choisis et l'ouvre."""
+        from datetime import datetime
+        from types import SimpleNamespace as NS
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from app import config
+        from app.printers.invoice_a4 import build_invoice_a4
+        shop = settings_service.get_shop_info()
+        items = [NS(product_name='Article exemple 1', quantity=2, unit_price=1500, line_total=3000, tax_rate=0), NS(product_name='Article exemple 2', quantity=1, unit_price=12500.5, line_total=12500.5, tax_rate=0), NS(product_name='Article exemple 3', quantity=10, unit_price=250, line_total=2500, tax_rate=0)]
+        sale = NS(ticket_number='APERCU-0001', date=datetime.now(), cashier_name='Caissier', client_name='Client exemple', client_phone='', items=items, subtotal=18000.5, discount=0, total=18000.5, amount_received=20000, change_due=1999.5, payments=[NS(method='Espèces', amount=18000.5)])
+        try:
+            config.ensure_directories()
+            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value())
+        except Exception as exc:
+            warn(self, f'Impossible de générer l\'aperçu : {exc}')
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _build_controls_tab(self) -> QWidget:
         from app.services import cash_controls
@@ -1435,6 +1473,11 @@ class SettingsPage(QWidget):
         large = settings_service.get_setting('pos_catalog_large_text', '0') == '1'
         self.pos_large_text.setChecked(large)
         self.pos_text_size.setEnabled(large)
+        from app.printers.invoice_a4 import get_font_size, get_style
+        _si = self.invoice_style.findData(get_style().id)
+        if _si >= 0:
+            self.invoice_style.setCurrentIndex(_si)
+        self.invoice_font.setValue(get_font_size())
         size_index = self.pos_text_size.findData(settings_service.get_setting('pos_catalog_text_size', 'large'))
         if size_index >= 0:
             self.pos_text_size.setCurrentIndex(size_index)

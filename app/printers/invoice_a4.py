@@ -1,0 +1,611 @@
+"""Facture A4 portrait (210 × 297 mm), page remplie, plusieurs modèles.
+
+Le modèle et la taille de police se choisissent dans Paramètres → Apparence :
+- ``invoice_style``     : identifiant d'un modèle de ``INVOICE_STYLES``
+- ``invoice_font_size`` : taille du texte du tableau (pt), 7 à 20
+
+Les modèles sont dessinés avec ReportLab (aucun fichier image externe).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+from reportlab.lib import colors
+from reportlab.lib.colors import HexColor
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    PageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+from app import config
+from app.services import settings_service
+from app.utils.helpers import format_amount, format_money, format_quantity
+
+logger = logging.getLogger(__name__)
+
+PAGE_W, PAGE_H = A4  # portrait : 210 × 297 mm
+MARGIN = 14 * mm
+
+SETTING_STYLE = "invoice_style"
+SETTING_FONT = "invoice_font_size"
+DEFAULT_STYLE = "recu"
+DEFAULT_FONT = 10
+MIN_FONT, MAX_FONT = 7, 20
+
+
+@dataclass(frozen=True)
+class InvoiceStyle:
+    id: str
+    label: str
+    layout: str  # recu | vagues | moderne | diagonal
+    primary: str
+    light: str
+    dark: str = "#0f172a"
+
+
+INVOICE_STYLES: tuple[InvoiceStyle, ...] = (
+    InvoiceStyle("recu", "Reçu classique (bleu marine, tableau encadré)", "recu", "#1e1b8f", "#eef0fb"),
+    InvoiceStyle("vagues", "Vagues bleues (en-tête et pied courbes)", "vagues", "#1473b8", "#e6f1fa"),
+    InvoiceStyle("moderne_bleu", "Moderne bleu (épuré, bande sombre en bas)", "moderne", "#1f6fa8", "#eef4f9"),
+    InvoiceStyle("moderne_orange", "Moderne orange (épuré, bande sombre en bas)", "moderne", "#c8714f", "#faf0ea"),
+    InvoiceStyle("diagonal_bleu", "Bandeau diagonal bleu-gris", "diagonal", "#a9b9cc", "#dfe7f0"),
+    InvoiceStyle("diagonal_beige", "Bandeau diagonal beige", "diagonal", "#b59c85", "#efe5db"),
+)
+_STYLES_BY_ID = {s.id: s for s in INVOICE_STYLES}
+
+
+def get_style(style_id: str | None = None) -> InvoiceStyle:
+    key = (style_id or settings_service.get_setting(SETTING_STYLE, DEFAULT_STYLE)).strip()
+    return _STYLES_BY_ID.get(key, _STYLES_BY_ID[DEFAULT_STYLE])
+
+
+def get_font_size() -> int:
+    try:
+        value = int(float(settings_service.get_setting(SETTING_FONT, str(DEFAULT_FONT))))
+    except (TypeError, ValueError):
+        value = DEFAULT_FONT
+    return max(MIN_FONT, min(MAX_FONT, value))
+
+
+# ── Montant en lettres (français) ────────────────────────────────────────────
+
+_UNITS = [
+    "zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf",
+    "dix", "onze", "douze", "treize", "quatorze", "quinze", "seize",
+    "dix-sept", "dix-huit", "dix-neuf",
+]
+_TENS = ["", "", "vingt", "trente", "quarante", "cinquante", "soixante"]
+
+
+def _below_100(n: int) -> str:
+    if n < 20:
+        return _UNITS[n]
+    if n < 70:
+        tens, unit = divmod(n, 10)
+        if unit == 0:
+            return _TENS[tens]
+        return f"{_TENS[tens]}-et-un" if unit == 1 else f"{_TENS[tens]}-{_UNITS[unit]}"
+    if n < 80:
+        rest = n - 60
+        return "soixante-et-onze" if rest == 11 else f"soixante-{_UNITS[rest]}"
+    rest = n - 80
+    return "quatre-vingts" if rest == 0 else f"quatre-vingt-{_UNITS[rest]}"
+
+
+def _below_1000(n: int, final: bool) -> str:
+    hundreds, rest = divmod(n, 100)
+    parts: list[str] = []
+    if hundreds:
+        if hundreds == 1:
+            parts.append("cent")
+        else:
+            parts.append(f"{_UNITS[hundreds]} cent" + ("s" if rest == 0 and final else ""))
+    if rest:
+        parts.append(_below_100(rest))
+    return " ".join(parts)
+
+
+def number_to_words_fr(value: int) -> str:
+    """Nombre entier -> lettres (ex. 14000 -> « quatorze mille »)."""
+    value = int(value)
+    if value == 0:
+        return "zéro"
+    if value < 0:
+        return "moins " + number_to_words_fr(-value)
+    groups = [
+        (1_000_000_000, "milliard"),
+        (1_000_000, "million"),
+        (1_000, "mille"),
+    ]
+    parts: list[str] = []
+    for size, name in groups:
+        count, value = divmod(value, size)
+        if not count:
+            continue
+        if name == "mille":
+            parts.append("mille" if count == 1 else f"{_below_1000(count, False)} mille")
+        else:
+            plural = "s" if count > 1 else ""
+            parts.append(f"{_below_1000(count, True)} {name}{plural}")
+    if value:
+        parts.append(_below_1000(value, True))
+    return " ".join(parts)
+
+
+def amount_in_words(amount: float, currency: str) -> str:
+    whole = int(round(float(amount)))
+    text = number_to_words_fr(whole)
+    unit = "francs CFA" if (currency or "").upper() in {"FCFA", "CFA", "XOF", "F CFA"} else currency
+    return f"{text[:1].upper()}{text[1:]} {unit}"
+
+
+# ── Données de la facture ────────────────────────────────────────────────────
+
+
+def _vat_included(sale, items) -> tuple[float, float]:
+    """(taux affiché, montant de TVA incluse). Taxes produit prioritaires."""
+    total_vat = 0.0
+    for item in items:
+        rate = float(getattr(item, "tax_rate", 0) or 0)
+        if rate > 0:
+            total_vat += float(item.line_total or 0) * rate / (100 + rate)
+    if total_vat > 0:
+        return 0.0, round(total_vat, 3)
+    rate = settings_service.get_vat_rate()
+    if rate > 0:
+        return rate, round(float(sale.total or 0) * rate / (100 + rate), 3)
+    return 0.0, 0.0
+
+
+def _line_cells(item, currency: str):
+    quantity = float(item.quantity or 0)
+    unit_price = float(item.unit_price or 0)
+    line_total = float(item.line_total or 0)
+    if abs(round(unit_price * quantity, 3) - line_total) > 0.01:
+        return "—", "—"  # montant libre : pas de P.U. × quantité
+    return format_quantity(quantity), format_amount(unit_price)
+
+
+# ── Décors par modèle (en-tête / pied de page) ───────────────────────────────
+
+
+def _draw_logo(canvas, shop, x, y, size) -> bool:
+    logo = Path(str(getattr(shop, "logo_path", "") or ""))
+    if logo.is_file():
+        try:
+            canvas.drawImage(
+                str(logo), x, y, width=size, height=size,
+                preserveAspectRatio=True, mask="auto", anchor="c",
+            )
+            return True
+        except Exception:
+            logger.debug("Logo facture ignoré.", exc_info=True)
+    return False
+
+
+def _contact_lines(shop) -> list[str]:
+    lines = []
+    if shop.address:
+        lines.append(str(shop.address))
+    phones = " / ".join(p for p in [str(shop.phone or "").strip()] if p)
+    if phones:
+        lines.append(f"Tél. {phones}")
+    if shop.email:
+        lines.append(str(shop.email))
+    return lines
+
+
+def _fit(canvas, text, font, size, max_width):
+    while size > 6 and canvas.stringWidth(text, font, size) > max_width:
+        size -= 0.5
+    return size
+
+
+def _decor_recu(canvas, ctx):
+    st, shop = ctx["style"], ctx["shop"]
+    primary = HexColor(st.primary)
+    top = PAGE_H - 12 * mm
+    canvas.setFillColor(primary)
+    canvas.setFont("Helvetica-Bold", 26)
+    canvas.drawString(MARGIN, top - 11 * mm, "FACTURE")
+    canvas.setFont("Helvetica-Bold", 15)
+    canvas.drawString(MARGIN, top - 21 * mm, f"N° {ctx['number']}")
+    sep_x = MARGIN + 58 * mm
+    canvas.setStrokeColor(primary)
+    canvas.setLineWidth(0.8)
+    canvas.line(sep_x, top - 24 * mm, sep_x, top)
+    cx = (sep_x + PAGE_W - MARGIN) / 2
+    name = str(shop.name or "Commerce").upper()
+    size = _fit(canvas, name, "Helvetica-Bold", 20, PAGE_W - MARGIN - sep_x - 6 * mm)
+    canvas.setFont("Helvetica-Bold", size)
+    canvas.drawCentredString(cx, top - 9 * mm, name)
+    canvas.setFillColor(HexColor("#475569"))
+    y = top - 15 * mm
+    for line in _contact_lines(shop)[:3]:
+        canvas.setFont("Helvetica", 9)
+        canvas.drawCentredString(cx, y, line)
+        y -= 4.6 * mm
+    canvas.setStrokeColor(primary)
+    canvas.setLineWidth(1.6)
+    canvas.line(MARGIN, top - 29 * mm, PAGE_W - MARGIN, top - 29 * mm)
+    # Pied
+    canvas.setLineWidth(0.8)
+    canvas.line(MARGIN, 18 * mm, PAGE_W - MARGIN, 18 * mm)
+    canvas.setFillColor(HexColor("#475569"))
+    canvas.setFont("Helvetica-Oblique", 9)
+    canvas.drawCentredString(PAGE_W / 2, 11 * mm, ctx["footer"])
+
+
+def _wave(canvas, y_base, height, up: bool, color):
+    """Bande ondulée pleine largeur (haut si up=False, bas si up=True)."""
+    canvas.setFillColor(color)
+    p = canvas.beginPath()
+    w = PAGE_W
+    if not up:  # en-tête : bord inférieur ondulé
+        p.moveTo(0, PAGE_H)
+        p.lineTo(0, y_base)
+        p.curveTo(w * 0.25, y_base - height * 0.55, w * 0.5, y_base + height * 0.15, w * 0.72, y_base - height * 0.1)
+        p.curveTo(w * 0.86, y_base - height * 0.25, w * 0.95, y_base - height * 0.05, w, y_base + height * 0.1)
+        p.lineTo(w, PAGE_H)
+    else:  # pied : bord supérieur ondulé
+        p.moveTo(0, 0)
+        p.lineTo(0, y_base)
+        p.curveTo(w * 0.28, y_base + height * 0.55, w * 0.5, y_base - height * 0.2, w * 0.74, y_base + height * 0.12)
+        p.curveTo(w * 0.88, y_base + height * 0.28, w * 0.96, y_base + height * 0.05, w, y_base - height * 0.05)
+        p.lineTo(w, 0)
+    p.close()
+    canvas.drawPath(p, stroke=0, fill=1)
+
+
+def _decor_vagues(canvas, ctx):
+    st, shop = ctx["style"], ctx["shop"]
+    primary = HexColor(st.primary)
+    light = HexColor("#7fc1ea")
+    _wave(canvas, PAGE_H - 46 * mm, 20 * mm, False, light)
+    _wave(canvas, PAGE_H - 40 * mm, 18 * mm, False, primary)
+    # Logo dans un disque blanc
+    cx, cy, r = MARGIN + 12 * mm, PAGE_H - 22 * mm, 12 * mm
+    canvas.setFillColor(colors.white)
+    canvas.circle(cx, cy, r, stroke=0, fill=1)
+    if not _draw_logo(canvas, shop, cx - r + 2 * mm, cy - r + 2 * mm, 2 * r - 4 * mm):
+        canvas.setFillColor(primary)
+        canvas.setFont("Helvetica-Bold", 22)
+        initial = (str(shop.name or "C").strip()[:1] or "C").upper()
+        canvas.drawCentredString(cx, cy - 2.7 * mm, initial)
+    name = str(shop.name or "Commerce")
+    canvas.setFillColor(colors.white)
+    size = _fit(canvas, name, "Helvetica-Bold", 13, 62 * mm)
+    canvas.setFont("Helvetica-Bold", size)
+    canvas.drawString(cx + r + 4 * mm, cy - 1.5 * mm, name)
+    canvas.setFont("Helvetica-Bold", 34)
+    canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 27 * mm, "FACTURE")
+    # Pied
+    _wave(canvas, 20 * mm, 14 * mm, True, light)
+    _wave(canvas, 14 * mm, 12 * mm, True, primary)
+    canvas.setFillColor(colors.white)
+    canvas.setFont("Helvetica", 9)
+    lines = _contact_lines(shop)
+    canvas.drawString(MARGIN, 8.5 * mm, "  ·  ".join(lines)[:110])
+    canvas.setFont("Helvetica-Oblique", 9)
+    canvas.drawRightString(PAGE_W - MARGIN, 8.5 * mm, ctx["footer"][:60])
+
+
+def _decor_moderne(canvas, ctx):
+    st, shop = ctx["style"], ctx["shop"]
+    primary = HexColor(st.primary)
+    top = PAGE_H - 14 * mm
+    x = MARGIN
+    if _draw_logo(canvas, shop, x, top - 14 * mm, 14 * mm):
+        x += 17 * mm
+    name = str(shop.name or "Commerce")
+    size = _fit(canvas, name.upper(), "Helvetica-Bold", 17, 80 * mm)
+    canvas.setFillColor(primary)
+    canvas.setFont("Helvetica-Bold", size)
+    canvas.drawString(x, top - 7 * mm, name.upper())
+    # Filet dégradé simulé (sombre puis couleur)
+    canvas.setStrokeColor(HexColor("#222222"))
+    canvas.setLineWidth(1.4)
+    canvas.line(MARGIN, top - 17 * mm, MARGIN + 60 * mm, top - 17 * mm)
+    canvas.setStrokeColor(primary)
+    canvas.setLineWidth(0.8)
+    canvas.line(MARGIN + 60 * mm, top - 17 * mm, PAGE_W - MARGIN, top - 17 * mm)
+    canvas.setFillColor(HexColor("#475569"))
+    y = top - 3 * mm
+    for line in _contact_lines(shop)[:3]:
+        canvas.setFont("Helvetica", 9)
+        canvas.drawRightString(PAGE_W - MARGIN, y, line)
+        y -= 4.4 * mm
+    # Titre
+    canvas.setFillColor(primary)
+    canvas.setFont("Helvetica-Bold", 30)
+    canvas.drawRightString(PAGE_W - MARGIN, top - 38 * mm, "FACTURE")
+    # Pied : bande sombre + trapèzes de couleur
+    canvas.setFillColor(HexColor("#2b2b2b"))
+    canvas.rect(0, 0, PAGE_W, 9 * mm, stroke=0, fill=1)
+    canvas.setFillColor(primary)
+    p = canvas.beginPath()
+    p.moveTo(18 * mm, 9 * mm)
+    p.lineTo(24 * mm, 14 * mm)
+    p.lineTo(PAGE_W / 2 - 4 * mm, 14 * mm)
+    p.lineTo(PAGE_W / 2 + 2 * mm, 9 * mm)
+    p.close()
+    canvas.drawPath(p, stroke=0, fill=1)
+    p = canvas.beginPath()
+    p.moveTo(PAGE_W / 2 + 6 * mm, 9 * mm)
+    p.lineTo(PAGE_W / 2 + 12 * mm, 14 * mm)
+    p.lineTo(PAGE_W - 24 * mm, 14 * mm)
+    p.lineTo(PAGE_W - 18 * mm, 9 * mm)
+    p.close()
+    canvas.drawPath(p, stroke=0, fill=1)
+    canvas.setFillColor(HexColor("#555555"))
+    canvas.setFont("Helvetica-Oblique", 9)
+    canvas.drawCentredString(PAGE_W / 2, 17 * mm, ctx["footer"])
+
+
+def _decor_diagonal(canvas, ctx):
+    st, shop = ctx["style"], ctx["shop"]
+    band = HexColor(st.primary)
+    h = 44 * mm
+    canvas.setFillColor(band)
+    p = canvas.beginPath()
+    p.moveTo(0, PAGE_H)
+    p.lineTo(PAGE_W, PAGE_H)
+    p.lineTo(PAGE_W, PAGE_H - h)
+    p.lineTo(0, PAGE_H - h)
+    p.close()
+    canvas.drawPath(p, stroke=0, fill=1)
+    # Bandes blanches diagonales
+    for x0, wd, tone in ((70, 5, "#ffffff"), (80, 2.2, "#e9e4dc"), (86, 1.4, "#cfd6de")):
+        canvas.setFillColor(HexColor(tone))
+        p = canvas.beginPath()
+        p.moveTo((x0 - 14) * mm, PAGE_H)
+        p.lineTo((x0 - 14 + wd) * mm, PAGE_H)
+        p.lineTo((x0 + 14 + wd) * mm, PAGE_H - h)
+        p.lineTo((x0 + 14) * mm, PAGE_H - h)
+        p.close()
+        canvas.drawPath(p, stroke=0, fill=1)
+    canvas.setFillColor(HexColor("#2b2b2b"))
+    canvas.setFont("Helvetica-Bold", 30)
+    canvas.drawString(MARGIN, PAGE_H - 22 * mm, "FACTURE")
+    name = str(shop.name or "Commerce").upper()
+    size = _fit(canvas, name, "Helvetica-Bold", 13, 78 * mm)
+    canvas.setFont("Helvetica-Bold", size)
+    canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 15 * mm, name)
+    canvas.setFont("Helvetica", 9)
+    y = PAGE_H - 21 * mm
+    for line in _contact_lines(shop)[:3]:
+        canvas.drawRightString(PAGE_W - MARGIN, y, line)
+        y -= 4.6 * mm
+    # Pied
+    canvas.setFillColor(HexColor("#2b2b2b"))
+    canvas.rect(0, 0, PAGE_W, 5 * mm, stroke=0, fill=1)
+    canvas.setFillColor(HexColor("#6b7280"))
+    canvas.setFont("Helvetica-Oblique", 9)
+    canvas.drawCentredString(PAGE_W / 2, 10 * mm, ctx["footer"])
+
+
+_DECORS = {
+    "recu": _decor_recu,
+    "vagues": _decor_vagues,
+    "moderne": _decor_moderne,
+    "diagonal": _decor_diagonal,
+}
+
+# Hauteur réservée (mm) en haut / en bas de chaque page selon le modèle.
+_ZONES = {
+    "recu": (44, 24),
+    "vagues": (54, 30),
+    "moderne": (56, 24),
+    "diagonal": (52, 18),
+}
+
+
+# ── Construction du PDF ──────────────────────────────────────────────────────
+
+
+def build_invoice_a4(sale, shop=None, path: Path | None = None,
+                     style_id: str | None = None, font_size: int | None = None) -> Path:
+    """Génère la facture A4 portrait et retourne le chemin du PDF."""
+    config.ensure_directories()
+    shop = shop or settings_service.get_shop_info()
+    currency = shop.currency or "FCFA"
+    style = get_style(style_id)
+    fs = max(MIN_FONT, min(MAX_FONT, int(font_size or get_font_size())))
+
+    if path is None:
+        path = config.TICKET_DIR / f"{sale.ticket_number}_A4.pdf"
+        if path.exists():
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = config.TICKET_DIR / f"{sale.ticket_number}_A4_{stamp}.pdf"
+    path = Path(path)
+
+    moment = sale.date or datetime.now()
+    footer = str(shop.ticket_footer or "Merci pour votre confiance.")
+    ctx = {"style": style, "shop": shop, "number": sale.ticket_number, "footer": footer}
+    top_mm, bottom_mm = _ZONES[style.layout]
+    decor = _DECORS[style.layout]
+
+    def on_page(canvas, doc):
+        canvas.saveState()
+        decor(canvas, ctx)
+        canvas.restoreState()
+
+    frame_w = PAGE_W - 2 * MARGIN
+    frame_h = PAGE_H - (top_mm + bottom_mm) * mm
+    frame = Frame(MARGIN, bottom_mm * mm, frame_w, frame_h,
+                  leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="body")
+    doc = BaseDocTemplate(
+        str(path), pagesize=A4, leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=top_mm * mm, bottomMargin=bottom_mm * mm,
+        title=f"Facture {sale.ticket_number}", author=str(shop.name or ""),
+    )
+    doc.addPageTemplates([PageTemplate(id="p", frames=[frame], onPage=on_page)])
+
+    primary = HexColor(style.primary)
+    light = HexColor(style.light)
+    dark = HexColor(style.dark)
+    muted = HexColor("#475569")
+    # Texte du tableau = taille réglée ; le reste suit proportionnellement.
+    body = ParagraphStyle("body", fontName="Helvetica", fontSize=fs, leading=fs * 1.3, textColor=dark)
+    body_b = ParagraphStyle("bodyb", parent=body, fontName="Helvetica-Bold")
+    small = ParagraphStyle("small", parent=body, fontSize=max(7, fs - 1), leading=max(7, fs - 1) * 1.3, textColor=muted)
+    right_b = ParagraphStyle("rb", parent=body_b, alignment=2)
+
+    story = []
+
+    # Bloc client / références
+    client_name = getattr(sale, "client_name", "") or ""
+    client_lines = [Paragraph("<b>Facturé à</b>", small)]
+    client_lines.append(Paragraph(f"<b>{client_name or 'Client comptoir'}</b>", ParagraphStyle("c", parent=body, fontSize=fs + 2, leading=(fs + 2) * 1.3)))
+    client_phone = getattr(sale, "client_phone", "") or ""
+    if client_phone:
+        client_lines.append(Paragraph(f"Contact : {client_phone}", small))
+    refs = [
+        Paragraph(f"<b>Facture N°</b> {sale.ticket_number}", ParagraphStyle("r", parent=body, alignment=2)),
+        Paragraph(f"<b>Date</b> {moment:%d/%m/%Y}  {moment:%H:%M}", ParagraphStyle("r2", parent=body, alignment=2)),
+        Paragraph(f"<b>Caissier</b> {getattr(sale, 'cashier_name', '') or '—'}", ParagraphStyle("r3", parent=body, alignment=2)),
+    ]
+    meta = Table([[client_lines, refs]], colWidths=[frame_w * 0.55, frame_w * 0.45])
+    meta.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story += [meta, Spacer(1, 7 * mm)]
+
+    # Tableau des lignes
+    head = ["N°", "Désignation", "Qté", "Prix unitaire", "Total"]
+    rows = [head]
+    items = list(sale.items)
+    for index, item in enumerate(items, start=1):
+        qty_txt, pu_txt = _line_cells(item, currency)
+        rows.append([
+            str(index),
+            Paragraph(str(item.product_name or ""), body),
+            qty_txt, pu_txt, format_amount(float(item.line_total or 0)),
+        ])
+    col_w = [11 * mm, frame_w - 11 * mm - 22 * mm - 38 * mm - 40 * mm, 22 * mm, 38 * mm, 40 * mm]
+    pad = max(3, int(fs * 0.45))
+    layout = style.layout
+
+    def table_style(n_rows: int):
+        cmds = [
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), fs),
+            ("TEXTCOLOR", (0, 1), (-1, -1), dark),
+            ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+            ("ALIGN", (0, 0), (0, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), pad), ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ]
+        if layout == "recu":
+            cmds += [
+                ("BOX", (0, 0), (-1, -1), 1, primary), ("INNERGRID", (0, 0), (-1, -1), 0.6, primary),
+                ("TEXTCOLOR", (0, 0), (-1, 0), primary), ("LINEBELOW", (0, 0), (-1, 0), 1.4, primary),
+            ]
+        elif layout == "vagues":
+            cmds += [
+                ("BACKGROUND", (0, 0), (-1, 0), primary), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("LINEBELOW", (0, 1), (-1, -1), 0.5, HexColor("#cbd5e1")),
+                ("ROUNDEDCORNERS", [8, 8, 0, 0]),
+            ]
+        elif layout == "moderne":
+            cmds += [
+                ("BOX", (0, 0), (-1, 0), 0.9, dark), ("TEXTCOLOR", (0, 0), (-1, 0), dark),
+                ("LINEBELOW", (0, 1), (-1, -1), 0.8, HexColor("#8b8b8b")),
+            ]
+        else:  # diagonal : cellules colorées
+            cmds += [
+                ("BACKGROUND", (0, 0), (-1, 0), primary), ("TEXTCOLOR", (0, 0), (-1, 0), dark),
+                ("BACKGROUND", (0, 1), (-1, -1), light),
+                ("LINEBELOW", (0, 1), (-1, -1), 2.2, colors.white),
+                ("LINEBELOW", (0, -1), (-1, -1), 1.4, dark),
+            ]
+        return TableStyle(cmds)
+
+    # Totaux (hauteur connue pour remplir la page avant eux)
+    totals = []
+    discount = float(sale.discount or 0)
+    totals.append(["Sous-total", format_money(sale.subtotal, currency)])
+    if discount > 0:
+        totals.append(["Remise", "- " + format_money(discount, currency)])
+    rate, vat_amount = _vat_included(sale, items)
+    total_label_row = len(totals)
+    totals.append(["TOTAL", format_money(sale.total, currency)])
+    if vat_amount > 0:
+        label = f"dont TVA {rate:g} %" if rate else "dont TVA"
+        totals.append([label, format_money(vat_amount, currency)])
+    if float(sale.amount_received or 0) > 0:
+        totals.append(["Reçu", format_money(sale.amount_received, currency)])
+        totals.append(["Monnaie rendue", format_money(sale.change_due, currency)])
+    totals_t = Table(totals, colWidths=[44 * mm, 52 * mm])
+    t_cmds = [
+        ("FONTSIZE", (0, 0), (-1, -1), fs), ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"), ("TEXTCOLOR", (0, 0), (-1, -1), dark),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("FONTNAME", (0, total_label_row), (-1, total_label_row), "Helvetica-Bold"),
+        ("FONTSIZE", (0, total_label_row), (-1, total_label_row), fs + 3),
+        ("LINEABOVE", (0, total_label_row), (-1, total_label_row), 1.2, primary),
+        ("TEXTCOLOR", (0, total_label_row), (-1, total_label_row), primary if layout != "diagonal" else dark),
+    ]
+    if layout == "vagues":
+        t_cmds += [("BACKGROUND", (0, total_label_row), (-1, total_label_row), primary),
+                   ("TEXTCOLOR", (0, total_label_row), (-1, total_label_row), colors.white)]
+    totals_t.setStyle(TableStyle(t_cmds))
+
+    # Bloc gauche du pied : arrêté + moyens de paiement
+    left = []
+    words = amount_in_words(float(sale.total or 0), currency)
+    left.append(Paragraph(f"<b>Arrêtée la présente facture à la somme de</b><br/>{words} ({format_money(sale.total, currency)})", body))
+    if sale.payments:
+        left.append(Spacer(1, 3 * mm))
+        left.append(Paragraph("<b>Méthode de paiement</b>", body))
+        for pay in sale.payments:
+            left.append(Paragraph(f"{pay.method} : {format_money(pay.amount, currency)}", small))
+    sign = Paragraph(
+        "<b>Le responsable</b>" if layout in ("recu", "moderne") else "<b>Signature</b>",
+        ParagraphStyle("sg", parent=body, alignment=1),
+    )
+    bottom = Table([[left, [totals_t, Spacer(1, 6 * mm), sign]]], colWidths=[frame_w - 100 * mm, 100 * mm])
+    bottom.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    # Remplit la page : ajoute des lignes vides tant que tout tient sur 1 page.
+    _, meta_h = meta.wrap(frame_w, frame_h)
+    _, bottom_h = bottom.wrap(frame_w, frame_h)
+    reserve = meta_h + 7 * mm + bottom_h + 8 * mm + 4 * mm
+    available = frame_h - reserve
+    items_t = Table(rows, colWidths=col_w, repeatRows=1)
+    items_t.setStyle(table_style(len(rows)))
+    _, cur_h = items_t.wrap(frame_w, frame_h)
+    if cur_h <= available:
+        probe = [""] * 5
+        while True:
+            trial_rows = rows + [probe]
+            trial = Table(trial_rows, colWidths=col_w, repeatRows=1)
+            trial.setStyle(table_style(len(trial_rows)))
+            _, h = trial.wrap(frame_w, frame_h)
+            if h > available:
+                break
+            rows = trial_rows
+            items_t = trial
+    story += [items_t, Spacer(1, 8 * mm), bottom]
+
+    doc.build(story)
+    return path

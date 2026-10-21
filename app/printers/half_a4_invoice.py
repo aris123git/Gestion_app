@@ -52,7 +52,18 @@ def build_invoice_pdf(
     shop=None,
     path: Path | None = None,
 ) -> Path:
-    """Génère le PDF facture demi-A4 et retourne le chemin du fichier."""
+    """Génère la facture A4 portrait (modèle et police choisis dans Paramètres)."""
+    from app.printers.invoice_a4 import build_invoice_a4
+
+    return build_invoice_a4(sale, shop=shop, path=path)
+
+
+def _build_invoice_pdf_demi_a4(
+    sale,
+    shop=None,
+    path: Path | None = None,
+) -> Path:
+    """Ancienne facture demi-A4 (conservée, non utilisée)."""
     config.ensure_directories()
     shop = shop or settings_service.get_shop_info()
     currency = shop.currency or "FCFA"
@@ -376,13 +387,13 @@ def _print_pdf_windows(pdf_path: Path, printer_name: str) -> PrintResult:  # pra
         return PrintResult(
             True,
             pdf_path,
-            f"Facture demi-A4 envoyée à l'imprimante par défaut.\nPDF : {pdf_path}",
+            f"Facture A4 envoyée à l'imprimante par défaut.\nPDF : {pdf_path}",
         )
 
     return PrintResult(
         True,
         pdf_path,
-        f"Facture demi-A4 envoyée à « {target} ».\nPDF : {pdf_path}",
+        f"Facture A4 envoyée à « {target} ».\nPDF : {pdf_path}",
     )
 
 
@@ -414,5 +425,5 @@ def _print_pdf_posix(pdf_path: Path, printer_name: str) -> PrintResult:
     return PrintResult(
         True,
         pdf_path,
-        f"Facture demi-A4 envoyée à « {where} ».\nPDF : {pdf_path}",
+        f"Facture A4 envoyée à « {where} ».\nPDF : {pdf_path}",
     )

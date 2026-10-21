@@ -130,7 +130,7 @@ class TicketDialog(QDialog):
         default_paper = get_default_paper()
         using_default = paper == default_paper or (is_half_a4(paper) and is_half_a4(default_paper))
         if is_half_a4(paper):
-            self.format_hint.setText(f'Facture demi-A4 vers « {target} »' + (' (réglage par défaut).' if using_default else ' (autre choix).'))
+            self.format_hint.setText(f'Facture A4 vers « {target} »' + (' (réglage par défaut).' if using_default else ' (autre choix).'))
             self.print_button.setText('Imprimer la facture' if using_default else 'Imprimer (encre)')
             self.save_button.setText('Enregistrer la facture')
             self.print_kitchen_button.setVisible(False)
