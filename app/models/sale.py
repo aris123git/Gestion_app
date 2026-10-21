@@ -80,6 +80,8 @@ class SaleItem(Base):
     purchase_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     quantity: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     line_total: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    # Taux de taxe (%) inclus au moment de la vente (copie du produit).
+    tax_rate: Mapped[float] = mapped_column(Numeric(6, 3), default=0)
 
     sale: Mapped["Sale"] = relationship(back_populates="items")
     product: Mapped[Optional["Product"]] = relationship()  # noqa: F821

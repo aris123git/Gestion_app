@@ -45,6 +45,11 @@ class ProductDialog(QDialog):
         self.purchase_price = self._money_spin()
         self.sale_price = self._money_spin()
         self.min_price = self._money_spin()
+        self.tax_rate = MoneySpinBox()
+        self.tax_rate.setRange(0, 100)
+        self.tax_rate.setDecimals(3)
+        self.tax_rate.setSuffix(' %')
+        self.tax_rate.setToolTip(t('Taxe (TVA) déjà comprise dans le prix de vente. Le client paie le même montant ; la taxe est affichée sur le ticket et les rapports. 0 = aucune taxe.'))
         self.pack_content = self._qty_spin()
         self.quantity = self._qty_spin()
         self.min_stock = self._qty_spin()
@@ -84,6 +89,7 @@ class ProductDialog(QDialog):
         form.addRow(pack_label, self.pack_content)
         form.addRow(sale_label, self.sale_price)
         form.addRow(t('Prix minimum'), self.min_price)
+        form.addRow(t('Taxe incluse dans le prix de vente'), self.tax_rate)
         form.addRow(stock_label, self.quantity)
         form.addRow(t('Stock minimum'), self.min_stock)
         form.addRow(t('Unité de stock'), self.unit)
@@ -244,6 +250,7 @@ class ProductDialog(QDialog):
         self.purchase_price.setValue(float(product.purchase_price))
         self.sale_price.setValue(float(product.sale_price))
         self.min_price.setValue(float(product.min_price))
+        self.tax_rate.setValue(float(getattr(product, 'tax_rate', 0) or 0))
         self.pack_content.setValue(float(getattr(product, 'pack_content', 0) or 0))
         self.quantity.setValue(float(product.quantity))
         self.min_stock.setValue(float(product.min_stock))
@@ -263,5 +270,5 @@ class ProductDialog(QDialog):
             if self.pack_content.value() <= 0:
                 warn(self, t('Indiquez le contenu estimatif (ex. 10 kg par carton) pour convertir le stock et estimer le coût.'))
                 return
-        self.data = {'name': self.name.text().strip(), 'barcode': self.barcode.text().strip(), 'reference': self.reference.text().strip(), 'category_id': self.category.currentData(), 'unit_id': self.unit.currentData(), 'purchase_price': self.purchase_price.value(), 'sale_price': self.sale_price.value(), 'min_price': self.min_price.value(), 'pack_content': self.pack_content.value(), 'quantity': self.quantity.value(), 'min_stock': self.min_stock.value(), 'free_amount_sale': self.free_amount_sale.isChecked(), 'image_path': self._image_path, 'is_active': self.is_active.isChecked()}
+        self.data = {'name': self.name.text().strip(), 'barcode': self.barcode.text().strip(), 'reference': self.reference.text().strip(), 'category_id': self.category.currentData(), 'unit_id': self.unit.currentData(), 'purchase_price': self.purchase_price.value(), 'sale_price': self.sale_price.value(), 'min_price': self.min_price.value(), 'tax_rate': self.tax_rate.value(), 'pack_content': self.pack_content.value(), 'quantity': self.quantity.value(), 'min_stock': self.min_stock.value(), 'free_amount_sale': self.free_amount_sale.isChecked(), 'image_path': self._image_path, 'is_active': self.is_active.isChecked()}
         self.accept()

@@ -122,6 +122,13 @@ class ProductController:
                 raise ValueError(f"{label} ne peut pas être négatif.")
 
     @staticmethod
+    def _tax_rate(data: dict) -> float:
+        rate = to_float(data.get("tax_rate"))
+        if rate < 0 or rate > 100:
+            raise ValueError("La taxe doit être comprise entre 0 et 100 %.")
+        return rate
+
+    @staticmethod
     def create(data: dict, user_id: Optional[int] = None) -> Product:
         barcode = ProductController._clean_barcode(data.get("barcode"))
         ProductController._validate_prices(data)
@@ -139,6 +146,7 @@ class ProductController:
                 purchase_price=to_float(data.get("purchase_price")),
                 sale_price=to_float(data.get("sale_price")),
                 min_price=to_float(data.get("min_price")),
+                tax_rate=ProductController._tax_rate(data),
                 pack_content=to_float(data.get("pack_content")),
                 quantity=quantity,
                 min_stock=to_float(data.get("min_stock")),
@@ -192,6 +200,8 @@ class ProductController:
             product.purchase_price = to_float(data.get("purchase_price"))
             # Le prix de vente est mis à jour via PriceHistoryService si modifié.
             product.min_price = to_float(data.get("min_price"))
+            if "tax_rate" in data:
+                product.tax_rate = ProductController._tax_rate(data)
             product.pack_content = to_float(data.get("pack_content", product.pack_content))
             product.quantity = new_quantity
             product.min_stock = to_float(data.get("min_stock"))

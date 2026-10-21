@@ -21,6 +21,14 @@ from app.utils.helpers import generate_ticket_number, to_float
 from app.utils.helpers import format_amount
 
 
+def _product_tax_rate(session, product_id) -> float:
+    """Taux de taxe (%) inclus du produit (0 si inconnu)."""
+    if not product_id:
+        return 0.0
+    product = session.get(Product, product_id)
+    return float(product.tax_rate or 0) if product else 0.0
+
+
 @dataclass
 class CartLine:
     """Ligne du panier de caisse (en mémoire, avant validation)."""
@@ -67,7 +75,7 @@ class CartLine:
             return round(0.0 - float(self.purchase_price) * float(self.quantity), 3)
         if self.free_amount:
             return round(float(self.amount) - float(self.purchase_price) * float(self.quantity), 3)
-        return round((float(self.unit_price) - float(self.purchase_price)) * float(self.quantity), 2)
+        return round((float(self.unit_price) - float(self.purchase_price)) * float(self.quantity), 3)
 
 
 @dataclass
@@ -440,6 +448,7 @@ class SaleController:
                         purchase_price=purchase_price,
                         quantity=line.quantity,
                         line_total=line.total,
+                        tax_rate=(float(product.tax_rate or 0) if product and not line.loyalty_reward else 0.0),
                     )
                 )
 
@@ -624,6 +633,7 @@ class SaleController:
                         purchase_price=line.purchase_price,
                         quantity=line.quantity,
                         line_total=line.total,
+                        tax_rate=_product_tax_rate(session, line.product_id),
                     )
                 )
             sale_id = sale.id

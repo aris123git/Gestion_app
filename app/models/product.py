@@ -31,6 +31,8 @@ class Product(Base, TimestampMixin):
     purchase_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     sale_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     min_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    # Taxe (%) INCLUSE dans le prix de vente (prix saisi = TTC). 0 = aucune taxe.
+    tax_rate: Mapped[float] = mapped_column(Numeric(6, 3), default=0)
 
     quantity: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     min_stock: Mapped[float] = mapped_column(Numeric(14, 3), default=0)

@@ -108,6 +108,10 @@ def _migrate_schema() -> None:
             "free_amount_sale": "BOOLEAN DEFAULT 0",
             "pack_content": "NUMERIC(14, 3) DEFAULT 0",
             "image_path": "VARCHAR(500) DEFAULT ''",
+            "tax_rate": "NUMERIC(6, 3) DEFAULT 0",
+        },
+        "sale_items": {
+            "tax_rate": "NUMERIC(6, 3) DEFAULT 0",
         },
         "purchases": {
             "status": "VARCHAR(20) DEFAULT 'completed'",

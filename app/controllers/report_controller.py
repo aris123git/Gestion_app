@@ -83,6 +83,23 @@ class ReportController:
                 )
                 or 0
             )
+            product_vat = float(
+                session.scalar(
+                    select(
+                        func.coalesce(
+                            func.sum(
+                                SaleItem.line_total
+                                * SaleItem.tax_rate
+                                / (100 + SaleItem.tax_rate)
+                            ),
+                            0,
+                        )
+                    )
+                    .join(Sale, Sale.id == SaleItem.sale_id)
+                    .where(*sale_filters, SaleItem.tax_rate > 0)
+                )
+                or 0
+            )
             profit = float(
                 session.scalar(
                     select(func.coalesce(func.sum(Sale.profit), 0)).where(*sale_filters)
@@ -232,6 +249,9 @@ class ReportController:
             if vat_rate > 0
             else 0.0
         )
+        # Taxes par produit (incluses dans les prix) : prioritaires si présentes.
+        if product_vat > 0:
+            vat_included = round(product_vat, 3)
         treasury = round(
             cash_revenue - expenses - supplier_debt_payments,
             2,
