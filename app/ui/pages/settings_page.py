@@ -34,13 +34,19 @@ class SettingsPage(QWidget):
         tabs = QTabWidget()
         tabs.addTab(self._build_shop_tab(), t('Commerce'))
         tabs.addTab(self._build_appearance_tab(), t('Apparence du ticket'))
-        tabs.addTab(self._build_designs_tab(), t('Designs des tickets'))
+        self._tab_designs = self._build_designs_tab()
+        tabs.addTab(self._tab_designs, t('Designs des tickets'))
+        tabs.addTab(self._build_invoice_tab(), t('Facture'))
         tabs.addTab(self._build_controls_tab(), t('Contrôles caisse'))
         if product_profile.supports_profit_loyalty():
             tabs.addTab(self._build_loyalty_tab(), t('Fidélité bénéfices'))
-        tabs.addTab(self._build_backup_tab(), t('Sauvegarde'))
-        tabs.addTab(self._build_portal_tab(), t('Portail web'))
-        tabs.addTab(self._build_audit_tab(), t("Journal d'audit"))
+        self._tab_backup = self._build_backup_tab()
+        tabs.addTab(self._tab_backup, t('Sauvegarde'))
+        self._tab_portal = self._build_portal_tab()
+        tabs.addTab(self._tab_portal, t('Portail web'))
+        self._tab_audit = self._build_audit_tab()
+        tabs.addTab(self._tab_audit, t("Journal d'audit"))
+        self._tabs = tabs
         tabs.currentChanged.connect(self._on_tab)
         layout.addWidget(tabs)
 
@@ -350,8 +356,6 @@ class SettingsPage(QWidget):
         printer_row = QHBoxLayout()
         printer_row.addWidget(self.printer, 1)
         printer_row.addWidget(refresh_printers)
-        invoice_row = QHBoxLayout()
-        invoice_row.addWidget(self.invoice_printer, 1)
         self.printers_status = QLabel('')
         self.printers_status.setWordWrap(True)
         self.printers_status.setStyleSheet('color: #64748b; font-size: 12px;')
@@ -365,12 +369,6 @@ class SettingsPage(QWidget):
         self.invoice_font.setRange(MIN_FONT, MAX_FONT)
         self.invoice_font.setSuffix(' pt')
         self.invoice_font.setToolTip(t('Taille du texte de la facture (désignations, prix, totaux). Plus grand = lecture plus facile.'))
-        invoice_preview = QPushButton(t('Aperçu de la facture'))
-        invoice_preview.setToolTip(t('Ouvre un exemple de facture avec le modèle et la police choisis.'))
-        invoice_preview.clicked.connect(self._preview_invoice)
-        invoice_style_row = QHBoxLayout()
-        invoice_style_row.addWidget(self.invoice_style, 1)
-        invoice_style_row.addWidget(invoice_preview)
         self.footer = QLineEdit()
         self.feed_lines = QSpinBox()
         self.feed_lines.setRange(0, 20)
@@ -389,10 +387,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Lecture rapide caisse'), self.pos_large_text)
         form.addRow(t('Taille du texte'), self.pos_text_size)
         form.addRow(t('Imprimante ticket (thermique 58/80)'), printer_row)
-        form.addRow(t('Imprimante facture (encre / laser)'), invoice_row)
         form.addRow('', self.printers_status)
-        form.addRow(t('Modèle et couleur de la facture'), invoice_style_row)
-        form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Avance papier'), self.feed_lines)
         form.addRow(t('Coupe'), self.cut_mode)
         form.addRow(t('Après vente'), self.auto_print)
@@ -422,6 +417,49 @@ class SettingsPage(QWidget):
         outer.addLayout(actions)
         outer.addStretch()
         return wrap
+
+    def _build_invoice_tab(self) -> QWidget:
+        """Onglet « Facture » : imprimante, modèle, couleur, police et aperçu."""
+        wrap = QWidget()
+        outer = QVBoxLayout(wrap)
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        form.setSpacing(10)
+        find_printers = QPushButton(t('Rechercher'))
+        find_printers.setToolTip(t("Liste les imprimantes installées sur cet ordinateur (jet d'encre, laser…)."))
+        find_printers.clicked.connect(self._search_invoice_printers)
+        printer_row = QHBoxLayout()
+        printer_row.addWidget(self.invoice_printer, 1)
+        printer_row.addWidget(find_printers)
+        self.invoice_printers_status = QLabel('')
+        self.invoice_printers_status.setWordWrap(True)
+        self.invoice_printers_status.setStyleSheet('color: #64748b; font-size: 12px;')
+        form.addRow(t('Imprimante facture (encre / laser)'), printer_row)
+        form.addRow('', self.invoice_printers_status)
+        form.addRow(t('Modèle et couleur de la facture'), self.invoice_style)
+        form.addRow(t('Taille de police facture'), self.invoice_font)
+        outer.addWidget(make_card(form_widget))
+        hint = QLabel(t("La facture est en A4 portrait, page remplie. Le nom, l'adresse, le téléphone, l'e-mail et le logo viennent de l'onglet <b>Commerce</b> ; le message de bas de page est le <b>Message du ticket</b> (onglet Apparence du ticket). Le type par défaut (ticket ou facture) se règle dans l'onglet Apparence du ticket."))
+        hint.setWordWrap(True)
+        hint.setStyleSheet('color: #64748b;')
+        outer.addWidget(hint)
+        actions = QHBoxLayout()
+        save = QPushButton(t('Appliquer'))
+        save.setObjectName('Primary')
+        save.clicked.connect(self._save_appearance)
+        preview = QPushButton(t('Aperçu de la facture'))
+        preview.setToolTip(t('Ouvre un exemple de facture avec le modèle, la couleur et la police choisis.'))
+        preview.clicked.connect(self._preview_invoice)
+        actions.addWidget(save)
+        actions.addWidget(preview)
+        actions.addStretch()
+        outer.addLayout(actions)
+        outer.addStretch()
+        return wrap
+
+    def _search_invoice_printers(self) -> None:
+        self._search_connected_printers()
+        self.invoice_printers_status.setText(self.printers_status.text())
 
     def _build_designs_tab(self) -> QWidget:
         from app.printers.ticket.options import DENSITIES
@@ -1418,14 +1456,15 @@ class SettingsPage(QWidget):
             self.audit_table.setItem(row, 3, QTableWidgetItem(log.details))
 
     def _on_tab(self, index: int) -> None:
-        if index == 2:
+        tab = self._tabs.widget(index)
+        if tab is self._tab_designs:
             self._load_designs_ui()
-        elif index == 4:
+        elif tab is self._tab_backup:
             self._load_auto_options()
             self._reload_backups()
-        elif index == 5:
+        elif tab is self._tab_portal:
             self._load_portal_ui()
-        elif index == 6:
+        elif tab is self._tab_audit:
             self._reload_audit()
 
     def refresh(self) -> None:
