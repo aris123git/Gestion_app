@@ -530,8 +530,8 @@ class POSPage(QWidget):
         product = ProductController.get(product_id)
         if not product:
             return 0.0
-        if getattr(product, 'allow_negative_stock', False):
-            return 1e12  # vente sans stock autorisée pour ce produit
+        if getattr(product, 'sell_without_stock', False):
+            return 1e12  # produit non suivi en stock
         available = float(product.quantity)
         if not exclude_cart:
             for line in self.cart:

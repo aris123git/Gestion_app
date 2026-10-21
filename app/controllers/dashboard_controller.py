@@ -114,6 +114,7 @@ class DashboardController:
                 .select_from(Product)
                 .where(
                     Product.is_active.is_(True),
+                    Product.sell_without_stock.is_not(True),
                     Product.quantity <= Product.min_stock,
                     Product.quantity > 0,
                 )
@@ -121,7 +122,11 @@ class DashboardController:
             out_of_stock = session.scalar(
                 select(func.count())
                 .select_from(Product)
-                .where(Product.is_active.is_(True), Product.quantity <= 0)
+                .where(
+                    Product.is_active.is_(True),
+                    Product.sell_without_stock.is_not(True),
+                    Product.quantity <= 0,
+                )
             )
             total_products = session.scalar(
                 select(func.count()).select_from(Product)

@@ -359,7 +359,7 @@ class SaleController:
                 if product is None:
                     raise ValueError("Produit introuvable pendant la vérification du stock.")
                 available = float(product.quantity)
-                if not getattr(product, "allow_negative_stock", False) and (available <= 0 or available < needed):
+                if not getattr(product, "sell_without_stock", False) and (available <= 0 or available < needed):
                     raise InsufficientStockError(
                         f"Stock insuffisant pour « {product.name} » : "
                         f"disponible {available:g}, demandé {needed:g}."
@@ -452,7 +452,7 @@ class SaleController:
                     )
                 )
 
-                if product:
+                if product and not getattr(product, "sell_without_stock", False):
                     stock_out = float(line.stock_quantity)
                     before = float(product.quantity)
                     after = before - stock_out
@@ -868,7 +868,7 @@ class SaleController:
                 for item in sale.items:
                     if item.product_id:
                         product = session.get(Product, item.product_id)
-                        if product:
+                        if product and not getattr(product, "sell_without_stock", False):
                             restock_qty = float(item.quantity)
                             # Montant libre : quantity stockée = unités de vente (kg) ;
                             # le stock produit est en unités d'achat (cartons).

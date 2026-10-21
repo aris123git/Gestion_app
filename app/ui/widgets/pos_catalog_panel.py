@@ -293,7 +293,8 @@ class PosCatalogPanel(QFrame):
                 price_txt = format_money(product.sale_price, currency)
             self.product_table.setItem(row, 1, QTableWidgetItem(price_txt))
             stock_item = QTableWidgetItem(
-                f"{format_quantity(product.quantity)} {product.unit_name}".strip()
+                t('Sans stock') if getattr(product, 'sell_without_stock', False)
+                else f"{format_quantity(product.quantity)} {product.unit_name}".strip()
             )
             if product.is_out_of_stock:
                 stock_item.setForeground(Qt.GlobalColor.red)

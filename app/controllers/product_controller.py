@@ -151,7 +151,7 @@ class ProductController:
                 quantity=quantity,
                 min_stock=to_float(data.get("min_stock")),
                 free_amount_sale=bool(data.get("free_amount_sale", False)),
-                allow_negative_stock=bool(data.get("allow_negative_stock", False)),
+                sell_without_stock=bool(data.get("sell_without_stock", False)),
                 image_path=str(data.get("image_path") or "").strip(),
                 is_active=bool(data.get("is_active", True)),
             )
@@ -209,8 +209,8 @@ class ProductController:
             product.free_amount_sale = bool(
                 data.get("free_amount_sale", product.free_amount_sale)
             )
-            if "allow_negative_stock" in data:
-                product.allow_negative_stock = bool(data.get("allow_negative_stock"))
+            if "sell_without_stock" in data:
+                product.sell_without_stock = bool(data.get("sell_without_stock"))
             if "image_path" in data:
                 product.image_path = str(data.get("image_path") or "").strip()
             product.is_active = bool(data.get("is_active", True))
@@ -286,6 +286,7 @@ class ProductController:
                 .options(joinedload(Product.unit))
                 .where(
                     Product.is_active.is_(True),
+                    Product.sell_without_stock.is_not(True),
                     Product.quantity <= Product.min_stock,
                 )
                 .order_by(Product.quantity)
@@ -300,7 +301,11 @@ class ProductController:
             rows = session.scalars(
                 select(Product)
                 .options(joinedload(Product.unit))
-                .where(Product.is_active.is_(True), Product.quantity <= 0)
+                .where(
+                    Product.is_active.is_(True),
+                    Product.sell_without_stock.is_not(True),
+                    Product.quantity <= 0,
+                )
                 .order_by(Product.name)
                 .limit(limit)
             ).unique().all()

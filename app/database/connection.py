@@ -109,7 +109,7 @@ def _migrate_schema() -> None:
             "pack_content": "NUMERIC(14, 3) DEFAULT 0",
             "image_path": "VARCHAR(500) DEFAULT ''",
             "tax_rate": "NUMERIC(6, 3) DEFAULT 0",
-            "allow_negative_stock": "BOOLEAN DEFAULT 0",
+            "sell_without_stock": "BOOLEAN DEFAULT 0",
         },
         "sale_items": {
             "tax_rate": "NUMERIC(6, 3) DEFAULT 0",

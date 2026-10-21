@@ -133,7 +133,7 @@ class ProductsPage(QWidget):
                 price_txt = format_money(product.sale_price, currency)
             if self._maquis:
                 self.table.setItem(row, 2, QTableWidgetItem(price_txt))
-                stock_item = QTableWidgetItem(format_quantity(product.quantity))
+                stock_item = QTableWidgetItem(t('Sans stock') if getattr(product, 'sell_without_stock', False) else format_quantity(product.quantity))
                 if product.is_out_of_stock:
                     stock_item.setForeground(Qt.GlobalColor.red)
                 elif product.is_low_stock:
@@ -143,7 +143,7 @@ class ProductsPage(QWidget):
             else:
                 self.table.setItem(row, 2, QTableWidgetItem(product.barcode))
                 self.table.setItem(row, 3, QTableWidgetItem(price_txt))
-                stock_item = QTableWidgetItem(format_quantity(product.quantity))
+                stock_item = QTableWidgetItem(t('Sans stock') if getattr(product, 'sell_without_stock', False) else format_quantity(product.quantity))
                 if product.is_out_of_stock:
                     stock_item.setForeground(Qt.GlobalColor.red)
                 elif product.is_low_stock:

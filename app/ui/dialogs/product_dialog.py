@@ -53,8 +53,9 @@ class ProductDialog(QDialog):
         self.pack_content = self._qty_spin()
         self.quantity = self._qty_spin()
         self.min_stock = self._qty_spin()
-        self.allow_negative_stock = QCheckBox(t('Autoriser la vente sans stock'))
-        self.allow_negative_stock.setToolTip(t("Si activé, ce produit peut être vendu même quand le stock est à 0 ; le stock devient négatif. Désactivé : la vente est bloquée en rupture."))
+        self.sell_without_stock = QCheckBox(t('Vente sans stock'))
+        self.sell_without_stock.setToolTip(t("Si activé, ce produit n'a pas de stock : il se vend toujours, sans rupture, et son stock n'est ni suivi ni modifié. Désactivé : le stock est suivi et la vente est bloquée en rupture."))
+        self.sell_without_stock.toggled.connect(self._toggle_no_stock)
         self.free_amount_sale = QCheckBox(t('Vente : montant libre'))
         self.free_amount_sale.setToolTip(t("Le caissier saisit un montant (ex. 300 F) au lieu d'une quantité. Le prix de vente sert à estimer la marge."))
         self.free_hint = QLabel(t('Exemple poissonnerie : achat 10 000 F/carton, contenu 10 kg, vente 1 500 F/kg → à la caisse on saisit « 300 F ».'))
@@ -96,7 +97,7 @@ class ProductDialog(QDialog):
         form.addRow(t('Stock minimum'), self.min_stock)
         form.addRow(t('Unité de stock'), self.unit)
         form.addRow(t('Mode de vente'), self.free_amount_sale)
-        form.addRow('', self.allow_negative_stock)
+        form.addRow('', self.sell_without_stock)
         form.addRow('', self.free_hint)
         form.addRow(t('Statut'), self.is_active)
         self._image_preview = QLabel(t('product.no_image'))
@@ -143,6 +144,11 @@ class ProductDialog(QDialog):
         if product:
             self._fill(product)
         self._toggle_free_mode(self.free_amount_sale.isChecked())
+
+    def _toggle_no_stock(self, checked: bool) -> None:
+        """Vente sans stock : les champs de stock ne s'appliquent plus."""
+        self.quantity.setEnabled(not checked)
+        self.min_stock.setEnabled(not checked)
 
     def _money_spin(self) -> QDoubleSpinBox:
         spin = MoneySpinBox()
@@ -258,7 +264,7 @@ class ProductDialog(QDialog):
         self.quantity.setValue(float(product.quantity))
         self.min_stock.setValue(float(product.min_stock))
         self.free_amount_sale.setChecked(bool(getattr(product, 'free_amount_sale', False)))
-        self.allow_negative_stock.setChecked(bool(getattr(product, 'allow_negative_stock', False)))
+        self.sell_without_stock.setChecked(bool(getattr(product, 'sell_without_stock', False)))
         self.is_active.setChecked(bool(product.is_active))
         self._image_path = str(getattr(product, 'image_path', '') or '')
         self._show_image_preview(self._image_path)
@@ -274,5 +280,5 @@ class ProductDialog(QDialog):
             if self.pack_content.value() <= 0:
                 warn(self, t('Indiquez le contenu estimatif (ex. 10 kg par carton) pour convertir le stock et estimer le coût.'))
                 return
-        self.data = {'name': self.name.text().strip(), 'barcode': self.barcode.text().strip(), 'reference': self.reference.text().strip(), 'category_id': self.category.currentData(), 'unit_id': self.unit.currentData(), 'purchase_price': self.purchase_price.value(), 'sale_price': self.sale_price.value(), 'min_price': self.min_price.value(), 'tax_rate': self.tax_rate.value(), 'pack_content': self.pack_content.value(), 'quantity': self.quantity.value(), 'min_stock': self.min_stock.value(), 'free_amount_sale': self.free_amount_sale.isChecked(), 'allow_negative_stock': self.allow_negative_stock.isChecked(), 'image_path': self._image_path, 'is_active': self.is_active.isChecked()}
+        self.data = {'name': self.name.text().strip(), 'barcode': self.barcode.text().strip(), 'reference': self.reference.text().strip(), 'category_id': self.category.currentData(), 'unit_id': self.unit.currentData(), 'purchase_price': self.purchase_price.value(), 'sale_price': self.sale_price.value(), 'min_price': self.min_price.value(), 'tax_rate': self.tax_rate.value(), 'pack_content': self.pack_content.value(), 'quantity': self.quantity.value(), 'min_stock': self.min_stock.value(), 'free_amount_sale': self.free_amount_sale.isChecked(), 'sell_without_stock': self.sell_without_stock.isChecked(), 'image_path': self._image_path, 'is_active': self.is_active.isChecked()}
         self.accept()
