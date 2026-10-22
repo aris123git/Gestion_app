@@ -328,16 +328,59 @@ class ReportsPage(QWidget):
             if item:
                 self.history_table.scrollToItem(item)
 
+    def _choose_sections(self, pdf: bool):
+        """Fenêtre de choix des sections à exporter (mémorisée). None = annulé."""
+        from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox
+        from app.reports.excel_report import PROFIT_SECTIONS, SECTIONS
+        from app.services import settings_service
+
+        key = 'report_export_sections'
+        saved = settings_service.get_setting(key, '')
+        chosen = set(saved.split(',')) if saved else {k for k, _ in SECTIONS}
+        can_profit = self.state.can(perms.VIEW_PROFITS)
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t('Contenu de l\'export'))
+        box = QVBoxLayout(dialog)
+        box.addWidget(QLabel(t('Cochez les sections à inclure :')))
+        checks = {}
+        for sec, label in SECTIONS:
+            if sec in PROFIT_SECTIONS and not can_profit:
+                continue
+            if pdf and sec == 'lines':
+                continue
+            cb = QCheckBox(t(label))
+            cb.setChecked(sec in chosen)
+            box.addWidget(cb)
+            checks[sec] = cb
+        if pdf:
+            box.addWidget(QLabel(t('Le détail des lignes vendues est disponible dans l\'export Excel.')))
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        box.addWidget(buttons)
+        if not dialog.exec():
+            return None
+        picked = {k for k, cb in checks.items() if cb.isChecked()}
+        # Conserve aussi les choix des sections masquées (droits / PDF).
+        settings_service.set_setting(key, ','.join(sorted(picked | (chosen - set(checks)))))
+        return picked
+
     def _export_pdf(self) -> None:
         if not self._report:
             self._generate()
-        path = export_report_pdf(self._report, include_profits=self.state.can(perms.VIEW_PROFITS))
+        sections = self._choose_sections(pdf=True)
+        if sections is None:
+            return
+        path = export_report_pdf(self._report, include_profits=self.state.can(perms.VIEW_PROFITS), sections=sections)
         info(self, f'Rapport PDF généré :\n{path}')
 
     def _export_excel(self) -> None:
         if not self._report:
             self._generate()
+        sections = self._choose_sections(pdf=False)
+        if sections is None:
+            return
         start, end = self._current_range()
         rows = ReportController.sales_rows(start, end)
-        path = export_report_excel(self._report, rows, include_profits=self.state.can(perms.VIEW_PROFITS))
+        path = export_report_excel(self._report, rows, include_profits=self.state.can(perms.VIEW_PROFITS), sections=sections)
         info(self, f'Rapport Excel généré :\n{path}')
