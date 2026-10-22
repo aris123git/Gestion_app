@@ -21,6 +21,7 @@ from app.ui.pages.orders_page import OrdersPage
 from app.ui.pages.pos_page import POSPage
 from app.ui.pages.products_page import ProductsPage
 from app.ui.pages.purchases_page import PurchasesPage
+from app.ui.pages.accounting_page import AccountingPage
 from app.ui.pages.reports_page import ReportsPage
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.pages.stock_page import StockPage
@@ -42,6 +43,7 @@ def build_nav_items():
         return build_maquis_nav_items()
     common_tail = [
         (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
+        (t("nav.accounting"), "🧮", AccountingPage, perms.VIEW_PROFITS),
         (t("nav.audit"), "📝", AuditPage, perms.VIEW_AUDIT),
         (t("nav.assistant"), "💡", AssistantPage, perms.VIEW_ASSISTANT),
         (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),

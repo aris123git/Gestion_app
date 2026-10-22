@@ -43,6 +43,7 @@ _STRINGS: Dict[str, Dict[str, str]] = {
     "nav.suppliers": {"fr": "Fournisseurs", "en": "Suppliers", "zh": "供应商"},
     "nav.expenses": {"fr": "Dépenses", "en": "Expenses", "zh": "支出"},
     "nav.reports": {"fr": "Rapports", "en": "Reports", "zh": "报表"},
+    "nav.accounting": {"fr": "Comptabilité", "en": "Accounting", "zh": "会计"},
     "nav.audit": {"fr": "Journal d'audit", "en": "Audit log", "zh": "审计日志"},
     "nav.assistant": {"fr": "Assistant", "en": "Assistant", "zh": "助手"},
     "nav.users": {"fr": "Utilisateurs", "en": "Users", "zh": "用户"},

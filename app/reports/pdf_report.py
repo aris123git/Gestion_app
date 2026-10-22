@@ -47,7 +47,7 @@ def _footer(canvas, doc, shop_name):
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(colors.HexColor("#64748b"))
     canvas.drawString(15 * mm, 10 * mm, f"{shop_name} — généré le {datetime.now():%d/%m/%Y %H:%M}")
-    canvas.drawRightString(A4[0] - 15 * mm, 10 * mm, f"Page {doc.page}")
+    canvas.drawRightString(doc.pagesize[0] - 15 * mm, 10 * mm, f"Page {doc.page}")
     canvas.restoreState()
 
 
