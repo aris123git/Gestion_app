@@ -44,7 +44,7 @@ SETTING_FORMAT = "invoice_format"
 FORMAT_A4 = "a4"
 FORMAT_HALF = "demi_a4"  # A4 coupé en deux : 210 × 148,5 mm
 HALF_H = 148.5 * mm
-HALF_K = 0.62  # échelle du dessin en demi-A4 (en-tête / pied plus compacts)
+HALF_K = 0.45  # échelle du dessin en demi-A4 (en-tête / pied plus compacts)
 INVOICE_FORMATS = (
     (FORMAT_A4, "A4 (page entière, 210 × 297 mm)"),
     (FORMAT_HALF, "A4 coupé en deux (210 × 148,5 mm)"),
@@ -605,7 +605,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             qty_txt, pu_txt, format_amount(float(item.line_total or 0)),
         ])
     col_w = [11 * mm, frame_w - 11 * mm - 22 * mm - 38 * mm - 40 * mm, 22 * mm, 38 * mm, 40 * mm]
-    pad = max(3, int(fs * 0.45))
+    pad = max(1, fs * 0.12) if half else max(3, int(fs * 0.45))
     layout = style.layout
 
     def table_style(n_rows: int):
@@ -664,7 +664,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     t_cmds = [
         ("FONTSIZE", (0, 0), (-1, -1), fs), ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
         ("ALIGN", (1, 0), (1, -1), "RIGHT"), ("TEXTCOLOR", (0, 0), (-1, -1), dark),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1 if half else 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1 if half else 2.5),
         ("FONTNAME", (0, total_label_row), (-1, total_label_row), "Helvetica-Bold"),
         ("FONTSIZE", (0, total_label_row), (-1, total_label_row), fs + 3),
         ("LINEABOVE", (0, total_label_row), (-1, total_label_row), 1.2, primary),
@@ -680,7 +680,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     words = amount_in_words(float(sale.total or 0), currency)
     left.append(Paragraph(f"<b>Arrêtée la présente facture à la somme de</b><br/>{words} ({format_money(sale.total, currency)})", body))
     if sale.payments:
-        left.append(Spacer(1, 3 * mm))
+        left.append(Spacer(1, (1 if half else 3) * mm))
         left.append(Paragraph("<b>Méthode de paiement</b>", body))
         for pay in sale.payments:
             left.append(Paragraph(f"{pay.method} : {format_money(pay.amount, currency)}", small))
@@ -688,7 +688,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
         "<b>Le responsable</b>" if layout in ("recu", "moderne") else "<b>Signature</b>",
         ParagraphStyle("sg", parent=body, alignment=1),
     )
-    bottom = Table([[left, [totals_t, Spacer(1, 6 * mm), sign]]], colWidths=[frame_w - 100 * mm, 100 * mm])
+    bottom = Table([[left, [totals_t, Spacer(1, (2 if half else 6) * mm), sign]]], colWidths=[frame_w - 100 * mm, 100 * mm])
     bottom.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 8 * mm),
