@@ -36,6 +36,24 @@ from app.utils.helpers import format_amount, format_money, format_quantity
 logger = logging.getLogger(__name__)
 
 PAGE_W, PAGE_H = A4  # portrait : 210 × 297 mm
+# Dimensions « virtuelles » du dessin des décors : modifiées le temps de la
+# construction d'un PDF en demi-A4 (voir build_invoice_a4), puis restaurées.
+_REAL_A4 = (PAGE_W, PAGE_H)
+
+SETTING_FORMAT = "invoice_format"
+FORMAT_A4 = "a4"
+FORMAT_HALF = "demi_a4"  # A4 coupé en deux : 210 × 148,5 mm
+HALF_H = 148.5 * mm
+HALF_K = 0.62  # échelle du dessin en demi-A4 (en-tête / pied plus compacts)
+INVOICE_FORMATS = (
+    (FORMAT_A4, "A4 (page entière, 210 × 297 mm)"),
+    (FORMAT_HALF, "A4 coupé en deux (210 × 148,5 mm)"),
+)
+
+
+def get_format() -> str:
+    value = settings_service.get_setting(SETTING_FORMAT, FORMAT_A4).strip()
+    return value if value in {f for f, _ in INVOICE_FORMATS} else FORMAT_A4
 MARGIN = 14 * mm
 
 SETTING_STYLE = "invoice_style"
@@ -470,19 +488,30 @@ _ZONES = {
 
 
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
-                     style_id: str | None = None, font_size: int | None = None) -> Path:
-    """Génère la facture A4 portrait et retourne le chemin du PDF."""
+                     style_id: str | None = None, font_size: int | None = None,
+                     fmt: str | None = None) -> Path:
+    """Génère la facture (A4 portrait, ou A4 coupé en deux) et retourne le PDF."""
+    global PAGE_W, PAGE_H
     config.ensure_directories()
     shop = shop or settings_service.get_shop_info()
     currency = shop.currency or "FCFA"
     style = get_style(style_id)
     fs = max(MIN_FONT, min(MAX_FONT, int(font_size or get_font_size())))
+    fmt = fmt if fmt in {f for f, _ in INVOICE_FORMATS} else get_format()
+    half = fmt == FORMAT_HALF
+    if half and style.layout.startswith("tpl_"):
+        # Les modèles fidèles (Services, Médical) n'existent qu'en A4 entier.
+        style = get_style("recu")
+    k = HALF_K if half else 1.0
+    real_w = _REAL_A4[0]
+    real_h = HALF_H if half else _REAL_A4[1]
+    tag = "demiA4" if half else "A4"
 
     if path is None:
-        path = config.TICKET_DIR / f"{sale.ticket_number}_A4.pdf"
+        path = config.TICKET_DIR / f"{sale.ticket_number}_{tag}.pdf"
         if path.exists():
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = config.TICKET_DIR / f"{sale.ticket_number}_A4_{stamp}.pdf"
+            path = config.TICKET_DIR / f"{sale.ticket_number}_{tag}_{stamp}.pdf"
     path = Path(path)
 
     if style.layout.startswith("tpl_"):
@@ -493,20 +522,23 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     moment = sale.date or datetime.now()
     footer = str(shop.ticket_footer or "Merci pour votre confiance.")
     ctx = {"style": style, "shop": shop, "number": sale.ticket_number, "footer": footer}
-    top_mm, bottom_mm = _ZONES[style.layout]
+    top_mm, bottom_mm = (z * k for z in _ZONES[style.layout])
     decor = _DECORS[style.layout]
+    margin = MARGIN * k
 
     def on_page(canvas, doc):
         canvas.saveState()
+        if k != 1.0:
+            canvas.scale(k, k)  # le décor est dessiné sur une page virtuelle plus grande
         decor(canvas, ctx)
         canvas.restoreState()
 
-    frame_w = PAGE_W - 2 * MARGIN
-    frame_h = PAGE_H - (top_mm + bottom_mm) * mm
-    frame = Frame(MARGIN, bottom_mm * mm, frame_w, frame_h,
+    frame_w = real_w - 2 * margin
+    frame_h = real_h - (top_mm + bottom_mm) * mm
+    frame = Frame(margin, bottom_mm * mm, frame_w, frame_h,
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="body")
     doc = BaseDocTemplate(
-        str(path), pagesize=A4, leftMargin=MARGIN, rightMargin=MARGIN,
+        str(path), pagesize=(real_w, real_h), leftMargin=margin, rightMargin=margin,
         topMargin=top_mm * mm, bottomMargin=bottom_mm * mm,
         title=f"Facture {sale.ticket_number}", author=str(shop.name or ""),
     )
@@ -559,7 +591,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story += [meta, Spacer(1, 7 * mm)]
+    story += [meta, Spacer(1, 7 * mm * k)]
 
     # Tableau des lignes
     head = ["N°", "Désignation", "Qté", "Prix unitaire", "Total"]
@@ -667,7 +699,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     # Remplit la page : ajoute des lignes vides tant que tout tient sur 1 page.
     _, meta_h = meta.wrap(frame_w, frame_h)
     _, bottom_h = bottom.wrap(frame_w, frame_h)
-    reserve = meta_h + 7 * mm + bottom_h + 8 * mm + 4 * mm
+    reserve = meta_h + 7 * mm * k + bottom_h + 8 * mm * k + 4 * mm * k
     available = frame_h - reserve
     items_t = Table(rows, colWidths=col_w, repeatRows=1)
     items_t.setStyle(table_style(len(rows)))
@@ -683,7 +715,12 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
                 break
             rows = trial_rows
             items_t = trial
-    story += [items_t, Spacer(1, 8 * mm), bottom]
+    story += [items_t, Spacer(1, 8 * mm * k), bottom]
 
-    doc.build(story)
+    saved = (PAGE_W, PAGE_H)
+    PAGE_W, PAGE_H = real_w / k, real_h / k  # taille virtuelle utilisée par les décors
+    try:
+        doc.build(story)
+    finally:
+        PAGE_W, PAGE_H = saved
     return path

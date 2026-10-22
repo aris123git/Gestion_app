@@ -360,7 +360,12 @@ class SettingsPage(QWidget):
         self.printers_status.setWordWrap(True)
         self.printers_status.setStyleSheet('color: #64748b; font-size: 12px;')
         self.printers_status.setToolTip(t("Résultat de la dernière recherche d'imprimantes sur ce poste."))
-        from app.printers.invoice_a4 import INVOICE_STYLES, MAX_FONT, MIN_FONT
+        from app.printers.invoice_a4 import INVOICE_FORMATS, INVOICE_STYLES, MAX_FONT, MIN_FONT
+        self.invoice_format = QComboBox()
+        for _fid, _flabel in INVOICE_FORMATS:
+            self.invoice_format.addItem(t(_flabel), _fid)
+        self.invoice_format.setToolTip(t("A4 : une facture par feuille entière. A4 coupé en deux : feuille A4 coupée en deux, facture de 210 × 148,5 mm (les modèles fidèles Services et Médical n'existent qu'en A4 entier)."))
+        self.invoice_format.currentIndexChanged.connect(self._on_invoice_format_changed)
         self.invoice_style = QComboBox()
         for _style in INVOICE_STYLES:
             self.invoice_style.addItem(t(_style.label), _style.id)
@@ -436,10 +441,11 @@ class SettingsPage(QWidget):
         self.invoice_printers_status.setStyleSheet('color: #64748b; font-size: 12px;')
         form.addRow(t('Imprimante facture (encre / laser)'), printer_row)
         form.addRow('', self.invoice_printers_status)
+        form.addRow(t('Format de la facture'), self.invoice_format)
         form.addRow(t('Modèle et couleur de la facture'), self.invoice_style)
         form.addRow(t('Taille de police facture'), self.invoice_font)
         outer.addWidget(make_card(form_widget))
-        hint = QLabel(t("La facture est en A4 portrait, page remplie. Le nom, l'adresse, le téléphone, l'e-mail et le logo viennent de l'onglet <b>Commerce</b> ; le message de bas de page est le <b>Message du ticket</b> (onglet Apparence du ticket). Le type par défaut (ticket ou facture) se règle dans l'onglet Apparence du ticket."))
+        hint = QLabel(t("La facture remplit la page : A4 entier, ou A4 coupé en deux (210 × 148,5 mm). Le nom, l'adresse, le téléphone, l'e-mail et le logo viennent de l'onglet <b>Commerce</b> ; le message de bas de page est le <b>Message du ticket</b> (onglet Apparence du ticket). Le type par défaut (ticket ou facture) se règle dans l'onglet Apparence du ticket."))
         hint.setWordWrap(True)
         hint.setStyleSheet('color: #64748b;')
         outer.addWidget(hint)
@@ -456,6 +462,21 @@ class SettingsPage(QWidget):
         outer.addLayout(actions)
         outer.addStretch()
         return wrap
+
+    def _on_invoice_format_changed(self, _index: int = 0) -> None:
+        """En A4 coupé en deux, les modèles fidèles (A4 entier seulement) sont grisés."""
+        from app.printers.invoice_a4 import FORMAT_HALF, INVOICE_STYLES
+        half = self.invoice_format.currentData() == FORMAT_HALF
+        model = self.invoice_style.model()
+        for i, style in enumerate(INVOICE_STYLES):
+            item = model.item(i)
+            if item is not None and style.layout.startswith('tpl_'):
+                item.setEnabled(not half)
+        current = self.invoice_style.currentData() or ''
+        if half and any(s.id == current and s.layout.startswith('tpl_') for s in INVOICE_STYLES):
+            fallback = self.invoice_style.findData('recu')
+            if fallback >= 0:
+                self.invoice_style.setCurrentIndex(fallback)
 
     def _search_invoice_printers(self) -> None:
         self._search_connected_printers()
@@ -924,6 +945,7 @@ class SettingsPage(QWidget):
         settings_service.set_setting('pos_catalog_text_size', self.pos_text_size.currentData() or 'large')
         settings_service.set_setting('printer_name', self._printer_value())
         settings_service.set_setting('invoice_printer_name', self._invoice_printer_value())
+        settings_service.set_setting('invoice_format', self.invoice_format.currentData() or 'a4')
         settings_service.set_setting('invoice_style', self.invoice_style.currentData() or 'recu')
         settings_service.set_setting('invoice_font_size', str(self.invoice_font.value()))
         settings_service.set_setting('ticket_feed_lines', str(self.feed_lines.value()))
@@ -947,7 +969,7 @@ class SettingsPage(QWidget):
         sale = NS(ticket_number='APERCU-0001', date=datetime.now(), cashier_name='Caissier', client_name='Client exemple', client_phone='', items=items, subtotal=18000.5, discount=0, total=18000.5, amount_received=20000, change_due=1999.5, payments=[NS(method='Espèces', amount=18000.5)])
         try:
             config.ensure_directories()
-            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value())
+            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value(), fmt=self.invoice_format.currentData())
         except Exception as exc:
             warn(self, f'Impossible de générer l\'aperçu : {exc}')
             return
@@ -1517,6 +1539,11 @@ class SettingsPage(QWidget):
         if _si >= 0:
             self.invoice_style.setCurrentIndex(_si)
         self.invoice_font.setValue(get_font_size())
+        from app.printers.invoice_a4 import get_format
+        _fi = self.invoice_format.findData(get_format())
+        if _fi >= 0:
+            self.invoice_format.setCurrentIndex(_fi)
+        self._on_invoice_format_changed()
         size_index = self.pos_text_size.findData(settings_service.get_setting('pos_catalog_text_size', 'large'))
         if size_index >= 0:
             self.pos_text_size.setCurrentIndex(size_index)
