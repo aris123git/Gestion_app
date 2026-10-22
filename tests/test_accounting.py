@@ -31,6 +31,8 @@ class AccountingTestCase(unittest.TestCase):
         SaleController.create_sale([CartLine(cls.p.id, "Riz", 1180, 10)], [PaymentLine("Espèces", 11800)], amount_received=11800)
         with session_scope() as s:
             s.add(Expense(category="Loyer", label="Loyer", amount=2000, date=datetime.now(), notes=""))
+        acc.add_manual_entry(date.today(), "Capital", "571", "101", 100000)
+        acc.add_manual_entry(date.today(), "Stock initial", "311", "101", 50000)
         cls.data = acc.build(date.today() - timedelta(days=1), date.today())
 
     @classmethod
@@ -38,19 +40,36 @@ class AccountingTestCase(unittest.TestCase):
         engine.dispose()
         shutil.rmtree(config.DATA_DIR, ignore_errors=True)
 
-    def test_result(self) -> None:
-        r = self.data["result"]
-        self.assertAlmostEqual(r["ca_ttc"], 11800)
-        self.assertAlmostEqual(r["vat"], 1800)
-        self.assertAlmostEqual(r["ca_ht"], 10000)
-        self.assertAlmostEqual(r["cmv"], 6000)
-        self.assertAlmostEqual(r["net"], 10000 - 6000 - 2000)
+    def test_entries_balanced_and_result(self) -> None:
+        self.assertEqual(self.data["unbalanced"], [])
+        r = self.data["income"]
+        self.assertAlmostEqual(r["sales"], 10000)
+        self.assertAlmostEqual(r["purchases"], 6000)
+        self.assertAlmostEqual(r["margin"], 4000)
+        self.assertAlmostEqual(r["result"], 2000)
 
-    def test_journal_and_cash(self) -> None:
-        types = {row[1] for row in self.data["journal"]}
-        self.assertTrue({"Vente", "Dépense"} <= types)
-        self.assertAlmostEqual(self.data["cash"]["total_in"], 11800)
-        self.assertAlmostEqual(self.data["cash"]["balance"], 11800 - 2000)
+    def test_balance_sheet_balances(self) -> None:
+        s = self.data["sheet"]
+        self.assertAlmostEqual(s["total_assets"], s["total_liabilities"])
+        # caisse 109 800 + stock (50 000 − 6 000) = 153 800
+        self.assertAlmostEqual(s["total_assets"], 153800)
+
+    def test_vat_and_cash(self) -> None:
+        self.assertAlmostEqual(self.data["vat"]["collected"], 1800)
+        self.assertAlmostEqual(self.data["cash"]["total"], 100000 + 11800 - 2000)
+
+    def test_suggested_opening_stock(self) -> None:
+        amount, first = acc.suggested_opening_stock()
+        self.assertGreaterEqual(amount, 0)
+        self.assertLessEqual(first, date.today())
+
+    def test_manual_entry_validation(self) -> None:
+        with self.assertRaises(ValueError):
+            acc.add_manual_entry(date.today(), "x", "571", "571", 10)
+        with self.assertRaises(ValueError):
+            acc.add_manual_entry(date.today(), "x", "571", "101", 0)
+        with self.assertRaises(ValueError):
+            acc.add_manual_entry(date.today(), "x", "999", "101", 10)
 
     def test_exports_and_page(self) -> None:
         from app.reports.accounting_export import export_accounting_excel, export_accounting_pdf
@@ -66,6 +85,7 @@ class AccountingTestCase(unittest.TestCase):
         page = AccountingPage(AppState())
         page._generate()
         self.assertGreater(page.result_table.rowCount(), 5)
+        self.assertGreater(page.balance_table.rowCount(), 3)
 
 
 if __name__ == "__main__":
