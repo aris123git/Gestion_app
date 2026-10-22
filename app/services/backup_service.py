@@ -57,6 +57,7 @@ SETTING_AUTO_FREQUENCY = "auto_backup_frequency"
 SETTING_AUTO_INTERVAL_HOURS = "auto_backup_interval_hours"
 SETTING_RETENTION = "backup_retention"
 SETTING_LAST_PATH = "last_backup_path"
+SETTING_COPY_DIR = "backup_copy_dir"  # copie sur un autre support (clé USB, disque, dossier cloud synchronisé)
 
 DEFAULT_RETENTION = 10
 DEFAULT_INTERVAL_HOURS = 24
@@ -183,6 +184,7 @@ def create_full_backup(
         raise BackupError(f"Échec de la création de la sauvegarde : {exc}") from exc
 
     _remember_last_backup(zip_path)
+    copy_backup_to_external(zip_path)
 
     # La rétention ne s'applique qu'au dossier géré.
     if destination_dir is None:
@@ -357,6 +359,40 @@ def prune_backups(keep: Optional[int] = None) -> List[Path]:
         except OSError:
             continue
     return removed
+
+
+# --- Copie sur un autre support -------------------------------------------
+def get_copy_dir() -> str:
+    from app.services import settings_service
+
+    return (settings_service.get_setting(SETTING_COPY_DIR, "") or "").strip()
+
+
+def copy_backup_to_external(zip_path: str | Path) -> Optional[Path]:
+    """Copie la sauvegarde vers le support externe configuré (clé USB, etc.).
+
+    Sans effet si aucun dossier n'est défini. Ne lève jamais d'erreur : un
+    support absent (clé débranchée) ne doit pas bloquer la sauvegarde locale.
+    """
+    import shutil
+
+    try:
+        raw = get_copy_dir()
+        if not raw:
+            return None
+        src = Path(zip_path)
+        target_dir = Path(raw)
+        if target_dir.resolve() == src.parent.resolve():
+            return None
+        target_dir.mkdir(parents=True, exist_ok=True)
+        dest = target_dir / src.name
+        shutil.copy2(src, dest)
+        for old in sorted(target_dir.glob(f"{_BACKUP_PREFIX}*.zip"), key=lambda q: q.stat().st_mtime, reverse=True)[get_retention():]:
+            old.unlink(missing_ok=True)
+        return dest
+    except Exception:
+        logger.warning("Copie de la sauvegarde sur le support externe impossible.", exc_info=True)
+        return None
 
 
 # --- Sauvegarde automatique -----------------------------------------------

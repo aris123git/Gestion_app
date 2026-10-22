@@ -158,7 +158,7 @@ def _context(sale, shop):
         "number": str(sale.ticket_number),
         "date": f"{moment:%d/%m/%Y}",
         "datetime": f"{moment:%d/%m/%Y %H:%M}",
-        "cashier": getattr(sale, "cashier_name", "") or "",
+        "cashier": _cashier_name(sale),
         "client": _refs["name"],
         "client_phone": _refs["contact"],
         "client_address": _refs["address"],
@@ -166,7 +166,7 @@ def _context(sale, shop):
         "logo": logo if logo.is_file() else None,
         "subtotal": format_money(sale.subtotal, currency),
         "discount": format_money(sale.discount, currency) if float(sale.discount or 0) > 0 else "",
-        "vat": format_money(vat, currency) if vat > 0 else "",
+        "vat": "",  # TVA incluse dans le prix : non affichée sur la facture
         "vat_label": (f"TVA {rate:g} %" if rate else "dont TVA"),
         "total": format_money(sale.total, currency),
         "words": amount_in_words(float(sale.total or 0), currency),
@@ -369,6 +369,14 @@ def _paginate(rows, per_page_fn):
     if not rows:
         return [[]]
     return [rows[i:i + capacity] for i in range(0, len(rows), capacity)]
+
+
+def _cashier_name(sale) -> str:
+    try:
+        name = getattr(sale, "cashier_name", "") or ""
+    except Exception:
+        name = ""
+    return "" if name == "—" else str(name)
 
 
 def build_template_invoice(sale, shop, path: Path, style_id: str, font_size: int) -> Path:

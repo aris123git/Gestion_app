@@ -211,6 +211,15 @@ def _vat_included(sale, items) -> tuple[float, float]:
     return 0.0, 0.0
 
 
+def _cashier(sale) -> str:
+    """Nom du caissier (jamais d'erreur, même si la session est fermée)."""
+    try:
+        name = getattr(sale, "cashier_name", "") or ""
+    except Exception:
+        name = ""
+    return "" if name in ("", "—") else str(name)
+
+
 def client_refs(sale) -> dict:
     """Références du client de la vente : nom, contact(s), adresse, e-mail.
 
@@ -583,7 +592,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     refs = [
         Paragraph(f"<b>Facture N°</b> {sale.ticket_number}", ParagraphStyle("r", parent=body, alignment=2)),
         Paragraph(f"<b>Date</b> {moment:%d/%m/%Y}  {moment:%H:%M}", ParagraphStyle("r2", parent=body, alignment=2)),
-        Paragraph(f"<b>Caissier</b> {getattr(sale, 'cashier_name', '') or '—'}", ParagraphStyle("r3", parent=body, alignment=2)),
+        Paragraph(f"<b>Caissier</b> {_cashier(sale) or '—'}", ParagraphStyle("r3", parent=body, alignment=2)),
     ]
     meta = Table([[client_lines, refs]], colWidths=[frame_w * 0.55, frame_w * 0.45])
     meta.setStyle(TableStyle([
@@ -654,9 +663,6 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     rate, vat_amount = _vat_included(sale, items)
     total_label_row = len(totals)
     totals.append(["TOTAL", format_money(sale.total, currency)])
-    if vat_amount > 0:
-        label = f"dont TVA {rate:g} %" if rate else "dont TVA"
-        totals.append([label, format_money(vat_amount, currency)])
     if float(sale.amount_received or 0) > 0:
         totals.append(["Reçu", format_money(sale.amount_received, currency)])
         totals.append(["Monnaie rendue", format_money(sale.change_due, currency)])

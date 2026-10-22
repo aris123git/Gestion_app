@@ -1185,6 +1185,15 @@ class SettingsPage(QWidget):
         auto_form.addRow(t('Fréquence'), self.auto_frequency)
         auto_form.addRow(t('Intervalle'), self.auto_interval)
         auto_form.addRow(t('Rétention'), self.retention)
+        self.copy_dir = QLineEdit()
+        self.copy_dir.setPlaceholderText(t('Ex. E:\\Sauvegardes (clé USB, disque externe)'))
+        self.copy_dir.setText(backup_service.get_copy_dir())
+        pick_copy = QPushButton(t('Parcourir…'))
+        pick_copy.clicked.connect(self._pick_copy_dir)
+        copy_row = QHBoxLayout()
+        copy_row.addWidget(self.copy_dir, 1)
+        copy_row.addWidget(pick_copy)
+        auto_form.addRow(t('Copie sur un autre support'), copy_row)
         save_auto = QPushButton(t('Enregistrer les options'))
         save_auto.setObjectName('Primary')
         save_auto.clicked.connect(self._save_auto_options)
@@ -1205,6 +1214,11 @@ class SettingsPage(QWidget):
         table_actions.addWidget(restore_selected)
         layout.addLayout(table_actions)
         return wrap
+
+    def _pick_copy_dir(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, t('Dossier de copie des sauvegardes'), self.copy_dir.text() or self._default_documents_dir())
+        if folder:
+            self.copy_dir.setText(folder)
 
     def _default_documents_dir(self) -> str:
         documents = Path.home() / 'Documents'
@@ -1278,6 +1292,7 @@ class SettingsPage(QWidget):
         settings_service.set_setting(backup_service.SETTING_AUTO_FREQUENCY, self.auto_frequency.currentText().lower())
         settings_service.set_setting(backup_service.SETTING_AUTO_INTERVAL_HOURS, str(self.auto_interval.value()))
         settings_service.set_setting(backup_service.SETTING_RETENTION, str(self.retention.value()))
+        settings_service.set_setting(backup_service.SETTING_COPY_DIR, self.copy_dir.text().strip())
         backup_service.prune_backups(self.retention.value())
         info(self, t('Options de sauvegarde enregistrées.'))
         self._reload_backups()
