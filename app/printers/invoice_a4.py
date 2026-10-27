@@ -19,7 +19,7 @@ from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import (
+from reportlab.platypus import (KeepTogether, 
     BaseDocTemplate,
     Frame,
     PageTemplate,
@@ -738,8 +738,9 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             rows = trial_rows
             items_t = trial
         _, cur_h = items_t.wrap(frame_w, frame_h)
-    gap = 8 * mm * k + (max(0.0, available - cur_h) if cur_h <= available else 0.0)
-    story += [items_t, Spacer(1, gap), bottom]
+    # Les totaux suivent directement la dernière ligne (sauf en mode « lignes vides »).
+    gap = 8 * mm * k + (max(0.0, available - cur_h) if fill and cur_h <= available else 0.0)
+    story += [items_t, Spacer(1, gap), KeepTogether([bottom])]
 
     saved = (PAGE_W, PAGE_H)
     PAGE_W, PAGE_H = real_w / k, real_h / k  # taille virtuelle utilisée par les décors
