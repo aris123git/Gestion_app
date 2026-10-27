@@ -121,6 +121,8 @@ def _migrate_schema() -> None:
             "status": "VARCHAR(20) DEFAULT 'completed'",
             "cancel_reason": "VARCHAR(500) DEFAULT ''",
             "invoice_number": "VARCHAR(20) DEFAULT ''",
+            "pickup_number": "VARCHAR(20) DEFAULT ''",
+            "bon_number": "VARCHAR(20) DEFAULT ''",
         },
         "debts": {
             "due_date": "DATE",

@@ -21,6 +21,8 @@ class Sale(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticket_number: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     invoice_number: Mapped[str] = mapped_column(String(20), default="", index=True)
+    pickup_number: Mapped[str] = mapped_column(String(20), default="")
+    bon_number: Mapped[str] = mapped_column(String(20), default="")
     date: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
 
     user_id: Mapped[Optional[int]] = mapped_column(

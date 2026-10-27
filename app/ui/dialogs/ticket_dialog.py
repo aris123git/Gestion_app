@@ -9,7 +9,7 @@ from app.i18n import t
 from pathlib import Path
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QFont
-from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout
 from app.printers import thermal_printer
 from app.printers.half_a4_invoice import PAPER_HALF_A4, build_invoice_pdf, is_half_a4
 from app.printers.printer_targets import describe_destinations, get_default_paper, get_default_printer_kind, printer_for_paper
@@ -67,6 +67,7 @@ class TicketDialog(QDialog):
         self.status.setWordWrap(True)
         self.status.setStyleSheet('color: #64748b; font-size: 12px;')
         layout.addWidget(self.status)
+        self._build_bon_section(layout)
         buttons = QHBoxLayout()
         close = QPushButton(t('Fermer sans imprimer'))
         close.clicked.connect(self.accept)
@@ -91,6 +92,96 @@ class TicketDialog(QDialog):
         if auto_print and (not is_half_a4(self._paper_value())):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(50, self._print)
+
+    def _build_bon_section(self, layout) -> None:
+        """Facture A4 + bon d'enlèvement (produits au choix) + « Tout imprimer »."""
+        from app.printers import bon_enlevement
+        self.bon_list = None
+        if not bon_enlevement.is_enabled() or not list(getattr(self.sale, 'items', []) or []):
+            return
+        layout.addWidget(QLabel(f"<b>{t('Facture et bon d' + chr(39) + 'enlèvement')}</b> — {t('cochez les produits à faire figurer sur le bon :')}"))
+        self.bon_list = QListWidget()
+        self.bon_list.setMaximumHeight(120)
+        for index, name, qty in bon_enlevement.selectable_lines(self.sale):
+            item = QListWidgetItem(f'{name}  ×{qty:g}')
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            self.bon_list.addItem(item)
+        layout.addWidget(self.bon_list)
+        row = QHBoxLayout()
+        self.print_invoice_button = QPushButton(t('Imprimer la facture'))
+        self.print_invoice_button.clicked.connect(self._print_invoice_only)
+        self.print_bon_button = QPushButton(t("Imprimer le bon d'enlèvement"))
+        self.print_bon_button.clicked.connect(self._print_bon)
+        self.print_all_button = QPushButton(t('Tout imprimer'))
+        self.print_all_button.setObjectName('Primary')
+        self.print_all_button.setToolTip(t("Imprime la facture puis le bon d'enlèvement (produits cochés)."))
+        self.print_all_button.clicked.connect(self._print_all)
+        for button in (self.print_invoice_button, self.print_bon_button, self.print_all_button):
+            row.addWidget(button)
+        layout.addLayout(row)
+
+    def _selected_bon_lines(self) -> list[int]:
+        if not getattr(self, 'bon_list', None):
+            return []
+        return [self.bon_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.bon_list.count()) if self.bon_list.item(i).checkState() == Qt.CheckState.Checked]
+
+    def _run_print(self, jobs: list[tuple[str, object]]) -> None:
+        """Exécute des impressions (libellé, fonction → PrintResult) et résume le résultat."""
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+        results: list[tuple[str, object]] = []
+        try:
+            for label, job in jobs:
+                try:
+                    results.append((label, job()))
+                except Exception as exc:
+                    results.append((label, exc))
+        finally:
+            QApplication.restoreOverrideCursor()
+        lines, ok = [], True
+        for label, res in results:
+            if isinstance(res, Exception):
+                ok = False
+                lines.append(f'✗ {label} : {res}')
+            elif res.printed:
+                lines.append(f'✓ {label} : {res.message}')
+            else:
+                ok = False
+                lines.append(f'✗ {label} : {res.message}')
+        text = '\n\n'.join(lines)
+        self.status.setText(text.splitlines()[0] if text else '')
+        (info if ok else warn)(self, text, t('Impression'))
+
+    def _invoice_job(self):
+        from app.printers.half_a4_invoice import print_half_a4_invoice
+        return lambda: print_half_a4_invoice(self.sale)
+
+    def _bon_job(self):
+        from app.printers import bon_enlevement
+        from app.printers.half_a4_invoice import print_half_a4_invoice
+        selected = self._selected_bon_lines()
+
+        def job():
+            path = bon_enlevement.build_bon_enlevement(self.sale, selected=selected)
+            return print_half_a4_invoice(self.sale, pdf_path=path)
+        return job
+
+    def _print_invoice_only(self) -> None:
+        self._run_print([(t('Facture'), self._invoice_job())])
+
+    def _print_bon(self) -> None:
+        if not self._selected_bon_lines():
+            warn(self, t("Cochez au moins un produit pour le bon d'enlèvement."), t("Bon d'enlèvement"))
+            return
+        self._run_print([(t("Bon d'enlèvement"), self._bon_job())])
+
+    def _print_all(self) -> None:
+        if not self._selected_bon_lines():
+            warn(self, t("Cochez au moins un produit pour le bon d'enlèvement."), t("Bon d'enlèvement"))
+            return
+        self._run_print([(t('Facture'), self._invoice_job()), (t("Bon d'enlèvement"), self._bon_job())])
 
     def _populate_destinations(self, default_paper: str, thermal_name: str, invoice_name: str) -> None:
         """Remplit la liste : défaut Paramètres en premier, puis les alternatives."""

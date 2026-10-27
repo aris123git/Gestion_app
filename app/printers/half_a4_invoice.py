@@ -285,11 +285,16 @@ def print_half_a4_invoice(
     sale,
     shop=None,
     printer_name: Optional[str] = None,
+    pdf_path: Optional[Path] = None,
 ) -> PrintResult:
-    """Génère le PDF demi-A4 puis l'envoie à l'imprimante bureau (non RAW)."""
+    """Génère le PDF demi-A4 puis l'envoie à l'imprimante bureau (non RAW).
+
+    ``pdf_path`` : PDF déjà généré (ex. bon d'enlèvement) à envoyer tel quel.
+    """
     shop = shop or settings_service.get_shop_info()
     try:
-        pdf_path = build_invoice_pdf(sale, shop=shop)
+        if pdf_path is None:
+            pdf_path = build_invoice_pdf(sale, shop=shop)
     except Exception as exc:
         logger.exception("Génération PDF demi-A4 impossible.")
         return PrintResult(False, Path(), f"Impossible de générer la facture PDF : {exc}")

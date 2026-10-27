@@ -376,6 +376,20 @@ class SettingsPage(QWidget):
         self.invoice_font.setToolTip(t('Taille du texte de la facture (désignations, prix, totaux). Plus grand = lecture plus facile.'))
         self.invoice_fill_empty = QCheckBox(t('Ajouter des lignes vides pour remplir la page'))
         self.invoice_fill_empty.setToolTip(t("Décoché (par défaut) : aucune ligne n'est ajoutée s'il n'y a pas de données. Coché : le tableau est complété par des lignes vides jusqu'en bas de la page (modèles dessinés ; les modèles Services et Médical n'ont jamais de lignes vides)."))
+        self.bon_enabled = QCheckBox(t("Activer le bon d'enlèvement"))
+        self.bon_enabled.setToolTip(t("Après une vente, des boutons permettent d'imprimer le bon d'enlèvement (produits au choix) en plus de la facture."))
+        self.bon_legal = QLineEdit()
+        self.bon_legal.setPlaceholderText(t("Mention facultative (ex. référence d'un arrêté)"))
+        self.bon_ac_label = QLineEdit()
+        self.bon_ac_label.setPlaceholderText(t('Acompte'))
+        self.bon_ac_rate = QDoubleSpinBox()
+        self.bon_ac_rate.setRange(0, 100)
+        self.bon_ac_rate.setDecimals(2)
+        self.bon_ac_rate.setSuffix(' %')
+        self.bon_ac_rate.setToolTip(t("0 = aucune ligne d'acompte sur le bon. Sinon l'acompte est ajouté au total (TOTAL GÉNÉRAL)."))
+        self.shop_rccm = QLineEdit()
+        self.shop_ifu = QLineEdit()
+        self.shop_bank = QLineEdit()
         self.footer = QLineEdit()
         self.feed_lines = QSpinBox()
         self.feed_lines.setRange(0, 20)
@@ -447,6 +461,15 @@ class SettingsPage(QWidget):
         form.addRow(t('Modèle et couleur de la facture'), self.invoice_style)
         form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
+        form.addRow(t("Bon d'enlèvement"), self.bon_enabled)
+        form.addRow(t('Mention du bon (facultatif)'), self.bon_legal)
+        ac_row = QHBoxLayout()
+        ac_row.addWidget(self.bon_ac_label, 1)
+        ac_row.addWidget(self.bon_ac_rate)
+        form.addRow(t('Acompte sur le bon (libellé et taux)'), ac_row)
+        form.addRow(t('N° RCCM (pied du bon)'), self.shop_rccm)
+        form.addRow(t('N° IFU (pied du bon)'), self.shop_ifu)
+        form.addRow(t('Compte bancaire (pied du bon)'), self.shop_bank)
         outer.addWidget(make_card(form_widget))
         hint = QLabel(t("La facture remplit la page : A4 entier, ou A4 coupé en deux (210 × 148,5 mm). Le nom, l'adresse, le téléphone, l'e-mail et le logo viennent de l'onglet <b>Commerce</b> ; le message de bas de page est le <b>Message du ticket</b> (onglet Apparence du ticket). Le type par défaut (ticket ou facture) se règle dans l'onglet Apparence du ticket."))
         hint.setWordWrap(True)
@@ -459,12 +482,36 @@ class SettingsPage(QWidget):
         preview = QPushButton(t('Aperçu de la facture'))
         preview.setToolTip(t('Ouvre un exemple de facture avec le modèle, la couleur et la police choisis.'))
         preview.clicked.connect(self._preview_invoice)
+        bon_preview = QPushButton(t("Aperçu du bon d'enlèvement"))
+        bon_preview.clicked.connect(self._preview_bon)
         actions.addWidget(save)
         actions.addWidget(preview)
+        actions.addWidget(bon_preview)
         actions.addStretch()
         outer.addLayout(actions)
         outer.addStretch()
         return wrap
+
+    def _preview_bon(self) -> None:
+        """Exemple de bon d'enlèvement avec les réglages saisis (sans les enregistrer)."""
+        from datetime import datetime
+        from types import SimpleNamespace as NS
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from app import config
+        from app.printers import bon_enlevement as be
+        shop = settings_service.get_shop_info()
+        overrides = {be.SETTING_LEGAL: self.bon_legal.text(), be.SETTING_ACOMPTE_LABEL: self.bon_ac_label.text(), be.SETTING_ACOMPTE_RATE: str(self.bon_ac_rate.value()),
+                     be.SETTING_RCCM: self.shop_rccm.text(), be.SETTING_IFU: self.shop_ifu.text(), be.SETTING_BANK: self.shop_bank.text()}
+        try:
+            items = [NS(product_name='Produit exemple 1', product_id=None, quantity=1000, unit_price=700, line_total=700000), NS(product_name='Produit exemple 2', product_id=None, quantity=500, unit_price=650, line_total=325000)]
+            sale = NS(ticket_number='APERCU-0001', date=datetime.now(), client_id=1, client_name='Client exemple', client_phone='70000000', items=items, payments=[NS(method='Espèces', amount=1025000)])
+            config.ensure_directories()
+            path = be.build_bon_enlevement(sale, shop=shop, path=config.TICKET_DIR / 'apercu_bon_enlevement.pdf', fmt=self.invoice_format.currentData(), font_size=self.invoice_font.value(), overrides=overrides)
+        except Exception as exc:
+            warn(self, f"Impossible de générer l'aperçu : {exc}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _on_invoice_format_changed(self, _index: int = 0) -> None:
         """En A4 coupé en deux, les modèles fidèles (A4 entier seulement) sont grisés."""
@@ -952,6 +999,13 @@ class SettingsPage(QWidget):
         settings_service.set_setting('invoice_style', self.invoice_style.currentData() or 'recu')
         settings_service.set_setting('invoice_font_size', str(self.invoice_font.value()))
         settings_service.set_setting('invoice_fill_empty', '1' if self.invoice_fill_empty.isChecked() else '0')
+        settings_service.set_setting('bon_enabled', '1' if self.bon_enabled.isChecked() else '0')
+        settings_service.set_setting('bon_legal_text', self.bon_legal.text().strip())
+        settings_service.set_setting('bon_acompte_label', self.bon_ac_label.text().strip())
+        settings_service.set_setting('bon_acompte_rate', str(self.bon_ac_rate.value()))
+        settings_service.set_setting('shop_rccm', self.shop_rccm.text().strip())
+        settings_service.set_setting('shop_ifu', self.shop_ifu.text().strip())
+        settings_service.set_setting('shop_bank_account', self.shop_bank.text().strip())
         settings_service.set_setting('ticket_feed_lines', str(self.feed_lines.value()))
         settings_service.set_setting('ticket_cut_mode', self.cut_mode.currentData())
         settings_service.set_setting('auto_print_ticket', '1' if self.auto_print.isChecked() else '0')
@@ -1561,6 +1615,14 @@ class SettingsPage(QWidget):
         from app.printers.invoice_a4 import get_fill_empty
 
         self.invoice_fill_empty.setChecked(get_fill_empty())
+        from app.printers import bon_enlevement as _be
+        self.bon_enabled.setChecked(_be.is_enabled())
+        self.bon_legal.setText(settings_service.get_setting(_be.SETTING_LEGAL, ''))
+        self.bon_ac_label.setText(settings_service.get_setting(_be.SETTING_ACOMPTE_LABEL, ''))
+        self.bon_ac_rate.setValue(_be.get_acompte()[1])
+        self.shop_rccm.setText(settings_service.get_setting(_be.SETTING_RCCM, ''))
+        self.shop_ifu.setText(settings_service.get_setting(_be.SETTING_IFU, ''))
+        self.shop_bank.setText(settings_service.get_setting(_be.SETTING_BANK, ''))
         from app.printers.invoice_a4 import get_format
         _fi = self.invoice_format.findData(get_format())
         if _fi >= 0:

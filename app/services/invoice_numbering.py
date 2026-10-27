@@ -18,9 +18,8 @@ def format_number(value: int) -> str:
     return f"{int(value):0{WIDTH}d}"
 
 
-def invoice_number(sale) -> str:
-    """Numéro de facture de ``sale`` (l'attribue si besoin). Aperçu → 00001."""
-    existing = str(getattr(sale, "invoice_number", "") or "").strip()
+def _sequential(sale, attr: str, counter_key: str) -> str:
+    existing = str(getattr(sale, attr, "") or "").strip()
     if existing:
         return existing
     sale_id = getattr(sale, "id", None)
@@ -35,20 +34,30 @@ def invoice_number(sale) -> str:
             row = session.get(Sale, sale_id)
             if row is None:
                 return format_number(1)
-            if not (row.invoice_number or "").strip():
+            if not (getattr(row, attr) or "").strip():
                 try:
-                    counter = int(settings_service.get_setting(SETTING_COUNTER, "0") or 0)
+                    counter = int(settings_service.get_setting(counter_key, "0") or 0)
                 except ValueError:
                     counter = 0
                 counter += 1
-                row.invoice_number = format_number(counter)
-                settings_service.set_setting(SETTING_COUNTER, str(counter))
-            number = row.invoice_number
+                setattr(row, attr, format_number(counter))
+                settings_service.set_setting(counter_key, str(counter))
+            number = getattr(row, attr)
         try:
-            sale.invoice_number = number
+            setattr(sale, attr, number)
         except Exception:
             pass
         return number
     except Exception:
-        logger.warning("Numéro de facture indisponible, repli sur le numéro de ticket.", exc_info=True)
+        logger.warning("Numéro séquentiel indisponible, repli sur le numéro de ticket.", exc_info=True)
         return str(getattr(sale, "ticket_number", ""))
+
+
+def invoice_number(sale) -> str:
+    """Numéro de facture de ``sale`` (l'attribue si besoin). Aperçu → 00001."""
+    return _sequential(sale, "invoice_number", SETTING_COUNTER)
+
+
+def pickup_number(sale) -> str:
+    """Numéro de bon d'enlèvement (BE N°), séquence indépendante des factures."""
+    return _sequential(sale, "pickup_number", "pickup_counter")
