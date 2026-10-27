@@ -64,6 +64,16 @@ class BonTestCase(unittest.TestCase):
             self.assertNotIn(label, text)
         self.assertNotIn("TOTAL GÉNÉRAL", text)  # pas d'acompte
 
+    def test_signature_uses_names(self) -> None:
+        sale = _sale()
+        sale.client_id, sale.client_name = 3, "Société Faso Oil"
+        text = self._text(be.build_bon_enlevement(sale, path=config.TICKET_DIR / "e.pdf", overrides={be.SETTING_COMMERCIAL: "Issa Ouédraogo"}))
+        self.assertIn("Issa Ouédraogo", text)
+        self.assertNotIn("Le Commercial", text)
+        self.assertNotIn("Le client", text)
+        fallback = self._text(be.build_bon_enlevement(_sale(), path=config.TICKET_DIR / "f.pdf"))
+        self.assertIn("Le Commercial", fallback)
+
     def test_acompte(self) -> None:
         text = self._text(be.build_bon_enlevement(_sale(), path=config.TICKET_DIR / "d.pdf", overrides={be.SETTING_ACOMPTE_RATE: "2", be.SETTING_ACOMPTE_LABEL: "AC. BIC"}))
         self.assertIn("AC. BIC 2%", text)

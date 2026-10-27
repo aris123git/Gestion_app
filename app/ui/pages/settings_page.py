@@ -387,6 +387,8 @@ class SettingsPage(QWidget):
         self.bon_ac_rate.setDecimals(2)
         self.bon_ac_rate.setSuffix(' %')
         self.bon_ac_rate.setToolTip(t("0 = aucune ligne d'acompte sur le bon. Sinon l'acompte est ajouté au total (TOTAL GÉNÉRAL)."))
+        self.bon_commercial = QLineEdit()
+        self.bon_commercial.setPlaceholderText(t('Nom du commercial'))
         self.shop_rccm = QLineEdit()
         self.shop_ifu = QLineEdit()
         self.shop_bank = QLineEdit()
@@ -467,6 +469,7 @@ class SettingsPage(QWidget):
         ac_row.addWidget(self.bon_ac_label, 1)
         ac_row.addWidget(self.bon_ac_rate)
         form.addRow(t('Acompte sur le bon (libellé et taux)'), ac_row)
+        form.addRow(t('Commercial (signature du bon)'), self.bon_commercial)
         form.addRow(t('N° RCCM (pied du bon)'), self.shop_rccm)
         form.addRow(t('N° IFU (pied du bon)'), self.shop_ifu)
         form.addRow(t('Compte bancaire (pied du bon)'), self.shop_bank)
@@ -502,7 +505,7 @@ class SettingsPage(QWidget):
         from app.printers import bon_enlevement as be
         shop = settings_service.get_shop_info()
         overrides = {be.SETTING_LEGAL: self.bon_legal.text(), be.SETTING_ACOMPTE_LABEL: self.bon_ac_label.text(), be.SETTING_ACOMPTE_RATE: str(self.bon_ac_rate.value()),
-                     be.SETTING_RCCM: self.shop_rccm.text(), be.SETTING_IFU: self.shop_ifu.text(), be.SETTING_BANK: self.shop_bank.text()}
+                     be.SETTING_COMMERCIAL: self.bon_commercial.text(), be.SETTING_RCCM: self.shop_rccm.text(), be.SETTING_IFU: self.shop_ifu.text(), be.SETTING_BANK: self.shop_bank.text()}
         try:
             items = [NS(product_name='Produit exemple 1', product_id=None, quantity=1000, unit_price=700, line_total=700000), NS(product_name='Produit exemple 2', product_id=None, quantity=500, unit_price=650, line_total=325000)]
             sale = NS(ticket_number='APERCU-0001', date=datetime.now(), client_id=1, client_name='Client exemple', client_phone='70000000', items=items, payments=[NS(method='Espèces', amount=1025000)])
@@ -1003,6 +1006,7 @@ class SettingsPage(QWidget):
         settings_service.set_setting('bon_legal_text', self.bon_legal.text().strip())
         settings_service.set_setting('bon_acompte_label', self.bon_ac_label.text().strip())
         settings_service.set_setting('bon_acompte_rate', str(self.bon_ac_rate.value()))
+        settings_service.set_setting('bon_commercial', self.bon_commercial.text().strip())
         settings_service.set_setting('shop_rccm', self.shop_rccm.text().strip())
         settings_service.set_setting('shop_ifu', self.shop_ifu.text().strip())
         settings_service.set_setting('shop_bank_account', self.shop_bank.text().strip())
@@ -1620,6 +1624,7 @@ class SettingsPage(QWidget):
         self.bon_legal.setText(settings_service.get_setting(_be.SETTING_LEGAL, ''))
         self.bon_ac_label.setText(settings_service.get_setting(_be.SETTING_ACOMPTE_LABEL, ''))
         self.bon_ac_rate.setValue(_be.get_acompte()[1])
+        self.bon_commercial.setText(settings_service.get_setting(_be.SETTING_COMMERCIAL, ''))
         self.shop_rccm.setText(settings_service.get_setting(_be.SETTING_RCCM, ''))
         self.shop_ifu.setText(settings_service.get_setting(_be.SETTING_IFU, ''))
         self.shop_bank.setText(settings_service.get_setting(_be.SETTING_BANK, ''))

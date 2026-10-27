@@ -31,6 +31,7 @@ SETTING_ENABLED = "bon_enabled"
 SETTING_LEGAL = "bon_legal_text"
 SETTING_ACOMPTE_RATE = "bon_acompte_rate"
 SETTING_ACOMPTE_LABEL = "bon_acompte_label"
+SETTING_COMMERCIAL = "bon_commercial"
 SETTING_RCCM = "shop_rccm"
 SETTING_IFU = "shop_ifu"
 SETTING_BANK = "shop_bank_account"
@@ -244,7 +245,11 @@ def build_bon_enlevement(
         right_cell += [Spacer(1, 1.5 * mm), Paragraph(f"<b>Mode de règlement :</b> {methods}", base)]
     bottom_block = Table([[left_cell, right_cell]], colWidths=[frame_w * 0.54, frame_w * 0.46])
     bottom_block.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 6 * mm * k), ("RIGHTPADDING", (1, 0), (1, 0), 0)]))
-    sign = Table([[Paragraph("<b>Le Commercial</b>", base), Paragraph("<b>Le client</b>", ParagraphStyle("c", parent=base, alignment=2))]], colWidths=[frame_w / 2, frame_w / 2])
+    # Signatures : le nom du commercial (Paramètres) et celui du client (l'entreprise)
+    # remplacent les libellés génériques ; sans nom connu on garde le libellé.
+    commercial = _opt(SETTING_COMMERCIAL, overrides)
+    company = refs["name"] if (client_id and refs.get("name")) else ""
+    sign = Table([[Paragraph(f"<b>{commercial or 'Le Commercial'}</b>", base), Paragraph(f"<b>{company or 'Le client'}</b>", ParagraphStyle("c", parent=base, alignment=2))]], colWidths=[frame_w / 2, frame_w / 2])
     sign.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
     story.append(KeepTogether([bottom_block, Spacer(1, (5 if half else 8) * mm * k), sign]))
 
