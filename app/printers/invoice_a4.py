@@ -738,9 +738,8 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             rows = trial_rows
             items_t = trial
         _, cur_h = items_t.wrap(frame_w, frame_h)
-    # Les totaux restent calés en bas de la page ; si les lignes arrivent jusqu'à eux,
-    # le bloc des totaux passe à la page suivante.
-    gap = 8 * mm * k + (max(0.0, available - cur_h) if cur_h <= available else 0.0)
+    # Les totaux suivent directement la dernière ligne (sauf en mode « lignes vides »).
+    gap = 8 * mm * k + (max(0.0, available - cur_h) if fill and cur_h <= available else 0.0)
     story += [items_t, Spacer(1, gap), KeepTogether([bottom])]
 
     saved = (PAGE_W, PAGE_H)
