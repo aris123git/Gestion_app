@@ -51,6 +51,10 @@ class StockController:
     ) -> None:
         before = float(product.quantity)
         product.quantity = new_quantity
+        if new_quantity < before:
+            from app.services import price_layers
+
+            price_layers.settle(session, product)
         session.add(
             StockMovement(
                 product_id=product.id,
@@ -79,6 +83,7 @@ class StockController:
         supplier_id: Optional[int] = None,
         invoice_number: str = "",
         comment: str = "",
+        new_sale_price: float = 0,
     ) -> None:
         quantity = to_float(quantity)
         unit_cost = to_float(unit_cost)
@@ -87,6 +92,7 @@ class StockController:
             product = session.get(Product, product_id)
             if not product:
                 return
+            before_qty = float(product.quantity)
             cls._record(
                 session,
                 product,
@@ -101,8 +107,14 @@ class StockController:
             )
             # Le coût unitaire saisi lors de l'entrée met à jour le prix d'achat
             # du produit (dernier prix d'achat connu) — réservé aux rôles stock.
-            if unit_cost > 0:
-                product.purchase_price = unit_cost
+            # Si de l'ancien stock reste, les nouveaux prix attendent son écoulement.
+            if unit_cost > 0 or to_float(new_sale_price) > 0:
+                from app.services import price_layers
+
+                price_layers.register_arrival(
+                    session, product, before_qty, quantity, unit_cost,
+                    to_float(new_sale_price) or None, source=reason or "Entrée de stock",
+                )
 
     @classmethod
     def stock_out(

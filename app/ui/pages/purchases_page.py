@@ -33,6 +33,10 @@ class PurchasesPage(QWidget):
         self.qty.setValue(1)
         self.cost = MoneySpinBox()
         self.cost.setRange(0, 1000000000)
+        self.new_sale_price = MoneySpinBox()
+        self.new_sale_price.setRange(0, 1000000000)
+        self.new_sale_price.setDecimals(3)
+        self.new_sale_price.setToolTip(t("Optionnel. Si de l'ancien stock reste, ce prix ne s'appliquera qu'après sa vente complète. 0 = ne pas changer."))
         self.paid = MoneySpinBox()
         self.paid.setRange(0, 1000000000)
         self.note = QLineEdit()
@@ -41,6 +45,7 @@ class PurchasesPage(QWidget):
         form.addRow(t('Produit'), self.product)
         form.addRow(t('Quantité'), self.qty)
         form.addRow(t('Coût unitaire'), self.cost)
+        form.addRow(t('Nouveau prix de vente (après ancien stock)'), self.new_sale_price)
         form.addRow(t('Montant payé'), self.paid)
         form.addRow(t('Note'), self.note)
         layout.addWidget(make_card(form_w))
@@ -103,7 +108,7 @@ class PurchasesPage(QWidget):
         cost = self.cost.value()
         if cost <= 0:
             cost = self._product_costs.get(pid, 0.0)
-        line = PurchaseLine(pid, name, self.qty.value(), cost)
+        line = PurchaseLine(pid, name, self.qty.value(), cost, self.new_sale_price.value() or None)
         self._lines.append(line)
         self._render_lines()
 

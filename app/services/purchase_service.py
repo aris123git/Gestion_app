@@ -24,6 +24,7 @@ class PurchaseLine:
     name: str
     quantity: float
     unit_cost: float
+    sale_price: Optional[float] = None  # nouveau prix de vente (appliqué après l'ancien stock)
 
     @property
     def total(self) -> float:
@@ -96,8 +97,13 @@ class PurchaseService:
                         before = float(product.quantity)
                         after = before + qty
                         product.quantity = after
-                        if cost > 0:
-                            product.purchase_price = cost
+                        if cost > 0 or line.sale_price:
+                            from app.services import price_layers
+
+                            price_layers.register_arrival(
+                                session, product, before, qty, cost, line.sale_price,
+                                source=f"Achat #{purchase.id}",
+                            )
                         session.add(
                             StockMovement(
                                 product_id=product.id,

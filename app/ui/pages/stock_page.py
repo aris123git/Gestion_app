@@ -45,6 +45,10 @@ class StockPage(QWidget):
         self.unit_cost = MoneySpinBox()
         self.unit_cost.setRange(0, 1000000000)
         self.unit_cost.setDecimals(3)
+        self.new_sale_price = MoneySpinBox()
+        self.new_sale_price.setRange(0, 1000000000)
+        self.new_sale_price.setDecimals(3)
+        self.new_sale_price.setToolTip(t("Optionnel. Si de l'ancien stock reste, ce prix ne s'appliquera qu'après sa vente complète. 0 = ne pas changer."))
         self.invoice_number = QLineEdit()
         self.invoice_number.setPlaceholderText(t('Facultatif'))
         self.reason = QLineEdit()
@@ -58,6 +62,7 @@ class StockPage(QWidget):
         form.addRow(t('N° facture'), self.invoice_number)
         form.addRow(t('Quantité'), self.quantity)
         form.addRow(t('Coût unitaire (entrée)'), self.unit_cost)
+        form.addRow(t('Nouveau prix de vente (après ancien stock)'), self.new_sale_price)
         form.addRow(t('Motif'), self.reason)
         form.addRow(t('Motif de perte'), self.loss_reason)
         form.addRow(t('Commentaire'), self.comment)
@@ -119,7 +124,7 @@ class StockPage(QWidget):
             warn(self, t('Choisissez un produit et une quantité.'))
             return
         motif = self.reason.text().strip() or 'Livraison fournisseur'
-        StockController.stock_in(pid, self.quantity.value(), self.unit_cost.value(), motif, self.state.user_id, supplier_id=self._current_supplier_id(), invoice_number=self.invoice_number.text(), comment=self.comment.text())
+        StockController.stock_in(pid, self.quantity.value(), self.unit_cost.value(), motif, self.state.user_id, supplier_id=self._current_supplier_id(), invoice_number=self.invoice_number.text(), comment=self.comment.text(), new_sale_price=self.new_sale_price.value())
         self._after_movement('Entrée de stock', pid)
 
     def _stock_out(self) -> None:

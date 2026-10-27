@@ -52,6 +52,9 @@ class InventoryService:
                 )
             after = before - quantity
             product.quantity = after
+            from app.services import price_layers
+
+            price_layers.settle(session, product)
             note = reason
             if comment:
                 note = f"{reason} — {comment.strip()}"

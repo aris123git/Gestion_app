@@ -198,13 +198,30 @@ class ProductController:
             product.reference = str(data.get("reference", product.reference)).strip()
             product.category_id = data.get("category_id")
             product.unit_id = data.get("unit_id")
-            product.purchase_price = to_float(data.get("purchase_price"))
+            new_cost = to_float(data.get("purchase_price"))
+            deferred = False
+            if data.get("price_timing") == "after_stock":
+                # Nouveaux prix appliqués seulement après l'écoulement du stock actuel.
+                from app.services import price_layers
+
+                cost_changed = abs(new_cost - float(product.purchase_price or 0)) >= 0.001
+                sale_changed = abs(old_price - new_price) >= 0.001
+                if cost_changed or sale_changed:
+                    deferred = price_layers.schedule_price_change(
+                        session, product, new_cost if cost_changed else None, new_price if sale_changed else None
+                    )
+            if not deferred:
+                product.purchase_price = new_cost
             # Le prix de vente est mis à jour via PriceHistoryService si modifié.
             product.min_price = to_float(data.get("min_price"))
             if "tax_rate" in data:
                 product.tax_rate = ProductController._tax_rate(data)
             product.pack_content = to_float(data.get("pack_content", product.pack_content))
             product.quantity = new_quantity
+            if new_quantity < old_quantity:
+                from app.services import price_layers
+
+                price_layers.settle(session, product)
             product.min_stock = to_float(data.get("min_stock"))
             product.free_amount_sale = bool(
                 data.get("free_amount_sale", product.free_amount_sale)
@@ -222,8 +239,8 @@ class ProductController:
                 "Ajustement fiche produit",
                 user_id,
             )
-            price_changed = abs(old_price - new_price) >= 0.001
-            if not price_changed:
+            price_changed = abs(old_price - new_price) >= 0.001 and not deferred
+            if not price_changed and not deferred:
                 product.sale_price = new_price
         if price_changed:
             PriceHistoryService.record_change(

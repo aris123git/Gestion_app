@@ -204,10 +204,35 @@ class ProductsPage(QWidget):
         product = ProductController.get(product_id)
         dialog = ProductDialog(product=product, parent=self)
         if dialog.exec() and dialog.data:
-            ProductController.update(product_id, dialog.data)
+            data = dict(dialog.data)
+            if not self._ask_price_timing(product, data):
+                return
+            ProductController.update(product_id, data)
             audit_service.log_action('Modification produit', 'Product', dialog.data['name'], self.state.user_id, getattr(self.state.current_user, 'username', ''))
             self.refresh()
             self.state.notify_data_changed()
+
+    def _ask_price_timing(self, product, data: dict) -> bool:
+        """Si les prix changent alors qu'il reste du stock : maintenant ou après son écoulement ? False = annulé."""
+        from PySide6.QtWidgets import QMessageBox
+
+        changed = (abs(float(data.get('sale_price') or 0) - float(product.sale_price or 0)) >= 0.001
+                   or abs(float(data.get('purchase_price') or 0) - float(product.purchase_price or 0)) >= 0.001)
+        stock = float(product.quantity or 0)
+        if not changed or stock <= 0 or getattr(product, 'sell_without_stock', False):
+            return True
+        box = QMessageBox(self)
+        box.setWindowTitle(t('Changement de prix'))
+        box.setText(t("Il reste {n:g} en stock au prix actuel. Quand appliquer le nouveau prix ?").format(n=stock))
+        later = box.addButton(t('Après épuisement du stock actuel'), QMessageBox.ButtonRole.AcceptRole)
+        now = box.addButton(t('Maintenant'), QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(t('Annuler'), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is later:
+            data['price_timing'] = 'after_stock'
+            return True
+        return clicked is now
 
     def _delete(self) -> None:
         product_id = self._selected_id()

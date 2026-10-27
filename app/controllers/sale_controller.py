@@ -429,6 +429,13 @@ class SaleController:
                     purchase_price = float(product.purchase_price)
                 else:
                     purchase_price = 0.0
+                if product and not getattr(product, "sell_without_stock", False):
+                    # Coût FIFO : si des lots à d'autres prix attendent, le coût suit les unités réellement vendues.
+                    from app.services import price_layers
+
+                    fifo = price_layers.fifo_cost(session, product, float(line.stock_quantity))
+                    if fifo is not None:
+                        purchase_price = fifo
                 if line.loyalty_reward:
                     profit += 0.0 - purchase_price * float(line.quantity)
                 elif line.free_amount:
@@ -457,6 +464,9 @@ class SaleController:
                     before = float(product.quantity)
                     after = before - stock_out
                     product.quantity = after
+                    from app.services import price_layers
+
+                    price_layers.settle(session, product)
                     session.add(
                         StockMovement(
                             product_id=product.id,

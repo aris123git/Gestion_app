@@ -54,6 +54,10 @@ def _apply_stock_delta(
     if delta_qty < 0 and after < -0.0001:
         raise ValueError(f"Stock insuffisant : « {product.name} »")
     product.quantity = after
+    if delta_qty < 0:
+        from app.services import price_layers
+
+        price_layers.settle(session, product)
     session.add(
         StockMovement(
             product_id=product.id,
