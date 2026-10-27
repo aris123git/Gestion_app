@@ -137,4 +137,36 @@ class ClientSearchField(QWidget):
             only_id = next(iter(self._clients_by_label.values()))
             self.set_client(only_id, emit=True)
             return
+        # Aucune correspondance déjà affichée : on revérifie puis on propose la création.
+        matches = ClientController.list(search=text)
+        if not matches:
+            self._create_new_client(text)
+            return
+        if len(matches) == 1:
+            self.set_client(matches[0].id, emit=True)
+            return
         self.client_selected.emit(None)
+
+    @staticmethod
+    def _looks_like_phone(text: str) -> bool:
+        digits = sum(ch.isdigit() for ch in text)
+        return digits >= 5 and digits >= len(text.replace(' ', '').replace('+', '')) * 0.7
+
+    def _create_new_client(self, typed: str) -> None:
+        """Entrée sur un nom / numéro inconnu : ouvre directement la fenêtre de nouveau client."""
+        from app.ui.dialogs.contact_dialog import ContactDialog
+
+        dialog = ContactDialog('Nouveau client', with_debt=False, parent=self.window())
+        if self._looks_like_phone(typed):
+            dialog.phone.setText(''.join(ch for ch in typed if ch.isdigit() or ch == '+'))
+        else:
+            dialog.name.setText(typed)
+        if not dialog.exec() or not dialog.data:
+            self.client_selected.emit(None)
+            return
+        phone = (dialog.data.get('phone') or '').strip()
+        client = ClientController.find_by_phone(phone) if phone else None
+        if client is None:
+            client = ClientController.create(dialog.data)
+        if client:
+            self.set_client(client.id, emit=True)
