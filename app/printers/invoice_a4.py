@@ -220,6 +220,9 @@ def _cashier(sale) -> str:
     return "" if name in ("", "—") else str(name)
 
 
+from app.services.invoice_numbering import invoice_number  # noqa: E402
+
+
 def client_refs(sale) -> dict:
     """Références du client de la vente : nom, contact(s), adresse, e-mail.
 
@@ -528,9 +531,10 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
 
         return build_template_invoice(sale, shop, path, style.id, fs)
 
+    number = invoice_number(sale)
     moment = sale.date or datetime.now()
     footer = str(shop.ticket_footer or "Merci pour votre confiance.")
-    ctx = {"style": style, "shop": shop, "number": sale.ticket_number, "footer": footer}
+    ctx = {"style": style, "shop": shop, "number": number, "footer": footer}
     top_mm, bottom_mm = (z * k for z in _ZONES[style.layout])
     decor = _DECORS[style.layout]
     margin = MARGIN * k
@@ -549,7 +553,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     doc = BaseDocTemplate(
         str(path), pagesize=(real_w, real_h), leftMargin=margin, rightMargin=margin,
         topMargin=top_mm * mm, bottomMargin=bottom_mm * mm,
-        title=f"Facture {sale.ticket_number}", author=str(shop.name or ""),
+        title=f"Facture {number}", author=str(shop.name or ""),
     )
     doc.addPageTemplates([PageTemplate(id="p", frames=[frame], onPage=on_page)])
 
@@ -590,10 +594,11 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
         if refs_client["email"]:
             client_lines.append(Paragraph(f"E-mail : {refs_client['email']}", small))
     refs = [
-        Paragraph(f"<b>Facture N°</b> {sale.ticket_number}", ParagraphStyle("r", parent=body, alignment=2)),
+        Paragraph(f"<b>Facture N°</b> {number}", ParagraphStyle("r", parent=body, alignment=2)),
         Paragraph(f"<b>Date</b> {moment:%d/%m/%Y}  {moment:%H:%M}", ParagraphStyle("r2", parent=body, alignment=2)),
-        Paragraph(f"<b>Caissier</b> {_cashier(sale) or '—'}", ParagraphStyle("r3", parent=body, alignment=2)),
     ]
+    if _cashier(sale):
+        refs.append(Paragraph(f"<b>Caissier</b> {_cashier(sale)}", ParagraphStyle("r3", parent=body, alignment=2)))
     meta = Table([[client_lines, refs]], colWidths=[frame_w * 0.55, frame_w * 0.45])
     meta.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -702,7 +707,8 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
 
-    # Remplit la page : ajoute des lignes vides tant que tout tient sur 1 page.
+    # Pas de lignes vides : le tableau ne contient que les articles. Le bloc des
+    # totaux est poussé en bas de page par un espace (la page reste équilibrée).
     _, meta_h = meta.wrap(frame_w, frame_h)
     _, bottom_h = bottom.wrap(frame_w, frame_h)
     reserve = meta_h + 7 * mm * k + bottom_h + 8 * mm * k + 4 * mm * k
@@ -710,18 +716,8 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     items_t = Table(rows, colWidths=col_w, repeatRows=1)
     items_t.setStyle(table_style(len(rows)))
     _, cur_h = items_t.wrap(frame_w, frame_h)
-    if cur_h <= available:
-        probe = [""] * 5
-        while True:
-            trial_rows = rows + [probe]
-            trial = Table(trial_rows, colWidths=col_w, repeatRows=1)
-            trial.setStyle(table_style(len(trial_rows)))
-            _, h = trial.wrap(frame_w, frame_h)
-            if h > available:
-                break
-            rows = trial_rows
-            items_t = trial
-    story += [items_t, Spacer(1, 8 * mm * k), bottom]
+    gap = 8 * mm * k + (max(0.0, available - cur_h) if cur_h <= available else 0.0)
+    story += [items_t, Spacer(1, gap), bottom]
 
     saved = (PAGE_W, PAGE_H)
     PAGE_W, PAGE_H = real_w / k, real_h / k  # taille virtuelle utilisée par les décors

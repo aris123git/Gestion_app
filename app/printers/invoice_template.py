@@ -155,7 +155,7 @@ def _context(sale, shop):
     return {
         "currency": currency,
         "rows": rows,
-        "number": str(sale.ticket_number),
+        "number": invoice_number(sale),
         "date": f"{moment:%d/%m/%Y}",
         "datetime": f"{moment:%d/%m/%Y %H:%M}",
         "cashier": _cashier_name(sale),
@@ -371,6 +371,9 @@ def _paginate(rows, per_page_fn):
     return [rows[i:i + capacity] for i in range(0, len(rows), capacity)]
 
 
+from app.services.invoice_numbering import invoice_number  # noqa: E402
+
+
 def _cashier_name(sale) -> str:
     try:
         name = getattr(sale, "cashier_name", "") or ""
@@ -416,7 +419,7 @@ def build_template_invoice(sale, shop, path: Path, style_id: str, font_size: int
         base.cropbox = base.mediabox
         base.scale_to(a4_w, a4_h)
         writer.add_page(base)
-    writer.add_metadata({"/Title": f"Facture {sale.ticket_number}", "/Author": str(shop.name or "")})
+    writer.add_metadata({"/Title": f"Facture {invoice_number(sale)}", "/Author": str(shop.name or "")})
     with open(path, "wb") as fh:
         writer.write(fh)
     return path
