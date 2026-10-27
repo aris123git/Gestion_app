@@ -51,6 +51,14 @@ INVOICE_FORMATS = (
 )
 
 
+SETTING_FILL_EMPTY = "invoice_fill_empty"
+
+
+def get_fill_empty() -> bool:
+    """True : ajoute des lignes vides pour remplir la page. Défaut : False (aucune ligne sans donnée)."""
+    return settings_service.get_setting(SETTING_FILL_EMPTY, "0").strip() == "1"
+
+
 def get_format() -> str:
     value = settings_service.get_setting(SETTING_FORMAT, FORMAT_A4).strip()
     return value if value in {f for f, _ in INVOICE_FORMATS} else FORMAT_A4
@@ -501,7 +509,7 @@ _ZONES = {
 
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
                      style_id: str | None = None, font_size: int | None = None,
-                     fmt: str | None = None) -> Path:
+                     fmt: str | None = None, fill_empty: bool | None = None) -> Path:
     """Génère la facture (A4 portrait, ou A4 coupé en deux) et retourne le PDF."""
     global PAGE_W, PAGE_H
     config.ensure_directories()
@@ -716,6 +724,20 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     items_t = Table(rows, colWidths=col_w, repeatRows=1)
     items_t.setStyle(table_style(len(rows)))
     _, cur_h = items_t.wrap(frame_w, frame_h)
+    fill = get_fill_empty() if fill_empty is None else bool(fill_empty)
+    if fill and cur_h <= available:
+        # Option « lignes vides » : complète le tableau jusqu'au bas de la page.
+        probe = [""] * 5
+        while True:
+            trial_rows = rows + [probe]
+            trial = Table(trial_rows, colWidths=col_w, repeatRows=1)
+            trial.setStyle(table_style(len(trial_rows)))
+            _, h = trial.wrap(frame_w, frame_h)
+            if h > available:
+                break
+            rows = trial_rows
+            items_t = trial
+        _, cur_h = items_t.wrap(frame_w, frame_h)
     gap = 8 * mm * k + (max(0.0, available - cur_h) if cur_h <= available else 0.0)
     story += [items_t, Spacer(1, gap), bottom]
 

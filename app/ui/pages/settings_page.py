@@ -374,6 +374,8 @@ class SettingsPage(QWidget):
         self.invoice_font.setRange(MIN_FONT, MAX_FONT)
         self.invoice_font.setSuffix(' pt')
         self.invoice_font.setToolTip(t('Taille du texte de la facture (désignations, prix, totaux). Plus grand = lecture plus facile.'))
+        self.invoice_fill_empty = QCheckBox(t('Ajouter des lignes vides pour remplir la page'))
+        self.invoice_fill_empty.setToolTip(t("Décoché (par défaut) : aucune ligne n'est ajoutée s'il n'y a pas de données. Coché : le tableau est complété par des lignes vides jusqu'en bas de la page (modèles dessinés ; les modèles Services et Médical n'ont jamais de lignes vides)."))
         self.footer = QLineEdit()
         self.feed_lines = QSpinBox()
         self.feed_lines.setRange(0, 20)
@@ -444,6 +446,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Format de la facture'), self.invoice_format)
         form.addRow(t('Modèle et couleur de la facture'), self.invoice_style)
         form.addRow(t('Taille de police facture'), self.invoice_font)
+        form.addRow(t('Lignes vides'), self.invoice_fill_empty)
         outer.addWidget(make_card(form_widget))
         hint = QLabel(t("La facture remplit la page : A4 entier, ou A4 coupé en deux (210 × 148,5 mm). Le nom, l'adresse, le téléphone, l'e-mail et le logo viennent de l'onglet <b>Commerce</b> ; le message de bas de page est le <b>Message du ticket</b> (onglet Apparence du ticket). Le type par défaut (ticket ou facture) se règle dans l'onglet Apparence du ticket."))
         hint.setWordWrap(True)
@@ -948,6 +951,7 @@ class SettingsPage(QWidget):
         settings_service.set_setting('invoice_format', self.invoice_format.currentData() or 'a4')
         settings_service.set_setting('invoice_style', self.invoice_style.currentData() or 'recu')
         settings_service.set_setting('invoice_font_size', str(self.invoice_font.value()))
+        settings_service.set_setting('invoice_fill_empty', '1' if self.invoice_fill_empty.isChecked() else '0')
         settings_service.set_setting('ticket_feed_lines', str(self.feed_lines.value()))
         settings_service.set_setting('ticket_cut_mode', self.cut_mode.currentData())
         settings_service.set_setting('auto_print_ticket', '1' if self.auto_print.isChecked() else '0')
@@ -969,7 +973,7 @@ class SettingsPage(QWidget):
         sale = NS(ticket_number='APERCU-0001', date=datetime.now(), cashier_name='Caissier', client_name='Client exemple', client_phone='', items=items, subtotal=18000.5, discount=0, total=18000.5, amount_received=20000, change_due=1999.5, payments=[NS(method='Espèces', amount=18000.5)])
         try:
             config.ensure_directories()
-            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value(), fmt=self.invoice_format.currentData())
+            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value(), fmt=self.invoice_format.currentData(), fill_empty=self.invoice_fill_empty.isChecked())
         except Exception as exc:
             warn(self, f'Impossible de générer l\'aperçu : {exc}')
             return
@@ -1554,6 +1558,9 @@ class SettingsPage(QWidget):
         if _si >= 0:
             self.invoice_style.setCurrentIndex(_si)
         self.invoice_font.setValue(get_font_size())
+        from app.printers.invoice_a4 import get_fill_empty
+
+        self.invoice_fill_empty.setChecked(get_fill_empty())
         from app.printers.invoice_a4 import get_format
         _fi = self.invoice_format.findData(get_format())
         if _fi >= 0:
