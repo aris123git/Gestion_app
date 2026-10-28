@@ -920,13 +920,15 @@ class POSPage(QWidget):
             self._pending_sale_id = None
         audit_service.log_action('Vente', 'Sale', f'{result.ticket_number} total={result.total}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         currency = settings_service.get_currency()
-        info(self, f'Vente enregistrée : {result.ticket_number}\nTotal : {format_money(result.total, currency)}\nMonnaie rendue : {format_money(result.change_due, currency)}', t('Vente réussie'))
+        sale_msg = f'Vente enregistrée : {result.ticket_number} — Total : {format_money(result.total, currency)} — Monnaie rendue : {format_money(result.change_due, currency)}'
+        if self._maquis_mode:
+            info(self, sale_msg.replace(' — ', '\n'), t('Vente réussie'))
         if not self._maquis_mode:
             sale = SaleController.get(result.sale_id)
             if sale:
                 if result.loyalty_credit_remaining is not None:
                     sale.loyalty_credit_remaining = result.loyalty_credit_remaining
-                TicketDialog(sale, self, auto_print=False).exec()
+                TicketDialog(sale, self, auto_print=False, message=sale_msg + '\n' + t('Entrée : imprimer · Entrée de nouveau : fermer')).exec()
         self._clear_cart()
         if isinstance(self._catalog, PosCatalogPanel):
             self._catalog.refresh()

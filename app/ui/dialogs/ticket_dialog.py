@@ -20,10 +20,11 @@ from app.ui.widgets.helpers import info, warn
 class TicketDialog(QDialog):
     """Après encaissement : imprime le défaut, autre destination en option."""
 
-    def __init__(self, sale, parent=None, *, auto_print: bool | None=None):
+    def __init__(self, sale, parent=None, *, auto_print: bool | None=None, message: str=''):
         super().__init__(parent)
         self.sale = sale
         self._saved_path: Path | None = None
+        self._printed = False
         self.setWindowTitle(f'Impression — {sale.ticket_number}')
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=360, min_height=320, preferred_width=520, preferred_height=640)
@@ -63,7 +64,7 @@ class TicketDialog(QDialog):
         self.preview.setFont(mono)
         self.preview.setStyleSheet('QPlainTextEdit { line-height: 1; background: #ffffff; color: #111111; }')
         layout.addWidget(self.preview)
-        self.status = QLabel(t('Imprimer = destination ci-dessus (défaut Paramètres, sauf changement).'))
+        self.status = QLabel(message or t('Imprimer = destination ci-dessus (défaut Paramètres, sauf changement).'))
         self.status.setWordWrap(True)
         self.status.setStyleSheet('color: #64748b; font-size: 12px;')
         layout.addWidget(self.status)
@@ -86,6 +87,11 @@ class TicketDialog(QDialog):
         buttons.addWidget(self.print_button)
         buttons.addWidget(self.save_button)
         layout.addLayout(buttons)
+        for _b in self.findChildren(QPushButton):
+            _b.setAutoDefault(False)
+            _b.setDefault(False)
+        self.print_button.setToolTip(self.print_button.toolTip() + ' ' + t('Touche Entrée : imprimer, puis Entrée : fermer.'))
+        self.print_button.setFocus()
         self._render()
         if auto_print is None:
             auto_print = settings_service.get_setting('auto_print_ticket', '0') == '1'
@@ -162,7 +168,11 @@ class TicketDialog(QDialog):
                 lines.append(f'✗ {label} : {res.message}')
         text = '\n\n'.join(lines)
         self.status.setText(text.splitlines()[0] if text else '')
-        (info if ok else warn)(self, text, t('Impression'))
+        if ok:
+            self.status.setText(f"✓ {text.splitlines()[0]} — {t('Entrée pour fermer')}" if text else '')
+            self._printed = True
+        else:
+            warn(self, text, t('Impression'))
 
     def _invoice_job(self):
         from app.printers.half_a4_invoice import print_half_a4_invoice
@@ -326,6 +336,17 @@ class TicketDialog(QDialog):
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(saved.parent)))
 
+    def keyPressEvent(self, event) -> None:
+        """Entrée : imprime ; Entrée de nouveau (après impression) : ferme et revient à la caisse."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self._printed:
+                self.accept()
+            else:
+                self._print()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def _print(self) -> None:
         """Imprime la destination sélectionnée (défaut Paramètres sauf autre choix)."""
         self.print_button.setEnabled(False)
@@ -341,8 +362,8 @@ class TicketDialog(QDialog):
             self.print_button.setEnabled(True)
             self._render()
         if result.printed:
-            self.status.setText(result.message)
-            info(self, f'{result.message}\n\nFichier :\n{result.file_path}', t('Impression'))
+            self.status.setText(f"✓ {result.message} — {t('Entrée pour fermer')}")
+            self._printed = True
         else:
             self.status.setText(result.message)
             warn(self, f"Impression impossible.\n\n{result.message}\n\nFichier enregistré :\n{result.file_path}\n\nVérifiez Paramètres → Apparence du ticket :\n• Type d'imprimante par défaut\n• Imprimante ticket (thermique) / facture (encre)", t('Impression impossible'))
