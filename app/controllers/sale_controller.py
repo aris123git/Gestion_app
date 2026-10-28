@@ -801,15 +801,32 @@ class SaleController:
         end: Optional[date] = None,
         limit: int = 5000,
         offset: int = 0,
+        client_id: Optional[int] = None,
+        with_items: bool = False,
     ) -> List[Sale]:
+        """Ventes filtrées. ``search`` : n° de ticket / de facture, nom ou téléphone du client."""
+        from sqlalchemy import or_
+
+        from app.models.client import Client
+
         with session_scope() as session:
-            query = select(Sale).options(
-                joinedload(Sale.user),
-                joinedload(Sale.client),
-                joinedload(Sale.payments),
-            )
+            options = [joinedload(Sale.user), joinedload(Sale.client), joinedload(Sale.payments)]
+            if with_items:
+                options.append(joinedload(Sale.items))
+            query = select(Sale).options(*options)
+            if client_id is not None:
+                query = query.where(Sale.client_id == client_id)
             if search:
-                query = query.where(Sale.ticket_number.ilike(f"%{search}%"))
+                like = f"%{search.strip()}%"
+                query = query.outerjoin(Client, Client.id == Sale.client_id).where(
+                    or_(
+                        Sale.ticket_number.ilike(like),
+                        Sale.invoice_number.ilike(like),
+                        Client.name.ilike(like),
+                        Client.phone.ilike(like),
+                        Client.phone2.ilike(like),
+                    )
+                )
             if start:
                 query = query.where(Sale.date >= datetime.combine(start, datetime.min.time()))
             if end:

@@ -59,7 +59,7 @@ class ClientsPage(QWidget):
         self._columns = TableColumnController(self.table, CLIENT_COLUMNS)
         actions = QHBoxLayout()
         actions.addStretch()
-        for label, handler, obj in [('Modifier', self._edit, ''), ('+ Dette', self._add_debt, 'Primary'), ('Payé', self._settle, 'Success'), ('Échanger points', self._redeem_points, 'Primary'), ('Historique dettes', self._history, 'Primary'), ('Supprimer', self._delete, 'Danger')]:
+        for label, handler, obj in [('Modifier', self._edit, ''), ('+ Dette', self._add_debt, 'Primary'), ('Payé', self._settle, 'Success'), ('Échanger points', self._redeem_points, 'Primary'), ('Historique dettes', self._history, 'Primary'), ('Historique des achats', self._purchases, 'Primary'), ('Supprimer', self._delete, 'Danger')]:
             button = QPushButton(label)
             if obj:
                 button.setObjectName(obj)
@@ -254,6 +254,17 @@ class ClientsPage(QWidget):
         audit_service.log_action('Échange points', 'Loyalty', f'client={client_id} points={points}' + (f' autorisé_par={admin_name}' if admin_name else ''), self.state.user_id, getattr(self.state.current_user, 'username', ''))
         self.refresh()
         info(self, f'Échange enregistré. Solde restant : {remaining:g} pts.')
+
+    def _purchases(self) -> None:
+        client_id = self._selected_id()
+        if not client_id:
+            warn(self, t('Sélectionnez un client.'))
+            return
+        client = ClientController.get(client_id)
+        if not client:
+            return
+        from app.ui.dialogs.client_purchases_dialog import ClientPurchasesDialog
+        ClientPurchasesDialog(client_id, client.name, state=self.state, parent=self).exec()
 
     def _history(self) -> None:
         client_id = self._selected_id()

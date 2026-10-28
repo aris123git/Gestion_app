@@ -2,8 +2,8 @@
 from __future__ import annotations
 from app.i18n import t
 from datetime import date, datetime
-from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QComboBox, QDateEdit, QDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtCore import QDate, QTimer
+from PySide6.QtWidgets import QComboBox, QDateEdit, QDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
 from app.controllers.report_controller import ReportController, period_bounds
 from app.controllers.sale_controller import SaleController
@@ -79,8 +79,17 @@ class ReportsPage(QWidget):
         self.history_note.setStyleSheet('color: #b45309; font-size: 12px;')
         self.history_note.setWordWrap(True)
         layout.addWidget(self.history_note)
-        self.history_table = QTableWidget(0, 5)
-        self.history_table.setHorizontalHeaderLabels([t('Ticket'), t('Date et heure'), t('Caissier'), t('Paiement'), t('Total')])
+        self.history_search = QLineEdit()
+        self.history_search.setPlaceholderText(t('Rechercher : client, téléphone, n° de ticket ou de facture…'))
+        self.history_search.setClearButtonEnabled(True)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._load_history)
+        self.history_search.textChanged.connect(lambda _t: self._search_timer.start())
+        layout.addWidget(self.history_search)
+        self.history_table = QTableWidget(0, 6)
+        self.history_table.setHorizontalHeaderLabels([t('Ticket'), t('Date et heure'), t('Client'), t('Caissier'), t('Paiement'), t('Total')])
         self.history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.history_table)
@@ -155,22 +164,29 @@ class ReportsPage(QWidget):
             self.top_table.setItem(row, 0, QTableWidgetItem(name))
             self.top_table.setItem(row, 1, QTableWidgetItem(f'{qty:g}'))
             self.top_table.setItem(row, 2, QTableWidgetItem(format_money(total, currency)))
-        sales = SaleController.list(start=start, end=end, limit=self.HISTORY_LIMIT)
+        self._load_history()
+
+    def _load_history(self) -> None:
+        """Historique des ventes de la période, filtré par la recherche (client, téléphone, n° ticket/facture)."""
+        currency = settings_service.get_currency()
+        start, end = self._current_range()
+        sales = SaleController.list(search=self.history_search.text().strip(), start=start, end=end, limit=self.HISTORY_LIMIT)
         self.history_note.setText(f'Historique limité aux {self.HISTORY_LIMIT} ventes les plus récentes sur la période. Réduisez la plage de dates pour afficher un sous-ensemble précis.' if len(sales) == self.HISTORY_LIMIT else '')
         self._sale_ids = [s.id for s in sales]
         self.history_table.setRowCount(len(sales))
         for row, sale in enumerate(sales):
             self.history_table.setItem(row, 0, QTableWidgetItem(sale.ticket_number))
             self.history_table.setItem(row, 1, QTableWidgetItem(format_datetime(sale.date)))
-            self.history_table.setItem(row, 2, QTableWidgetItem(sale.cashier_name))
-            self.history_table.setItem(row, 3, QTableWidgetItem(sale.payment_summary))
+            self.history_table.setItem(row, 2, QTableWidgetItem(sale.client.name if sale.client else ''))
+            self.history_table.setItem(row, 3, QTableWidgetItem(sale.cashier_name))
+            self.history_table.setItem(row, 4, QTableWidgetItem(sale.payment_summary))
             total_item = QTableWidgetItem(format_money(sale.total, currency))
             if sale.status == 'cancelled':
                 motif = (getattr(sale, 'cancel_reason', None) or '').strip()
                 suffix = f' (annulée — {motif[:40]})' if motif else ' (annulée)'
                 total_item.setText(format_money(sale.total, currency) + suffix)
                 total_item.setToolTip(motif or 'Vente annulée')
-            self.history_table.setItem(row, 4, total_item)
+            self.history_table.setItem(row, 5, total_item)
 
     def _format_z_report(self, report: dict) -> str:
         currency = settings_service.get_currency()
