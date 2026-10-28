@@ -26,6 +26,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lancer les tests (bloque le build en cas d'échec)
+        env:
+          QT_QPA_PLATFORM: offscreen
+          NEXAPOS_SKIP_ACTIVATION: "1"
+        run: python -m unittest discover -s tests
+
       - name: Générer GestionCommerciale.exe (onefile)
         run: pyinstaller gestion_app.spec --noconfirm
 

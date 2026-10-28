@@ -104,10 +104,13 @@ class TicketDesignLibraryTestCase(unittest.TestCase):
                 "terminal",
                 "facture",
                 "facture_arrondi",
+                "futuriste_neo",
+                "futuriste_tech",
+                "futuriste_arrondi",
             },
         )
         self.assertEqual(kitchen_ids, {"serveur", "cuisine", "cuisine_compact"})
-        self.assertEqual(len(list_designs()), 13)
+        self.assertEqual(len(list_designs()), 16)
 
     def test_each_design_renders_58_and_80(self) -> None:
         data = sample_ticket_data()
