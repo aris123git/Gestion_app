@@ -255,3 +255,7 @@ def build_bon_enlevement(
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return path
+
+
+def in_print_all() -> bool:
+    return settings_service.get_setting("bon_in_all", "1").strip() == "1"

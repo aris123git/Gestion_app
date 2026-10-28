@@ -378,6 +378,17 @@ class SettingsPage(QWidget):
         self.invoice_fill_empty.setToolTip(t("Décoché (par défaut) : aucune ligne n'est ajoutée s'il n'y a pas de données. Coché : le tableau est complété par des lignes vides jusqu'en bas de la page (modèles dessinés ; les modèles Services et Médical n'ont jamais de lignes vides)."))
         self.bon_enabled = QCheckBox(t("Activer le bon d'enlèvement"))
         self.bon_enabled.setToolTip(t("Après une vente, des boutons permettent d'imprimer le bon d'enlèvement (produits au choix) en plus de la facture."))
+        self.bon_in_all = QCheckBox(t("Inclure dans « Tout imprimer »"))
+        self.bon_in_all.setToolTip(t("Décoché : le bon d'enlèvement ne s'imprime que par son propre bouton."))
+        self.bl_enabled = QCheckBox(t('Activer le bon de livraison'))
+        self.bl_enabled.setToolTip(t("Désactivé : aucun bouton de bon de livraison, rien n'est imprimé."))
+        self.bl_in_all = QCheckBox(t("Inclure dans « Tout imprimer »"))
+        self.bl_style = QComboBox()
+        from app.printers.delivery_note import DELIVERY_STYLES
+        for _st in DELIVERY_STYLES:
+            self.bl_style.addItem(_st.label, _st.id)
+        self.bl_legal = QLineEdit()
+        self.bl_legal.setPlaceholderText(t('Mention facultative (réserves, conditions de réception…)'))
         self.bon_legal = QLineEdit()
         self.bon_legal.setPlaceholderText(t("Mention facultative (ex. référence d'un arrêté)"))
         self.bon_ac_label = QLineEdit()
@@ -464,6 +475,11 @@ class SettingsPage(QWidget):
         form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
         form.addRow(t("Bon d'enlèvement"), self.bon_enabled)
+        form.addRow('', self.bon_in_all)
+        form.addRow(t('Bon de livraison'), self.bl_enabled)
+        form.addRow('', self.bl_in_all)
+        form.addRow(t('Modèle du bon de livraison'), self.bl_style)
+        form.addRow(t('Mention du bon de livraison'), self.bl_legal)
         form.addRow(t('Mention du bon (facultatif)'), self.bon_legal)
         ac_row = QHBoxLayout()
         ac_row.addWidget(self.bon_ac_label, 1)
@@ -490,10 +506,34 @@ class SettingsPage(QWidget):
         actions.addWidget(save)
         actions.addWidget(preview)
         actions.addWidget(bon_preview)
+        bl_preview = QPushButton(t('Aperçu du bon de livraison'))
+        bl_preview.clicked.connect(self._preview_bl)
+        actions.addWidget(bl_preview)
         actions.addStretch()
         outer.addLayout(actions)
         outer.addStretch()
         return wrap
+
+    def _preview_bl(self) -> None:
+        """Exemple de bon de livraison avec le modèle choisi (sans enregistrer)."""
+        from datetime import datetime
+        from types import SimpleNamespace as NS
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from app import config
+        from app.printers import delivery_note as dn
+        shop = settings_service.get_shop_info()
+        overrides = {dn.SETTING_LEGAL: self.bl_legal.text(), dn.SETTING_COMMERCIAL: self.bon_commercial.text(), 'shop_rccm': self.shop_rccm.text(),
+                     'shop_ifu': self.shop_ifu.text(), 'shop_bank_account': self.shop_bank.text()}
+        try:
+            items = [NS(product_name='Produit exemple 1', product_id=None, quantity=1000, unit_price=700, line_total=700000), NS(product_name='Produit exemple 2', product_id=None, quantity=500, unit_price=650, line_total=325000)]
+            sale = NS(ticket_number='APERCU-0001', date=datetime.now(), client_id=1, client_name='Client exemple', client_phone='70000000', items=items, payments=[])
+            config.ensure_directories()
+            path = dn.build_delivery_note(sale, shop=shop, path=config.TICKET_DIR / 'apercu_bon_livraison.pdf', style_id=self.bl_style.currentData(), font_size=self.invoice_font.value(), overrides=overrides)
+        except Exception as exc:
+            warn(self, f"Impossible de générer l'aperçu : {exc}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _preview_bon(self) -> None:
         """Exemple de bon d'enlèvement avec les réglages saisis (sans les enregistrer)."""
@@ -1004,6 +1044,11 @@ class SettingsPage(QWidget):
         settings_service.set_setting('invoice_fill_empty', '1' if self.invoice_fill_empty.isChecked() else '0')
         settings_service.set_setting('bon_enabled', '1' if self.bon_enabled.isChecked() else '0')
         settings_service.set_setting('bon_legal_text', self.bon_legal.text().strip())
+        settings_service.set_setting('bon_in_all', '1' if self.bon_in_all.isChecked() else '0')
+        settings_service.set_setting('bl_enabled', '1' if self.bl_enabled.isChecked() else '0')
+        settings_service.set_setting('bl_in_all', '1' if self.bl_in_all.isChecked() else '0')
+        settings_service.set_setting('bl_style', self.bl_style.currentData() or 'bandeau_bleu')
+        settings_service.set_setting('bl_legal_text', self.bl_legal.text().strip())
         settings_service.set_setting('bon_acompte_label', self.bon_ac_label.text().strip())
         settings_service.set_setting('bon_acompte_rate', str(self.bon_ac_rate.value()))
         settings_service.set_setting('bon_commercial', self.bon_commercial.text().strip())
@@ -1621,6 +1666,13 @@ class SettingsPage(QWidget):
         self.invoice_fill_empty.setChecked(get_fill_empty())
         from app.printers import bon_enlevement as _be
         self.bon_enabled.setChecked(_be.is_enabled())
+        self.bon_in_all.setChecked(_be.in_print_all())
+        from app.printers import delivery_note as _dn
+        self.bl_enabled.setChecked(_dn.is_enabled())
+        self.bl_in_all.setChecked(_dn.in_print_all())
+        _i = self.bl_style.findData(_dn.get_style().id)
+        self.bl_style.setCurrentIndex(max(0, _i))
+        self.bl_legal.setText(settings_service.get_setting(_dn.SETTING_LEGAL, ''))
         self.bon_legal.setText(settings_service.get_setting(_be.SETTING_LEGAL, ''))
         self.bon_ac_label.setText(settings_service.get_setting(_be.SETTING_ACOMPTE_LABEL, ''))
         self.bon_ac_rate.setValue(_be.get_acompte()[1])

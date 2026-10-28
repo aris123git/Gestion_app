@@ -61,3 +61,8 @@ def invoice_number(sale) -> str:
 def pickup_number(sale) -> str:
     """Numéro de bon d'enlèvement (BE N°), séquence indépendante des factures."""
     return _sequential(sale, "pickup_number", "pickup_counter")
+
+
+def delivery_number(sale) -> str:
+    """Numéro de bon de livraison (BL N°), séquence indépendante."""
+    return _sequential(sale, "delivery_number", "delivery_counter")

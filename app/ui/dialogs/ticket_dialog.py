@@ -94,12 +94,16 @@ class TicketDialog(QDialog):
             QTimer.singleShot(50, self._print)
 
     def _build_bon_section(self, layout) -> None:
-        """Facture A4 + bon d'enlèvement (produits au choix) + « Tout imprimer »."""
-        from app.printers import bon_enlevement
+        """Facture A4 + bons (enlèvement / livraison, produits au choix) + « Tout imprimer »."""
+        from app.printers import bon_enlevement, delivery_note
         self.bon_list = None
-        if not bon_enlevement.is_enabled() or not list(getattr(self.sale, 'items', []) or []):
+        self.print_bon_button = None
+        self.print_bl_button = None
+        self._bon_on = bon_enlevement.is_enabled()
+        self._bl_on = delivery_note.is_enabled()
+        if not (self._bon_on or self._bl_on) or not list(getattr(self.sale, 'items', []) or []):
             return
-        layout.addWidget(QLabel(f"<b>{t('Facture et bon d' + chr(39) + 'enlèvement')}</b> — {t('cochez les produits à faire figurer sur le bon :')}"))
+        layout.addWidget(QLabel(f"<b>{t('Facture et bons')}</b> — {t('cochez les produits à faire figurer sur les bons :')}"))
         self.bon_list = QListWidget()
         self.bon_list.setMaximumHeight(120)
         for index, name, qty in bon_enlevement.selectable_lines(self.sale):
@@ -112,14 +116,20 @@ class TicketDialog(QDialog):
         row = QHBoxLayout()
         self.print_invoice_button = QPushButton(t('Imprimer la facture'))
         self.print_invoice_button.clicked.connect(self._print_invoice_only)
-        self.print_bon_button = QPushButton(t("Imprimer le bon d'enlèvement"))
-        self.print_bon_button.clicked.connect(self._print_bon)
+        row.addWidget(self.print_invoice_button)
+        if self._bon_on:
+            self.print_bon_button = QPushButton(t("Bon d'enlèvement"))
+            self.print_bon_button.clicked.connect(self._print_bon)
+            row.addWidget(self.print_bon_button)
+        if self._bl_on:
+            self.print_bl_button = QPushButton(t('Bon de livraison'))
+            self.print_bl_button.clicked.connect(self._print_bl)
+            row.addWidget(self.print_bl_button)
         self.print_all_button = QPushButton(t('Tout imprimer'))
         self.print_all_button.setObjectName('Primary')
-        self.print_all_button.setToolTip(t("Imprime la facture puis le bon d'enlèvement (produits cochés)."))
+        self.print_all_button.setToolTip(t("Imprime la facture puis les bons activés pour « Tout imprimer » (produits cochés)."))
         self.print_all_button.clicked.connect(self._print_all)
-        for button in (self.print_invoice_button, self.print_bon_button, self.print_all_button):
-            row.addWidget(button)
+        row.addWidget(self.print_all_button)
         layout.addLayout(row)
 
     def _selected_bon_lines(self) -> list[int]:
@@ -158,30 +168,50 @@ class TicketDialog(QDialog):
         from app.printers.half_a4_invoice import print_half_a4_invoice
         return lambda: print_half_a4_invoice(self.sale)
 
-    def _bon_job(self):
-        from app.printers import bon_enlevement
+    def _doc_job(self, builder):
         from app.printers.half_a4_invoice import print_half_a4_invoice
         selected = self._selected_bon_lines()
 
         def job():
-            path = bon_enlevement.build_bon_enlevement(self.sale, selected=selected)
+            path = builder(self.sale, selected=selected)
             return print_half_a4_invoice(self.sale, pdf_path=path)
         return job
+
+    def _bon_job(self):
+        from app.printers import bon_enlevement
+        return self._doc_job(bon_enlevement.build_bon_enlevement)
+
+    def _bl_job(self):
+        from app.printers import delivery_note
+        return self._doc_job(delivery_note.build_delivery_note)
 
     def _print_invoice_only(self) -> None:
         self._run_print([(t('Facture'), self._invoice_job())])
 
+    def _need_selection(self, title: str) -> bool:
+        if self._selected_bon_lines():
+            return True
+        warn(self, t('Cochez au moins un produit.'), title)
+        return False
+
     def _print_bon(self) -> None:
-        if not self._selected_bon_lines():
-            warn(self, t("Cochez au moins un produit pour le bon d'enlèvement."), t("Bon d'enlèvement"))
-            return
-        self._run_print([(t("Bon d'enlèvement"), self._bon_job())])
+        if self._need_selection(t("Bon d'enlèvement")):
+            self._run_print([(t("Bon d'enlèvement"), self._bon_job())])
+
+    def _print_bl(self) -> None:
+        if self._need_selection(t('Bon de livraison')):
+            self._run_print([(t('Bon de livraison'), self._bl_job())])
 
     def _print_all(self) -> None:
-        if not self._selected_bon_lines():
-            warn(self, t("Cochez au moins un produit pour le bon d'enlèvement."), t("Bon d'enlèvement"))
+        from app.printers import bon_enlevement, delivery_note
+        jobs = [(t('Facture'), self._invoice_job())]
+        if self._bon_on and bon_enlevement.in_print_all():
+            jobs.append((t("Bon d'enlèvement"), self._bon_job()))
+        if self._bl_on and delivery_note.in_print_all():
+            jobs.append((t('Bon de livraison'), self._bl_job()))
+        if len(jobs) > 1 and not self._need_selection(t('Tout imprimer')):
             return
-        self._run_print([(t('Facture'), self._invoice_job()), (t("Bon d'enlèvement"), self._bon_job())])
+        self._run_print(jobs)
 
     def _populate_destinations(self, default_paper: str, thermal_name: str, invoice_name: str) -> None:
         """Remplit la liste : défaut Paramètres en premier, puis les alternatives."""
