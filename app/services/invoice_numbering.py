@@ -39,6 +39,12 @@ def _sequential(sale, attr: str, counter_key: str) -> str:
                     counter = int(settings_service.get_setting(counter_key, "0") or 0)
                 except ValueError:
                     counter = 0
+                # Jamais en dessous du plus grand numéro déjà attribué (compteur réinitialisé, base restaurée…).
+                from sqlalchemy import func, select
+
+                column = getattr(Sale, attr)
+                numeric = [int(v) for v in session.scalars(select(column).where(column != "").order_by(column.desc()).limit(50)) if str(v).isdigit()]
+                counter = max([counter, *numeric])
                 counter += 1
                 setattr(row, attr, format_number(counter))
                 settings_service.set_setting(counter_key, str(counter))

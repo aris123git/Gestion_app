@@ -70,9 +70,62 @@ def init_database() -> None:
     from app import models  # noqa: F401
 
     config.ensure_directories()
+    _backup_before_migration()
     Base.metadata.create_all(engine)
     _migrate_schema()
     _backfill_client_debts()
+    _set_schema_version(SCHEMA_VERSION)
+
+
+# Version du schéma : à incrémenter à chaque ajout de colonne dans ``_migrate_schema``.
+SCHEMA_VERSION = 3
+_PRE_MIGRATION_KEEP = 3
+
+
+def get_schema_version() -> int:
+    """Version du schéma enregistrée dans la base (PRAGMA user_version)."""
+    with engine.connect() as conn:
+        return int(conn.execute(text("PRAGMA user_version")).scalar() or 0)
+
+
+def _set_schema_version(version: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(text(f"PRAGMA user_version = {int(version)}"))
+
+
+def _backup_before_migration() -> None:
+    """Copie la base existante avant de la migrer (si sa version est plus ancienne).
+
+    La copie (``pre_migration_vN_<date>.db``) est placée dans le dossier des
+    sauvegardes ; seules les plus récentes sont conservées.
+    """
+    import sqlite3
+    from datetime import datetime
+
+    db_file = config.DATABASE_FILE
+    if not db_file.exists() or db_file.stat().st_size == 0:
+        return
+    try:
+        current = get_schema_version()
+        if current >= SCHEMA_VERSION:
+            return
+        config.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        target = config.BACKUP_DIR / f"pre_migration_v{current}_{datetime.now():%Y%m%d_%H%M%S}.db"
+        src = sqlite3.connect(str(db_file))
+        try:
+            dst = sqlite3.connect(str(target))
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+        for old in sorted(config.BACKUP_DIR.glob("pre_migration_v*.db"), key=lambda f: f.stat().st_mtime, reverse=True)[_PRE_MIGRATION_KEEP:]:
+            old.unlink(missing_ok=True)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning("Sauvegarde avant migration impossible.", exc_info=True)
 
 
 def _table_exists(conn, table: str) -> bool:
@@ -155,6 +208,23 @@ def _migrate_schema() -> None:
                     conn.execute(
                         text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                     )
+    _ensure_unique_numbers()
+
+
+def _ensure_unique_numbers() -> None:
+    """Index uniques (partiels) : deux ventes ne peuvent pas partager un même numéro."""
+    import logging
+
+    for column in ("invoice_number", "pickup_number", "delivery_number"):
+        try:
+            with engine.begin() as conn:
+                if not _table_exists(conn, "sales") or column not in _existing_columns(conn, "sales"):
+                    continue
+                conn.execute(text(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_sales_{column} ON sales({column}) WHERE {column} <> ''"
+                ))
+        except Exception:
+            logging.getLogger(__name__).warning("Index unique %s non créé (doublons existants ?).", column, exc_info=True)
 
 
 def _backfill_client_debts() -> None:

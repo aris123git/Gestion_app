@@ -4,7 +4,7 @@ from app.i18n import LANGUAGE_LABELS, get_language, set_language, t
 import shutil
 from pathlib import Path
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMessageBox, QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea, QSpinBox, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
 from app import config
 from app.services import activation_service, audit_service, backup_service, permissions as perms, portal_service, product_profile, settings_service
 from app.ui.setup_wizard import CURRENCIES, SHOP_TYPES
@@ -513,6 +513,25 @@ class SettingsPage(QWidget):
         outer.addLayout(actions)
         outer.addStretch()
         return wrap
+
+    def _run_integrity(self) -> None:
+        from app.services import integrity_service
+        issues = integrity_service.run_checks()
+        text_ = integrity_service.summary(issues)
+        if not issues:
+            info(self, text_, t("Contrôle d'intégrité"))
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle(t("Contrôle d'intégrité"))
+        box.setText(text_)
+        fix = None
+        if any(i.area == 'Clients' for i in issues):
+            fix = box.addButton(t('Recalculer les soldes clients'), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(t('Fermer'), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if fix is not None and box.clickedButton() is fix:
+            n = integrity_service.repair_client_balances()
+            info(self, f'{n} solde(s) client corrigé(s).', t("Contrôle d'intégrité"))
 
     def _preview_bl(self) -> None:
         """Exemple de bon de livraison avec le modèle choisi (sans enregistrer)."""
@@ -1273,6 +1292,10 @@ class SettingsPage(QWidget):
         buttons.addWidget(create)
         buttons.addWidget(create_here)
         buttons.addWidget(restore_file)
+        self.integrity_button = QPushButton(t("Contrôle d'intégrité"))
+        self.integrity_button.setToolTip(t('Vérifie la base, le stock, les dettes, les numéros et les écritures comptables.'))
+        self.integrity_button.clicked.connect(self._run_integrity)
+        buttons.addWidget(self.integrity_button)
         buttons.addStretch()
         layout.addLayout(buttons)
         auto_widget = QWidget()

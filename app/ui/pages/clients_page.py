@@ -296,5 +296,7 @@ class ClientsPage(QWidget):
             except ValueError as exc:
                 warn(self, str(exc))
                 return
+            from app.services import audit_service
+            audit_service.log_action('Suppression client', 'Client', str(client_id), self.state.user_id, getattr(self.state.current_user, 'username', ''))
             self.refresh()
             self.state.notify_data_changed()

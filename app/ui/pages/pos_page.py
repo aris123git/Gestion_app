@@ -717,8 +717,11 @@ class POSPage(QWidget):
                 if dialog.exec():
                     line.unit_price = new_price
                     if dialog.choice == 'permanent' and line.product_id:
-                        ProductController.update_price(line.product_id, new_price)
-                        audit_service.log_action('Modification prix', 'Product', f'{line.name} -> {new_price}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
+                        if self.state.can(perms.MANAGE_PRICES):
+                            ProductController.update_price(line.product_id, new_price)
+                            audit_service.log_action('Modification prix', 'Product', f'{line.name} -> {new_price}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
+                        else:
+                            warn(self, t("Vous n'avez pas l'autorisation de modifier le prix du produit : le nouveau prix ne s'applique qu'à cette vente."), t('Prix'))
                 self._render_cart()
 
     def _cart_subtotal(self) -> float:

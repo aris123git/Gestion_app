@@ -164,6 +164,13 @@ class MainWindow(QWidget):
             backup_service.run_startup_auto_backup()
         except Exception:
             logger.exception('Échec de la sauvegarde automatique périodique.')
+        try:
+            from app.services import integrity_service
+            found = integrity_service.run_checks()
+            if found:
+                logger.warning('Contrôle d\'intégrité : %d anomalie(s)\n%s', len(found), integrity_service.summary(found))
+        except Exception:
+            logger.exception("Contrôle d'intégrité impossible.")
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()

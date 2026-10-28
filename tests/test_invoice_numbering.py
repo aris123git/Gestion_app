@@ -46,6 +46,24 @@ class InvoiceNumberTestCase(unittest.TestCase):
         self.assertEqual(int(nb), int(na) + 1)
         self.assertEqual(invoice_number(a), na)  # stable
 
+    def test_counter_reset_never_reuses_number(self) -> None:
+        from app.services import settings_service
+
+        a = self._sale()
+        na = invoice_number(a)
+        settings_service.set_setting("invoice_counter", "0")  # compteur perdu / base restaurée
+        c = self._sale()
+        self.assertGreater(int(invoice_number(c)), int(na))
+
+    def test_unique_index_blocks_duplicates(self) -> None:
+        from sqlalchemy.exc import IntegrityError
+
+        a, b = self._sale(), self._sale()
+        invoice_number(a)
+        with self.assertRaises(IntegrityError):
+            with session_scope() as s:
+                s.get(Sale, b.id).invoice_number = invoice_number(a)
+
     def test_preview(self) -> None:
         from types import SimpleNamespace
 

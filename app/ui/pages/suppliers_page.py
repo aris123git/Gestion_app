@@ -148,4 +148,6 @@ class SuppliersPage(QWidget):
             return
         if confirm(self, t('Supprimer ce fournisseur ?')):
             SupplierController.delete(supplier_id)
+            from app.services import audit_service
+            audit_service.log_action('Suppression fournisseur', 'Supplier', str(supplier_id), self.state.user_id, getattr(self.state.current_user, 'username', ''))
             self.refresh()
