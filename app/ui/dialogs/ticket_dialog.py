@@ -68,6 +68,7 @@ class TicketDialog(QDialog):
         self.status.setWordWrap(True)
         self.status.setStyleSheet('color: #64748b; font-size: 12px;')
         layout.addWidget(self.status)
+        self._build_transport_row(layout)
         self._build_bon_section(layout)
         buttons = QHBoxLayout()
         close = QPushButton(t('Fermer sans imprimer'))
@@ -98,6 +99,41 @@ class TicketDialog(QDialog):
         if auto_print and (not is_half_a4(self._paper_value())):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(50, self._print)
+
+    def _build_transport_row(self, layout) -> None:
+        """Chauffeur / camion de la vente : information interne, enregistrée pour consultation (jamais imprimée)."""
+        from app.services import transport_service
+        self.driver_combo = self.truck_combo = None
+        sale_id = getattr(self.sale, 'id', None)
+        if not isinstance(sale_id, int):
+            return
+        row = QHBoxLayout()
+        row.addWidget(QLabel(t('Chauffeur :')))
+        self.driver_combo = QComboBox()
+        self.driver_combo.setEditable(True)
+        self.truck_combo = QComboBox()
+        self.truck_combo.setEditable(True)
+        saved_driver, saved_truck = transport_service.get_sale_transport(sale_id)
+        for combo, kind, saved in ((self.driver_combo, 'driver', saved_driver), (self.truck_combo, 'truck', saved_truck)):
+            combo.addItem('')
+            combo.addItems(transport_service.list_names(kind))
+            combo.setCurrentText(saved)
+        row.addWidget(self.driver_combo, 1)
+        row.addWidget(QLabel(t('Camion :')))
+        row.addWidget(self.truck_combo, 1)
+        note = QLabel(t('(information interne, non imprimée)'))
+        note.setStyleSheet('color: #64748b; font-size: 12px;')
+        row.addWidget(note)
+        layout.addLayout(row)
+        self.driver_combo.currentTextChanged.connect(self._save_transport)
+        self.truck_combo.currentTextChanged.connect(self._save_transport)
+
+    def _save_transport(self, *_args) -> None:
+        from app.services import transport_service
+        try:
+            transport_service.set_sale_transport(self.sale.id, self.driver_combo.currentText(), self.truck_combo.currentText())
+        except ValueError:
+            pass
 
     def _build_bon_section(self, layout) -> None:
         """Facture A4 + bons (enlèvement / livraison, produits au choix) + « Tout imprimer »."""

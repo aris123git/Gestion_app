@@ -401,6 +401,9 @@ class SettingsPage(QWidget):
         self.pickup_tolerance.setDecimals(2)
         self.pickup_tolerance.setSuffix(' %')
         self.pickup_tolerance.setToolTip(t("Au-delà de ce taux de perte, l'écart s'affiche en rouge dans les enlèvements."))
+        from app.ui.widgets.name_list_editor import NameListEditor
+        self.drivers_editor = NameListEditor('driver', t('Chauffeurs'), t('Nom du chauffeur'))
+        self.trucks_editor = NameListEditor('truck', t('Camions'), t('N° du camion ou référence'))
         self.bl_legal = QLineEdit()
         self.bl_legal.setPlaceholderText(t('Mention facultative (réserves, conditions de réception…)'))
         self.bon_legal = QLineEdit()
@@ -496,6 +499,8 @@ class SettingsPage(QWidget):
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
         form.addRow(t('Bon de livraison'), self.bl_enabled)
         form.addRow('', self.bl_in_all)
+        form.addRow(t('Chauffeurs'), self.drivers_editor)
+        form.addRow(t('Camions'), self.trucks_editor)
         form.addRow(t('Écart d’un enlèvement'), self.pickup_bearer)
         form.addRow(t('Tolérance de perte (alerte)'), self.pickup_tolerance)
         form.addRow(t('Modèle du bon de livraison'), self.bl_style)

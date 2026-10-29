@@ -177,6 +177,8 @@ def _migrate_schema() -> None:
             "pickup_number": "VARCHAR(20) DEFAULT ''",
             "delivery_number": "VARCHAR(20) DEFAULT ''",
             "bon_number": "VARCHAR(20) DEFAULT ''",
+            "driver_name": "VARCHAR(120) DEFAULT ''",
+            "truck_ref": "VARCHAR(60) DEFAULT ''",
         },
         "debts": {
             "due_date": "DATE",

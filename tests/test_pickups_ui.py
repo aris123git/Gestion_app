@@ -40,7 +40,7 @@ class PickupUiTests(unittest.TestCase):
         self.assertFalse(d.table.cellWidget(0, 2).isEnabled())
         d.use_catalog_cost.setChecked(False)
         d.table.cellWidget(0, 2).setValue(650)
-        d.driver.setText("Ouedraogo"); d.truck.setText("11 AA 1234"); d.reference.setText("REF-9")
+        d.driver.setCurrentText("Ouedraogo"); d.truck.setCurrentText("11 AA 1234"); d.reference.setText("REF-9")
         d._accept()
         self.assertEqual((d.driver_text, d.truck_text, d.reference_text), ("Ouedraogo", "11 AA 1234", "REF-9"))
         self.assertEqual((d.lines[0].quantity, d.lines[0].unit_cost, d.supplier_id), (500, 650, self.supplier))

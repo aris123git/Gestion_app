@@ -827,6 +827,8 @@ class SaleController:
                     or_(
                         Sale.ticket_number.ilike(like),
                         Sale.invoice_number.ilike(like),
+                        Sale.driver_name.ilike(like),
+                        Sale.truck_ref.ilike(like),
                         Client.name.ilike(like),
                         Client.phone.ilike(like),
                         Client.phone2.ilike(like),

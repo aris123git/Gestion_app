@@ -24,6 +24,8 @@ class Sale(Base, TimestampMixin):
     pickup_number: Mapped[str] = mapped_column(String(20), default="")
     delivery_number: Mapped[str] = mapped_column(String(20), default="")
     bon_number: Mapped[str] = mapped_column(String(20), default="")
+    driver_name: Mapped[str] = mapped_column(String(120), default="")  # information interne : chauffeur
+    truck_ref: Mapped[str] = mapped_column(String(60), default="")     # information interne : camion / référence
     date: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
 
     user_id: Mapped[Optional[int]] = mapped_column(

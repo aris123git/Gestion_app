@@ -19,12 +19,22 @@ from app.controllers.sale_controller import BelowMinPriceError, CartLine, Insuff
 from app.controllers.supplier_controller import SupplierController
 from app.i18n import t
 from app.models.pickup import STATUS_CLOSED, STATUS_DRAFT, STATUS_LABELS, STATUS_SENT, STATUS_VALIDATED
-from app.services import audit_service, pickup_service as ps, settings_service
+from app.services import audit_service, pickup_service as ps, settings_service, transport_service
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.ui.widgets.helpers import confirm, info, warn
 from app.ui.widgets.money_spin import MoneySpinBox
 from app.utils.helpers import format_datetime, format_money
+
+
+def _name_combo(kind: str, current: str = '') -> QComboBox:
+    """Liste déroulante des chauffeurs / camions (Paramètres), modifiable pour un cas ponctuel."""
+    combo = QComboBox()
+    combo.setEditable(True)
+    combo.addItem('')
+    combo.addItems(transport_service.list_names(kind))
+    combo.setCurrentText(current or '')
+    return combo
 
 
 def _user(state) -> tuple:
@@ -53,10 +63,10 @@ class PickupEditDialog(QDialog):
             self.supplier.addItem(s.name, s.id)
         self.note = QLineEdit()
         self.note.setPlaceholderText(t('Camion, chauffeur, référence du fournisseur…'))
-        self.driver = QLineEdit()
-        self.truck = QLineEdit()
+        self.driver = _name_combo('driver')
+        self.truck = _name_combo('truck')
         self.reference = QLineEdit()
-        self.driver.setPlaceholderText(t('Information interne, non imprimée'))
+        self.reference.setPlaceholderText(t('Information interne, non imprimée'))
         form.addRow(t('Fournisseur (qui signe le bon)'), self.supplier)
         form.addRow(t('Nom du chauffeur'), self.driver)
         form.addRow(t('N° du camion'), self.truck)
@@ -159,8 +169,8 @@ class PickupEditDialog(QDialog):
             pk = s.execute(select(Pickup).options(joinedload(Pickup.items)).where(Pickup.id == pickup_id)).unique().scalar_one()
             self.supplier.setCurrentIndex(max(0, self.supplier.findData(pk.supplier_id)))
             self.note.setText(pk.note or '')
-            self.driver.setText(pk.driver or '')
-            self.truck.setText(pk.truck or '')
+            self.driver.setCurrentText(pk.driver or '')
+            self.truck.setCurrentText(pk.truck or '')
             self.reference.setText(pk.reference or '')
             items = [(i.product_id, float(i.quantity), float(i.unit_cost)) for i in pk.items]
         self.use_catalog_cost.setChecked(False)
@@ -179,7 +189,7 @@ class PickupEditDialog(QDialog):
             warn(self, t('Ajoutez au moins un produit avec une quantité.'))
             return
         self.lines, self.supplier_id, self.note_text = lines, self.supplier.currentData(), self.note.text()
-        self.driver_text, self.truck_text, self.reference_text = self.driver.text(), self.truck.text(), self.reference.text()
+        self.driver_text, self.truck_text, self.reference_text = self.driver.currentText(), self.truck.currentText(), self.reference.text()
         self.accept()
 
 
@@ -256,6 +266,15 @@ class DeliverDialog(QDialog):
             self.table.setCellWidget(i, 3, price)
         layout.addWidget(self.table)
         form = QFormLayout()
+        from app.database.connection import session_scope as _scope
+        from app.models.pickup import Pickup as _Pickup
+        with _scope() as _s:
+            _pk = _s.get(_Pickup, pickup_id)
+            _driver, _truck = (_pk.driver or '', _pk.truck or '') if _pk else ('', '')
+        self.driver = _name_combo('driver', _driver)
+        self.truck = _name_combo('truck', _truck)
+        form.addRow(t('Chauffeur'), self.driver)
+        form.addRow(t('Camion'), self.truck)
         self.method = QComboBox()
         for m in config.PAYMENT_METHODS:
             self.method.addItem(m, m)
@@ -310,6 +329,7 @@ class DeliverDialog(QDialog):
             return
         audit_service.log_action('Livraison enlèvement', 'Sale', f'{result.ticket_number} pickup={self.pickup_id} total={result.total}', user_id, username)
         self.sale_id = result.sale_id
+        transport_service.set_sale_transport(result.sale_id, self.driver.currentText(), self.truck.currentText())
         self.ticket_number = result.ticket_number
         self.accept()
 
