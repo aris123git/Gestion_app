@@ -40,7 +40,9 @@ class PickupUiTests(unittest.TestCase):
         self.assertFalse(d.table.cellWidget(0, 2).isEnabled())
         d.use_catalog_cost.setChecked(False)
         d.table.cellWidget(0, 2).setValue(650)
+        d.driver.setText("Ouedraogo"); d.truck.setText("11 AA 1234"); d.reference.setText("REF-9")
         d._accept()
+        self.assertEqual((d.driver_text, d.truck_text, d.reference_text), ("Ouedraogo", "11 AA 1234", "REF-9"))
         self.assertEqual((d.lines[0].quantity, d.lines[0].unit_cost, d.supplier_id), (500, 650, self.supplier))
 
     def test_list_buttons_follow_status_and_delivery(self):
@@ -66,8 +68,10 @@ class PickupUiTests(unittest.TestCase):
         self.assertEqual(dlg.table.item(0, 6).text(), "40")
         c = pd.ClosePickupDialog(None, ps.remaining(pid), pid)
         c.reason.setCurrentIndex(0)
-        self.assertEqual(c.bearer.currentData(), "client")     # par défaut, le client supporte la perte
-        self.assertIn("Station UI", c.preview.text())          # aperçu de la facturation
+        self.assertEqual(c.bearer.currentData(), "info")       # par défaut : écart noté pour information
+        c.bearer.setCurrentIndex(c.bearer.findData("client"))
+        self.assertIn("Station UI", c.preview.text())          # aperçu de la facturation si le client supporte
+        c.bearer.setCurrentIndex(c.bearer.findData("info"))
         ps.close(pid, c.reason.currentText(), bearer=c.bearer.currentData())
         dlg._reload()
         self.assertEqual(dlg._rows[0].status, "closed")

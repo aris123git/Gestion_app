@@ -43,6 +43,7 @@ class PickupEditDialog(QDialog):
         self.lines: list[ps.PickupLine] = []
         self.supplier_id = None
         self.note_text = ""
+        self.driver_text = self.truck_text = self.reference_text = ""
         self._products = ProductController.list()
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -52,7 +53,14 @@ class PickupEditDialog(QDialog):
             self.supplier.addItem(s.name, s.id)
         self.note = QLineEdit()
         self.note.setPlaceholderText(t('Camion, chauffeur, référence du fournisseur…'))
+        self.driver = QLineEdit()
+        self.truck = QLineEdit()
+        self.reference = QLineEdit()
+        self.driver.setPlaceholderText(t('Information interne, non imprimée'))
         form.addRow(t('Fournisseur (qui signe le bon)'), self.supplier)
+        form.addRow(t('Nom du chauffeur'), self.driver)
+        form.addRow(t('N° du camion'), self.truck)
+        form.addRow(t('Référence'), self.reference)
         form.addRow(t('Note'), self.note)
         layout.addLayout(form)
         self.use_catalog_cost = QCheckBox(t("Utiliser le prix d'achat du produit"))
@@ -151,6 +159,9 @@ class PickupEditDialog(QDialog):
             pk = s.execute(select(Pickup).options(joinedload(Pickup.items)).where(Pickup.id == pickup_id)).unique().scalar_one()
             self.supplier.setCurrentIndex(max(0, self.supplier.findData(pk.supplier_id)))
             self.note.setText(pk.note or '')
+            self.driver.setText(pk.driver or '')
+            self.truck.setText(pk.truck or '')
+            self.reference.setText(pk.reference or '')
             items = [(i.product_id, float(i.quantity), float(i.unit_cost)) for i in pk.items]
         self.use_catalog_cost.setChecked(False)
         for pid, q, c in items:
@@ -168,6 +179,7 @@ class PickupEditDialog(QDialog):
             warn(self, t('Ajoutez au moins un produit avec une quantité.'))
             return
         self.lines, self.supplier_id, self.note_text = lines, self.supplier.currentData(), self.note.text()
+        self.driver_text, self.truck_text, self.reference_text = self.driver.text(), self.truck.text(), self.reference.text()
         self.accept()
 
 
@@ -323,10 +335,11 @@ class ClosePickupDialog(QDialog):
         self.reason.addItems(ps.LOSS_REASONS)
         form.addRow(t('Motif de l’écart'), self.reason)
         self.bearer = QComboBox()
+        self.bearer.addItem(t("Information seulement (rien n'est facturé ni débité)"), ps.BEARER_INFO)
         self.bearer.addItem(t('Le client (facturée aux stations au prorata)'), ps.BEARER_CLIENT)
         self.bearer.addItem(t("L'entreprise (charge, rien n'est facturé)"), ps.BEARER_COMPANY)
         self.bearer.setCurrentIndex(max(0, self.bearer.findData(ps.default_bearer())))
-        form.addRow(t('Perte supportée par'), self.bearer)
+        form.addRow(t('Traitement de l’écart'), self.bearer)
         layout.addLayout(form)
         self.preview = QLabel('')
         self.preview.setWordWrap(True)
@@ -342,7 +355,8 @@ class ClosePickupDialog(QDialog):
 
     def _update_preview(self) -> None:
         if not self._pickup_id or self.bearer.currentData() != ps.BEARER_CLIENT:
-            self.preview.setText(t("La perte sera enregistrée comme charge de l'entreprise (stock et comptabilité).") if self._pickup_id else '')
+            mode = self.bearer.currentData()
+            self.preview.setText('' if not self._pickup_id else t("L'écart est noté pour information (rapports) : aucune facture, aucun mouvement de stock, aucune écriture.") if mode == ps.BEARER_INFO else t("La perte sera enregistrée comme charge de l'entreprise (stock et comptabilité)."))
             return
         shares, unbillable = ps.loss_allocation(self._pickup_id)
         cur = settings_service.get_currency()
@@ -458,7 +472,7 @@ class PickupsDialog(QDialog):
         dlg = PickupEditDialog(self)
         if dlg.exec():
             try:
-                ps.create(dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text, user_id=self.state.user_id)
+                ps.create(dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text, user_id=self.state.user_id, driver=dlg.driver_text, truck=dlg.truck_text, reference=dlg.reference_text)
             except ValueError as exc:
                 warn(self, str(exc))
             self._reload()
@@ -470,7 +484,7 @@ class PickupsDialog(QDialog):
         dlg = PickupEditDialog(self, p.id)
         if dlg.exec():
             try:
-                ps.update_draft(p.id, dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text)
+                ps.update_draft(p.id, dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text, driver=dlg.driver_text, truck=dlg.truck_text, reference=dlg.reference_text)
             except ValueError as exc:
                 warn(self, str(exc))
             self._reload()
@@ -556,7 +570,12 @@ class PickupsDialog(QDialog):
         p = self._selected()
         if not p:
             return
-        lines = [f"<b>{r.name}</b> : enlevé {r.picked:g}, livré {r.delivered:g}, perte {r.loss:g}, reste {r.left:g}" for r in ps.remaining(p.id)]
+        from app.database.connection import session_scope as _scope
+        from app.models.pickup import Pickup as _Pickup
+        with _scope() as _s:
+            _pk = _s.get(_Pickup, p.id)
+            extra = [f"{lab} : <b>{val}</b>" for lab, val in ((t('Chauffeur'), _pk.driver), (t('Camion'), _pk.truck), (t('Référence'), _pk.reference), (t('Note'), _pk.note)) if val]
+        lines = extra + [f"<b>{r.name}</b> : enlevé {r.picked:g}, livré {r.delivered:g}, écart {r.loss:g}, reste {r.left:g}" for r in ps.remaining(p.id)]
         deliveries = [f"• {t_} — {c or '—'} — {n} ×{q:g}" + (' (annulée)' if s != 'completed' else '') for t_, _d, c, n, q, s in ps.delivered_sales(p.id)]
         info(self, '<br>'.join(lines + ['', f"<b>{t('Livraisons')} :</b>"] + (deliveries or [t('aucune')])), f"{t('Enlèvement')} {p.number}")
 

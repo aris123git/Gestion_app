@@ -393,6 +393,7 @@ class SettingsPage(QWidget):
         for _st in DELIVERY_STYLES:
             self.bl_style.addItem(_st.label, _st.id)
         self.pickup_bearer = QComboBox()
+        self.pickup_bearer.addItem(t("Information seulement (rien n'est facturé)"), 'info')
         self.pickup_bearer.addItem(t('Le client (facturée aux stations)'), 'client')
         self.pickup_bearer.addItem(t("L'entreprise (charge)"), 'company')
         self.pickup_tolerance = QDoubleSpinBox()
@@ -495,7 +496,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
         form.addRow(t('Bon de livraison'), self.bl_enabled)
         form.addRow('', self.bl_in_all)
-        form.addRow(t('Perte d’un enlèvement supportée par'), self.pickup_bearer)
+        form.addRow(t('Écart d’un enlèvement'), self.pickup_bearer)
         form.addRow(t('Tolérance de perte (alerte)'), self.pickup_tolerance)
         form.addRow(t('Modèle du bon de livraison'), self.bl_style)
         form.addRow(t('Mention du bon de livraison'), self.bl_legal)

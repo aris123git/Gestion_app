@@ -35,6 +35,9 @@ class Pickup(Base):
     date: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
     status: Mapped[str] = mapped_column(String(20), default=STATUS_DRAFT, index=True)
     note: Mapped[str] = mapped_column(Text, default="")
+    driver: Mapped[str] = mapped_column(String(120), default="")      # information : chauffeur
+    truck: Mapped[str] = mapped_column(String(60), default="")        # information : n° du camion
+    reference: Mapped[str] = mapped_column(String(80), default="")    # information : référence (bon fournisseur…)
     signed_file: Mapped[str] = mapped_column(String(400), default="")
     purchase_id: Mapped[Optional[int]] = mapped_column(ForeignKey("purchases.id"), nullable=True)
     validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

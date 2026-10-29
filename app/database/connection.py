@@ -199,6 +199,9 @@ def _migrate_schema() -> None:
         },
         "pickups": {
             "loss_bearer": "VARCHAR(20) DEFAULT ''",
+            "driver": "VARCHAR(120) DEFAULT ''",
+            "truck": "VARCHAR(60) DEFAULT ''",
+            "reference": "VARCHAR(80) DEFAULT ''",
         },
         "pickup_items": {
             "billed_loss": "NUMERIC(14, 3) DEFAULT 0",

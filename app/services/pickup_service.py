@@ -88,16 +88,19 @@ def _fill_items(session, pickup: Pickup, lines: List[PickupLine]) -> None:
         ))
 
 
-def create(lines: List[PickupLine], *, supplier_id: Optional[int] = None, note: str = "", user_id: Optional[int] = None) -> int:
+def create(lines: List[PickupLine], *, supplier_id: Optional[int] = None, note: str = "", user_id: Optional[int] = None,
+           driver: str = "", truck: str = "", reference: str = "") -> int:
     with session_scope() as session:
-        pickup = Pickup(number=_next_number(session), supplier_id=supplier_id, note=(note or "").strip(), user_id=user_id, status=STATUS_DRAFT)
+        pickup = Pickup(number=_next_number(session), supplier_id=supplier_id, note=(note or "").strip(), user_id=user_id, status=STATUS_DRAFT,
+                        driver=(driver or "").strip(), truck=(truck or "").strip(), reference=(reference or "").strip())
         session.add(pickup)
         session.flush()
         _fill_items(session, pickup, lines)
         return pickup.id
 
 
-def update_draft(pickup_id: int, lines: List[PickupLine], *, supplier_id: Optional[int], note: str = "") -> None:
+def update_draft(pickup_id: int, lines: List[PickupLine], *, supplier_id: Optional[int], note: str = "",
+                 driver: str = "", truck: str = "", reference: str = "") -> None:
     with session_scope() as session:
         pickup = session.get(Pickup, pickup_id)
         if pickup is None:
@@ -106,6 +109,7 @@ def update_draft(pickup_id: int, lines: List[PickupLine], *, supplier_id: Option
             raise ValueError("Un enlèvement validé ne peut plus être modifié.")
         pickup.supplier_id = supplier_id
         pickup.note = (note or "").strip()
+        pickup.driver, pickup.truck, pickup.reference = (driver or "").strip(), (truck or "").strip(), (reference or "").strip()
         _fill_items(session, pickup, lines)
 
 
@@ -220,13 +224,15 @@ def link_sale(session, sale_id: int, links: list[tuple[int, float]]) -> None:
         session.add(PickupDelivery(pickup_item_id=item_id, sale_id=sale_id, quantity=qty))
 
 
+BEARER_INFO = "info"        # écart noté pour information : ni facturé, ni débité, ni mouvement de stock
 BEARER_CLIENT = "client"
 BEARER_COMPANY = "company"
 
 
 def default_bearer() -> str:
-    """Qui supporte la perte (réglage) : le client par défaut."""
-    return BEARER_COMPANY if settings_service.get_setting("pickup_loss_bearer", BEARER_CLIENT).strip() == BEARER_COMPANY else BEARER_CLIENT
+    """Traitement de l'écart (réglage) : information seulement par défaut."""
+    value = settings_service.get_setting("pickup_loss_bearer", BEARER_INFO).strip()
+    return value if value in (BEARER_INFO, BEARER_CLIENT, BEARER_COMPANY) else BEARER_INFO
 
 
 @dataclass
@@ -288,6 +294,7 @@ def loss_allocation(pickup_id: int) -> tuple[List[LossShare], List[tuple[str, fl
 def close(pickup_id: int, reason: str, *, bearer: Optional[str] = None, user_id: Optional[int] = None, username: str = "") -> float:
     """Clôture : le reste non livré est une perte (écart).
 
+    ``bearer="info"`` (défaut) : l'écart est seulement noté (rapports), sans facture, stock ni écriture comptable.
     ``bearer="client"`` : la perte est facturée aux stations, au prorata de leurs livraisons, au prix de leur
     livraison (vente à crédit) ; ``"company"`` : elle reste à la charge de l'entreprise (charge comptable).
     Retourne la valeur (au coût d'achat) de la perte supportée par l'entreprise.
@@ -332,7 +339,7 @@ def close(pickup_id: int, reason: str, *, bearer: Optional[str] = None, user_id:
             item.loss_quantity = left
             share = min(left, billed.get(item.id, 0.0))
             item.billed_loss = share
-            company_loss = round(left - share, 3)
+            company_loss = 0.0 if bearer == BEARER_INFO else round(left - share, 3)
             company_value += company_loss * _f(item.unit_cost)
             product = session.get(Product, item.product_id)
             if product and company_loss > EPS and not getattr(product, "sell_without_stock", False):

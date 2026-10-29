@@ -104,6 +104,24 @@ class PickupTests(unittest.TestCase):
         self.assertEqual([i.message for i in integrity_service.run_checks()], [])
         self.assertEqual(ps.list_pickups()[0].loss_percent, 1.0)
 
+    def test_info_only_default_changes_nothing(self):
+        pid = ps.create([ps.PickupLine(self.product, 1000)], supplier_id=self.supplier, driver="Kaboré", truck="12 BB 3456", reference="BL-77")
+        ps.validate(pid)
+        item = ps.remaining(pid)[0].item_id
+        self._deliver(item, 990, self.client)
+        self.assertEqual(ps.default_bearer(), "info")
+        self.assertEqual(ps.close(pid, "Évaporation"), 0)            # défaut : information seulement
+        r = ps.remaining(pid)[0]
+        self.assertEqual((r.delivered, r.loss, r.left), (990, 10, 0))   # l'écart est noté
+        number = [x for x in ps.list_pickups() if x.id == pid][0].number
+        with session_scope() as s:
+            self.assertEqual(float(s.get(Product, self.product).quantity), 10)      # aucun mouvement de stock
+            from app.models.pickup import Pickup
+            pk = s.get(Pickup, pid)
+            self.assertEqual((pk.driver, pk.truck, pk.reference, pk.loss_bearer), ("Kaboré", "12 BB 3456", "BL-77", "info"))
+        entries = accounting_service.generate_entries(date.today())
+        self.assertFalse(any(e.label.startswith(f"Perte sur enlèvement {number}") for e in entries))   # aucune écriture
+
     def test_loss_without_any_client_stays_with_company(self):
         ProductController.update(self.product, {"sell_without_stock": True})
         pid = ps.create([ps.PickupLine(self.product, 50, 700)], supplier_id=self.supplier)
