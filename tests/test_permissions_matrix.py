@@ -14,6 +14,10 @@ class PermissionTests(unittest.TestCase):
         for perm in SENSITIVE:
             self.assertFalse(p.can(U(role=p.ROLE_CASHIER), perm), perm)
 
+    def test_cashier_can_apply_discount_and_sell_on_credit(self):
+        for perm in (p.APPLY_DISCOUNT, p.SELL, p.SELL_ON_CREDIT):
+            self.assertTrue(p.can(U(role=p.ROLE_CASHIER), perm), perm)
+
     def test_manager_cannot_touch_settings_or_users(self):
         for perm in (p.MANAGE_SETTINGS, p.MANAGE_USERS, p.CANCEL_SALE, p.CREATE_MANUAL_CLIENT_DEBT):
             self.assertFalse(p.can(U(role=p.ROLE_MANAGER), perm), perm)
