@@ -35,6 +35,7 @@ SETTING_COMMERCIAL = "bon_commercial"
 SETTING_RCCM = "shop_rccm"
 SETTING_IFU = "shop_ifu"
 SETTING_BANK = "shop_bank_account"
+SETTING_BANK_NAME = "shop_bank_name"
 
 INK = colors.HexColor("#111827")
 LINE = colors.HexColor("#111827")
@@ -118,6 +119,7 @@ def build_bon_enlevement(
     rccm = _opt(SETTING_RCCM, overrides)
     ifu = _opt(SETTING_IFU, overrides)
     bank = _opt(SETTING_BANK, overrides)
+    bank_name = _opt(SETTING_BANK_NAME, overrides)
     ac_label, ac_rate = get_acompte(overrides)
 
     base = ParagraphStyle("b", fontName="Helvetica", fontSize=fs, leading=fs * 1.3, textColor=INK)
@@ -127,7 +129,7 @@ def build_bon_enlevement(
 
     margin = 12 * mm * k
     foot_lines = []
-    left_foot = [f"N°RCCM : {rccm}" if rccm else "", f"N°IFU : {ifu}" if ifu else "", f"N°COMPTE : {bank}" if bank else ""]
+    left_foot = [f"N°RCCM : {rccm}" if rccm else "", f"N°IFU : {ifu}" if ifu else "", f"BANQUE : {bank_name}" if bank_name else "", f"N°COMPTE : {bank}" if bank else ""]
     right_foot = [f"Email : {shop.email}" if shop.email else "", f"Tél : {shop.phone}" if shop.phone else "", f"Adresse : {shop.address}" if shop.address else ""]
     left_foot = [x for x in left_foot if x]
     right_foot = [x for x in right_foot if x]

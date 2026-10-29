@@ -136,6 +136,7 @@ class Ctx:
     rccm: str
     ifu: str
     bank: str
+    bank_name: str
     logo: Optional[Path]
     rows: list  # (réf, désignation, qté, unité, pu, total)
     total: float
@@ -173,7 +174,7 @@ def _build_ctx(sale, shop, selected, style_id, overrides, font_size) -> Ctx:
         client_no=f"{int(client_id):05d}" if client_id else "", commercial=_opt(SETTING_COMMERCIAL, overrides),
         place=place, info_msg=str(getattr(shop, "ticket_footer", "") or "").strip(),
         legal=_opt(SETTING_LEGAL, overrides), rccm=_opt("shop_rccm", overrides), ifu=_opt("shop_ifu", overrides),
-        bank=_opt("shop_bank_account", overrides), logo=logo if logo.is_file() else None, rows=rows, total=total,
+        bank=_opt("shop_bank_account", overrides), bank_name=_opt("shop_bank_name", overrides), logo=logo if logo.is_file() else None, rows=rows, total=total,
         fs=max(7, min(13, int(font_size or get_font_size()) - 1)),
     )
 
@@ -416,7 +417,7 @@ def _layout_cadres(c: Ctx):
         _cadres_footer(canvas)
 
     def _cadres_footer(canvas):
-        ids = "  -  ".join(x for x in (f"N° RCCM {c.rccm}" if c.rccm else "", f"N° IFU {c.ifu}" if c.ifu else "", f"Compte {c.bank}" if c.bank else "") if x)
+        ids = "  -  ".join(x for x in (f"N° RCCM {c.rccm}" if c.rccm else "", f"N° IFU {c.ifu}" if c.ifu else "", f"{c.bank_name + ' ' if c.bank_name else ''}Compte {c.bank}" if c.bank else (c.bank_name or "")) if x)
         if ids:
             canvas.saveState()
             _text(canvas, W / 2, 8 * mm, ids, "Times-Roman", 7.5, "#111827", "c", max_w=W - 2 * MX)
@@ -515,7 +516,7 @@ def _layout_cyan(c: Ctx, societe: bool = False):
         cols = [("Siège social", [str(c.shop.address or "")] + ([f"Tél : {c.shop.phone}"] if c.shop.phone else [])),
                 ("Informations officielles" if societe else "Coordonnées", ([f"RC : {c.rccm}"] if c.rccm else []) + ([f"IF : {c.ifu}"] if c.ifu else []) if societe else
                  ([c.commercial] if c.commercial else []) + ([f"Phone : {c.shop.phone}"] if c.shop.phone else []) + ([f"E-mail : {c.shop.email}"] if c.shop.email else [])),
-                ("Détails bancaires", [c.bank] if c.bank else [])]
+                ("Détails bancaires", [x for x in (c.bank_name, c.bank) if x])]
         cols = [(t_, [x for x in lines if x]) for t_, lines in cols]
         _footer_cols(canvas, c, cols, 30 * mm, c.style.primary)
         canvas.restoreState()
@@ -578,7 +579,7 @@ def _layout_classique(c: Ctx):
         else:
             _text(canvas, W / 2, H - 22 * mm, f"Bon de livraison N° {c.number}", "Helvetica-Bold", 11, "#111827", "c")
         foot = [str(c.shop.name or "")]
-        ids = "  ·  ".join(x for x in (f"N° RCCM {c.rccm}" if c.rccm else "", f"N° IFU {c.ifu}" if c.ifu else "", f"RIB {c.bank}" if c.bank else "") if x)
+        ids = "  ·  ".join(x for x in (f"N° RCCM {c.rccm}" if c.rccm else "", f"N° IFU {c.ifu}" if c.ifu else "", f"{c.bank_name + ' ' if c.bank_name else ''}RIB {c.bank}" if c.bank else (c.bank_name or "")) if x)
         _text(canvas, MX, 22 * mm, foot[0], "Helvetica-Bold", 14, "#111827", max_w=W - 2 * MX)
         _text(canvas, MX, 16 * mm, ids, "Helvetica", 7.5, c.style.primary, max_w=W - 2 * MX)
         contact = "  ·  ".join(_shop_contact_lines(c))
