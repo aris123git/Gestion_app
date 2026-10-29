@@ -392,6 +392,14 @@ class SettingsPage(QWidget):
         from app.printers.delivery_note import DELIVERY_STYLES
         for _st in DELIVERY_STYLES:
             self.bl_style.addItem(_st.label, _st.id)
+        self.pickup_bearer = QComboBox()
+        self.pickup_bearer.addItem(t('Le client (facturée aux stations)'), 'client')
+        self.pickup_bearer.addItem(t("L'entreprise (charge)"), 'company')
+        self.pickup_tolerance = QDoubleSpinBox()
+        self.pickup_tolerance.setRange(0, 100)
+        self.pickup_tolerance.setDecimals(2)
+        self.pickup_tolerance.setSuffix(' %')
+        self.pickup_tolerance.setToolTip(t("Au-delà de ce taux de perte, l'écart s'affiche en rouge dans les enlèvements."))
         self.bl_legal = QLineEdit()
         self.bl_legal.setPlaceholderText(t('Mention facultative (réserves, conditions de réception…)'))
         self.bon_legal = QLineEdit()
@@ -487,6 +495,8 @@ class SettingsPage(QWidget):
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
         form.addRow(t('Bon de livraison'), self.bl_enabled)
         form.addRow('', self.bl_in_all)
+        form.addRow(t('Perte d’un enlèvement supportée par'), self.pickup_bearer)
+        form.addRow(t('Tolérance de perte (alerte)'), self.pickup_tolerance)
         form.addRow(t('Modèle du bon de livraison'), self.bl_style)
         form.addRow(t('Mention du bon de livraison'), self.bl_legal)
         form.addRow(t('Mention du bon (facultatif)'), self.bon_legal)
@@ -502,7 +512,7 @@ class SettingsPage(QWidget):
         form.addRow('', self.invoice_show_legal)
         form.addRow('', self.invoice_show_bank)
         form.addRow('', self.bl_show_bank)
-        self._enterprise_rows = [self.bon_legal, ac_row]
+        self._enterprise_rows = [self.bon_legal, ac_row, self.pickup_bearer, self.pickup_tolerance]
         self._invoice_form = form
         self.shop_type.currentTextChanged.connect(self._apply_enterprise_visibility)
         outer.addWidget(make_card(form_widget))
@@ -1110,6 +1120,8 @@ class SettingsPage(QWidget):
         settings_service.set_setting('bl_in_all', '1' if self.bl_in_all.isChecked() else '0')
         settings_service.set_setting('bl_style', self.bl_style.currentData() or 'bandeau_bleu')
         settings_service.set_setting('bl_legal_text', self.bl_legal.text().strip())
+        settings_service.set_setting('pickup_loss_bearer', self.pickup_bearer.currentData() or 'client')
+        settings_service.set_setting('pickup_loss_tolerance', str(self.pickup_tolerance.value()))
         settings_service.set_setting('bon_acompte_label', self.bon_ac_label.text().strip())
         settings_service.set_setting('bon_acompte_rate', str(self.bon_ac_rate.value()))
         settings_service.set_setting('bon_commercial', self.bon_commercial.text().strip())
@@ -1742,6 +1754,9 @@ class SettingsPage(QWidget):
         _i = self.bl_style.findData(_dn.get_style().id)
         self.bl_style.setCurrentIndex(max(0, _i))
         self.bl_legal.setText(settings_service.get_setting(_dn.SETTING_LEGAL, ''))
+        from app.services import pickup_service as _ps
+        self.pickup_bearer.setCurrentIndex(max(0, self.pickup_bearer.findData(_ps.default_bearer())))
+        self.pickup_tolerance.setValue(_ps.tolerance_percent())
         self.bon_legal.setText(settings_service.get_setting(_be.SETTING_LEGAL, ''))
         self.bon_ac_label.setText(settings_service.get_setting(_be.SETTING_ACOMPTE_LABEL, ''))
         self.bon_ac_rate.setValue(_be.get_acompte()[1])

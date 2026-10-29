@@ -197,6 +197,12 @@ def _migrate_schema() -> None:
         "users": {
             "is_waitress": "BOOLEAN DEFAULT 0",
         },
+        "pickups": {
+            "loss_bearer": "VARCHAR(20) DEFAULT ''",
+        },
+        "pickup_items": {
+            "billed_loss": "NUMERIC(14, 3) DEFAULT 0",
+        },
     }
     with engine.begin() as conn:
         for table, columns in alterations.items():

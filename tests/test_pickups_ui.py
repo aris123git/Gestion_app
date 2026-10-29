@@ -64,9 +64,11 @@ class PickupUiTests(unittest.TestCase):
         dlg._reload()
         dlg.table.selectRow(0)
         self.assertEqual(dlg.table.item(0, 6).text(), "40")
-        c = pd.ClosePickupDialog(None, ps.remaining(pid))
+        c = pd.ClosePickupDialog(None, ps.remaining(pid), pid)
         c.reason.setCurrentIndex(0)
-        ps.close(pid, c.reason.currentText())
+        self.assertEqual(c.bearer.currentData(), "client")     # par défaut, le client supporte la perte
+        self.assertIn("Station UI", c.preview.text())          # aperçu de la facturation
+        ps.close(pid, c.reason.currentText(), bearer=c.bearer.currentData())
         dlg._reload()
         self.assertEqual(dlg._rows[0].status, "closed")
 

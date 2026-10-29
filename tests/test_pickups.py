@@ -60,7 +60,7 @@ class PickupTests(unittest.TestCase):
         self._deliver(row.item_id, 390, self.client2)
         self.assertEqual(ps.remaining(pid)[0].left, 10)
         self.assertEqual(len(ps.delivered_sales(pid)), 2)
-        lost = ps.close(pid, "Évaporation")
+        lost = ps.close(pid, "Évaporation", bearer="company")
         self.assertEqual(lost, 7000)
         r = ps.remaining(pid)[0]
         self.assertEqual((r.delivered, r.loss, r.left), (990, 10, 0))
@@ -78,6 +78,39 @@ class PickupTests(unittest.TestCase):
             ps.close(pid, "x")
         rep = ps.loss_report(date(2020, 1, 1), date(2099, 1, 1))
         self.assertTrue(any(r[1] >= 1000 and r[2] >= 10 for r in rep))
+
+    def test_loss_billed_to_clients(self):
+        from app.models.client import Client
+        pid = ps.create([ps.PickupLine(self.product, 1000)], supplier_id=self.supplier)
+        ps.validate(pid)
+        item = ps.remaining(pid)[0].item_id
+        self._deliver(item, 600, self.client)
+        self._deliver(item, 390, self.client2)
+        shares, unbillable = ps.loss_allocation(pid)
+        self.assertEqual(unbillable, [])
+        self.assertEqual(round(sum(x.quantity for x in shares), 3), 10)
+        self.assertEqual({x.client_id: x.unit_price for x in shares}, {self.client: 800, self.client2: 800})
+        company_loss = ps.close(pid, "Évaporation", bearer="client")
+        self.assertEqual(company_loss, 0)
+        with session_scope() as s:
+            self.assertEqual(float(s.get(Product, self.product).quantity), 0)   # les 10 litres sont facturés, donc sortis
+            self.assertGreater(float(s.get(Client, self.client).debt), 0)       # la station porte la perte à crédit
+        r = ps.remaining(pid)[0]
+        self.assertEqual((r.loss, r.left), (10, 0))
+        entries = accounting_service.generate_entries(date.today())
+        self.assertTrue(all(e.balanced for e in entries))
+        number = [x for x in ps.list_pickups() if x.id == pid][0].number
+        self.assertFalse(any(e.label.startswith(f"Perte sur enlèvement {number}") for e in entries))   # aucune charge pour l'entreprise
+        self.assertEqual([i.message for i in integrity_service.run_checks()], [])
+        self.assertEqual(ps.list_pickups()[0].loss_percent, 1.0)
+
+    def test_loss_without_any_client_stays_with_company(self):
+        ProductController.update(self.product, {"sell_without_stock": True})
+        pid = ps.create([ps.PickupLine(self.product, 50, 700)], supplier_id=self.supplier)
+        ps.validate(pid)
+        shares, unbillable = ps.loss_allocation(pid)
+        self.assertEqual((shares, round(unbillable[0][1], 3)), ([], 50))
+        self.assertEqual(ps.close(pid, "Évaporation", bearer="client"), 50 * 700)
 
     def test_deliver_before_validation_without_stock(self):
         ProductController.update(self.product, {"sell_without_stock": True})

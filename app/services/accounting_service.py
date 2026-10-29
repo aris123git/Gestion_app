@@ -147,7 +147,7 @@ def generate_entries(upto: date) -> list[Entry]:
         for pk in session.scalars(
             select(Pickup).options(joinedload(Pickup.items)).where(Pickup.status == STATUS_CLOSED, Pickup.closed_at <= hi)
         ).unique().all():
-            loss = round(sum(_f(i.loss_quantity) * _f(i.unit_cost) for i in pk.items), 3)
+            loss = round(sum((_f(i.loss_quantity) - _f(i.billed_loss)) * _f(i.unit_cost) for i in pk.items), 3)
             if loss > 0:
                 e = Entry(pk.closed_at, "OD", f"BE-{pk.number}", f"Perte sur enlèvement {pk.number} ({pk.loss_reason})")
                 e.add("659", debit=loss)

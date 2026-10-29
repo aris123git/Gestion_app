@@ -40,6 +40,7 @@ class Pickup(Base):
     validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     loss_reason: Mapped[str] = mapped_column(String(80), default="")
+    loss_bearer: Mapped[str] = mapped_column(String(20), default="")  # "client" (facturée aux stations) ou "company"
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     supplier: Mapped[Optional["Supplier"]] = relationship()  # noqa: F821
@@ -57,6 +58,7 @@ class PickupItem(Base):
     unit_cost: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     line_total: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     loss_quantity: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+    billed_loss: Mapped[float] = mapped_column(Numeric(14, 3), default=0)  # part de la perte facturée aux clients
 
     pickup: Mapped[Pickup] = relationship(back_populates="items")
     product: Mapped["Product"] = relationship()  # noqa: F821

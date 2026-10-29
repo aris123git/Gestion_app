@@ -304,7 +304,7 @@ class DeliverDialog(QDialog):
 
 # ---------------------------------------------------------------------------
 class ClosePickupDialog(QDialog):
-    def __init__(self, parent=None, rows=None):
+    def __init__(self, parent=None, rows=None, pickup_id: int | None = None):
         super().__init__(parent)
         self.setWindowTitle(t("Clôturer l'enlèvement"))
         self.setModal(True)
@@ -322,11 +322,33 @@ class ClosePickupDialog(QDialog):
         self.reason = QComboBox()
         self.reason.addItems(ps.LOSS_REASONS)
         form.addRow(t('Motif de l’écart'), self.reason)
+        self.bearer = QComboBox()
+        self.bearer.addItem(t('Le client (facturée aux stations au prorata)'), ps.BEARER_CLIENT)
+        self.bearer.addItem(t("L'entreprise (charge, rien n'est facturé)"), ps.BEARER_COMPANY)
+        self.bearer.setCurrentIndex(max(0, self.bearer.findData(ps.default_bearer())))
+        form.addRow(t('Perte supportée par'), self.bearer)
         layout.addLayout(form)
+        self.preview = QLabel('')
+        self.preview.setWordWrap(True)
+        self.preview.setStyleSheet('color: #475569;')
+        layout.addWidget(self.preview)
+        self._pickup_id = pickup_id
+        self.bearer.currentIndexChanged.connect(self._update_preview)
+        self._update_preview()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _update_preview(self) -> None:
+        if not self._pickup_id or self.bearer.currentData() != ps.BEARER_CLIENT:
+            self.preview.setText(t("La perte sera enregistrée comme charge de l'entreprise (stock et comptabilité).") if self._pickup_id else '')
+            return
+        shares, unbillable = ps.loss_allocation(self._pickup_id)
+        cur = settings_service.get_currency()
+        lines = [f"• {s.client_name} : {s.quantity:g} {s.name} × {format_money(s.unit_price, cur)} = {format_money(s.quantity * s.unit_price, cur)}" for s in shares]
+        lines += [f"• {n} : {q:g} {t('sans station livrée : reste à la charge de l’entreprise')}" for n, q in unbillable]
+        self.preview.setText(('<br>'.join([t('Une vente à crédit sera créée pour chaque station :')] + lines)) if lines else '')
 
 
 # ---------------------------------------------------------------------------
@@ -518,16 +540,16 @@ class PickupsDialog(QDialog):
         if not p:
             return
         rows = ps.remaining(p.id)
-        dlg = ClosePickupDialog(self, rows)
+        dlg = ClosePickupDialog(self, rows, p.id)
         if dlg.exec():
             user_id, username = _user(self.state)
             try:
-                lost = ps.close(p.id, dlg.reason.currentText(), user_id=user_id, username=username)
+                lost = ps.close(p.id, dlg.reason.currentText(), bearer=dlg.bearer.currentData(), user_id=user_id, username=username)
             except ValueError as exc:
                 warn(self, str(exc))
             else:
                 self.state.notify_data_changed()
-                info(self, t("Enlèvement clôturé. Perte enregistrée : {v}").format(v=format_money(lost, settings_service.get_currency())), t('Enlèvements'))
+                info(self, (t("Enlèvement clôturé. Perte à la charge de l'entreprise : {v}").format(v=format_money(lost, settings_service.get_currency())) if lost else t("Enlèvement clôturé. Aucune perte à la charge de l'entreprise.")), t('Enlèvements'))
             self._reload()
 
     def _details(self) -> None:

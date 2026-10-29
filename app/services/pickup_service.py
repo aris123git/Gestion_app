@@ -220,41 +220,136 @@ def link_sale(session, sale_id: int, links: list[tuple[int, float]]) -> None:
         session.add(PickupDelivery(pickup_item_id=item_id, sale_id=sale_id, quantity=qty))
 
 
-def close(pickup_id: int, reason: str, *, user_id: Optional[int] = None, username: str = "") -> float:
-    """Clôture : le reste non livré devient une perte (sortie de stock). Retourne la valeur de la perte."""
+BEARER_CLIENT = "client"
+BEARER_COMPANY = "company"
+
+
+def default_bearer() -> str:
+    """Qui supporte la perte (réglage) : le client par défaut."""
+    return BEARER_COMPANY if settings_service.get_setting("pickup_loss_bearer", BEARER_CLIENT).strip() == BEARER_COMPANY else BEARER_CLIENT
+
+
+@dataclass
+class LossShare:
+    client_id: int
+    client_name: str
+    item_id: int
+    product_id: int
+    name: str
+    quantity: float
+    unit_price: float
+
+
+def loss_allocation(pickup_id: int) -> tuple[List[LossShare], List[tuple[str, float]]]:
+    """Répartit le reste non livré entre les stations, au prorata de ce qu'elles ont reçu.
+
+    Retourne (parts facturables, [(produit, quantité) impossibles à facturer : aucune livraison à un client]).
+    """
+    from app.models.client import Client
+    from app.models.sale import SaleItem
+
+    shares: List[LossShare] = []
+    unbillable: List[tuple[str, float]] = []
+    with session_scope() as session:
+        pickup = session.execute(select(Pickup).options(joinedload(Pickup.items)).where(Pickup.id == pickup_id)).unique().scalar_one_or_none()
+        if pickup is None:
+            return [], []
+        done = _delivered_by_item(session, pickup_id)
+        for item in pickup.items:
+            left = round(_f(item.quantity) - done.get(item.id, 0.0) - _f(item.loss_quantity), 3)
+            if left <= EPS:
+                continue
+            rows = session.execute(
+                select(Sale.client_id, Client.name, PickupDelivery.quantity, SaleItem.unit_price)
+                .join(Sale, Sale.id == PickupDelivery.sale_id)
+                .join(SaleItem, (SaleItem.sale_id == Sale.id) & (SaleItem.product_id == item.product_id))
+                .join(Client, Client.id == Sale.client_id)
+                .where(PickupDelivery.pickup_item_id == item.id, Sale.status == "completed", Sale.client_id.is_not(None))
+            ).all()
+            per: dict[int, list] = {}
+            for cid, cname, q, price in rows:
+                entry = per.setdefault(cid, [cname, 0.0, 0.0])
+                entry[1] += _f(q)
+                entry[2] += _f(q) * _f(price)
+            total = sum(v[1] for v in per.values())
+            if total <= EPS:
+                unbillable.append((item.product_name, left))
+                continue
+            allocated, biggest = 0.0, max(per, key=lambda c: per[c][1])
+            parts = {c: round(left * v[1] / total, 3) for c, v in per.items()}
+            parts[biggest] = round(parts[biggest] + (left - sum(parts.values())), 3)  # le reste d'arrondi va à la plus grosse station
+            for cid, qty in parts.items():
+                if qty > EPS:
+                    name, q, amount = per[cid]
+                    shares.append(LossShare(cid, name, item.id, item.product_id, item.product_name, qty, round(amount / q, 3)))
+    return shares, unbillable
+
+
+def close(pickup_id: int, reason: str, *, bearer: Optional[str] = None, user_id: Optional[int] = None, username: str = "") -> float:
+    """Clôture : le reste non livré est une perte (écart).
+
+    ``bearer="client"`` : la perte est facturée aux stations, au prorata de leurs livraisons, au prix de leur
+    livraison (vente à crédit) ; ``"company"`` : elle reste à la charge de l'entreprise (charge comptable).
+    Retourne la valeur (au coût d'achat) de la perte supportée par l'entreprise.
+    """
+    from app import config
+    from app.controllers.sale_controller import CartLine, PaymentLine, SaleController
     from app.services import price_layers
 
     reason = (reason or "").strip() or "Écart"
-    total_value = 0.0
+    bearer = bearer or default_bearer()
     with session_scope() as session:
-        pickup = session.execute(select(Pickup).options(joinedload(Pickup.items)).where(Pickup.id == pickup_id)).unique().scalar_one_or_none()
+        pickup = session.get(Pickup, pickup_id)
         if pickup is None:
             raise ValueError("Enlèvement introuvable.")
         if pickup.status != STATUS_VALIDATED:
             raise ValueError("Seul un enlèvement validé peut être clôturé.")
+        number = pickup.number
+
+    billed: dict[int, float] = {}
+    if bearer == BEARER_CLIENT:
+        shares, _unbillable = loss_allocation(pickup_id)
+        by_client: dict[int, List[LossShare]] = {}
+        for share in shares:
+            by_client.setdefault(share.client_id, []).append(share)
+        for client_id, parts in by_client.items():
+            total = round(sum(p.quantity * p.unit_price for p in parts), 2)
+            SaleController.create_sale(
+                [CartLine(p.product_id, f"{p.name} (perte enlèvement {number})", p.unit_price, p.quantity) for p in parts],
+                [PaymentLine(config.PAYMENT_METHOD_CREDIT, total)], client_id=client_id, user_id=user_id, allow_credit=True,
+            )
+            for p in parts:
+                billed[p.item_id] = billed.get(p.item_id, 0.0) + p.quantity
+
+    company_value = 0.0
+    with session_scope() as session:
+        pickup = session.execute(select(Pickup).options(joinedload(Pickup.items)).where(Pickup.id == pickup_id)).unique().scalar_one()
         done = _delivered_by_item(session, pickup_id)
         for item in pickup.items:
             left = round(_f(item.quantity) - done.get(item.id, 0.0), 3)
             if left <= EPS:
                 continue
             item.loss_quantity = left
-            total_value += left * _f(item.unit_cost)
+            share = min(left, billed.get(item.id, 0.0))
+            item.billed_loss = share
+            company_loss = round(left - share, 3)
+            company_value += company_loss * _f(item.unit_cost)
             product = session.get(Product, item.product_id)
-            if product and not getattr(product, "sell_without_stock", False):
+            if product and company_loss > EPS and not getattr(product, "sell_without_stock", False):
                 before = _f(product.quantity)
-                out = min(left, max(before, 0.0))
+                out = min(company_loss, max(before, 0.0))
                 product.quantity = before - out
                 price_layers.settle(session, product)
                 session.add(StockMovement(
                     product_id=product.id, movement_type=MOVEMENT_OUT, quantity=out, quantity_before=before, quantity_after=before - out,
-                    unit_cost=_f(item.unit_cost), reason=f"Perte enlèvement N° {pickup.number} ({reason})", user_id=user_id,
+                    unit_cost=_f(item.unit_cost), reason=f"Perte enlèvement N° {number} ({reason})", user_id=user_id,
                 ))
         pickup.status = STATUS_CLOSED
         pickup.closed_at = datetime.now()
         pickup.loss_reason = reason
-        number = pickup.number
-    audit_service.log_action("Clôture enlèvement", "Pickup", f"N° {number} perte={total_value:g} ({reason})", user_id, username)
-    return round(total_value, 2)
+        pickup.loss_bearer = bearer
+    audit_service.log_action("Clôture enlèvement", "Pickup", f"N° {number} perte entreprise={company_value:g} facturée_clients={sum(billed.values()):g} ({reason})", user_id, username)
+    return round(company_value, 2)
 
 
 def tolerance_percent() -> float:
