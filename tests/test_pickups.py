@@ -43,8 +43,9 @@ class PickupTests(unittest.TestCase):
         pid = ps.create([ps.PickupLine(self.product, 1000)], supplier_id=self.supplier, note="test")
         row = ps.remaining(pid)[0]
         self.assertEqual((row.picked, row.delivered, row.left, row.unit_cost), (1000, 0, 1000, 700))
-        # Pas de livraison avant validation.
-        with self.assertRaises(ValueError):
+        # Produit suivi en stock et stock vide : la livraison avant validation est refusée (stock insuffisant).
+        from app.controllers.sale_controller import InsufficientStockError
+        with self.assertRaises(InsufficientStockError):
             self._deliver(row.item_id, 10, self.client)
         ps.mark_sent(pid)
         ps.validate(pid, amount_paid=0)
@@ -77,6 +78,18 @@ class PickupTests(unittest.TestCase):
             ps.close(pid, "x")
         rep = ps.loss_report(date(2020, 1, 1), date(2099, 1, 1))
         self.assertTrue(any(r[1] >= 1000 and r[2] >= 10 for r in rep))
+
+    def test_deliver_before_validation_without_stock(self):
+        ProductController.update(self.product, {"sell_without_stock": True})
+        pid = ps.create([ps.PickupLine(self.product, 100)], supplier_id=self.supplier)
+        item = ps.remaining(pid)[0].item_id
+        self._deliver(item, 100, self.client)                    # le chauffeur livre avec le bon, avant toute saisie
+        self.assertEqual(ps.remaining(pid)[0].left, 0)
+        ps.validate(pid, amount_paid=0)                           # le fournisseur signe, on valide ensuite
+        self.assertEqual(ps.close(pid, "Évaporation"), 0)
+        self.assertEqual([i.message for i in integrity_service.run_checks()], [])
+        with self.assertRaises(ValueError):                       # clôturé : plus de livraison
+            self._deliver(item, 1, self.client)
 
     def test_cancelled_delivery_frees_quantity(self):
         pid = ps.create([ps.PickupLine(self.product, 100)], supplier_id=self.supplier)

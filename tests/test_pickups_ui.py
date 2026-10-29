@@ -48,7 +48,7 @@ class PickupUiTests(unittest.TestCase):
         dlg = pd.PickupsDialog(self.state)
         dlg.table.selectRow(0)
         self.assertTrue(dlg.btn["validate"].isEnabled())
-        self.assertFalse(dlg.btn["deliver"].isEnabled())
+        self.assertTrue(dlg.btn["deliver"].isEnabled())      # on peut livrer avant la validation
         ps.validate(pid)
         dlg._reload()
         dlg.table.selectRow(0)

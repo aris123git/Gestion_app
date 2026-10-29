@@ -198,7 +198,9 @@ def remaining(pickup_id: int) -> List[Remaining]:
 def link_sale(session, sale_id: int, links: list[tuple[int, float]]) -> None:
     """Rattache une vente (dans la transaction de la vente) à des lignes d'enlèvement.
 
-    Refuse de livrer plus que le reste à livrer, ou depuis un enlèvement non validé.
+    Refuse de livrer plus que le reste à livrer, ou depuis un enlèvement clôturé.
+    On peut livrer avant la validation (le chauffeur emporte le bon d'enlèvement et le bon de livraison) :
+    l'enlèvement se valide ensuite, quand le fournisseur a signé.
     """
     wanted: dict[int, float] = {}
     for item_id, qty in links:
@@ -209,8 +211,8 @@ def link_sale(session, sale_id: int, links: list[tuple[int, float]]) -> None:
         if item is None:
             raise ValueError("Ligne d'enlèvement introuvable.")
         pickup = session.get(Pickup, item.pickup_id)
-        if pickup.status != STATUS_VALIDATED:
-            raise ValueError(f"L'enlèvement N° {pickup.number} n'est pas validé (ou déjà clôturé) : livraison impossible.")
+        if pickup.status == STATUS_CLOSED:
+            raise ValueError(f"L'enlèvement N° {pickup.number} est clôturé : livraison impossible.")
         done = _delivered_by_item(session, pickup.id).get(item_id, 0.0)
         left = _f(item.quantity) - done
         if qty > left + EPS:

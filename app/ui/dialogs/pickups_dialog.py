@@ -290,8 +290,11 @@ class DeliverDialog(QDialog):
                 [PaymentLine(method, total)], amount_received=0 if credit else total, client_id=client_id, user_id=user_id,
                 allow_credit=credit, pickup_links=[(r.item_id, q) for r, q, _ in lines],
             )
-        except (ValueError, InsufficientStockError, BelowMinPriceError) as exc:
+        except (ValueError, BelowMinPriceError) as exc:
             warn(self, str(exc), t('Livraison impossible'))
+            return
+        except InsufficientStockError as exc:
+            warn(self, f"{exc}\n\n" + t("Activez « Vente sans stock » sur ce produit (fiche produit), ou validez d'abord l'enlèvement pour faire entrer le stock."), t('Stock insuffisant'))
             return
         audit_service.log_action('Livraison enlèvement', 'Sale', f'{result.ticket_number} pickup={self.pickup_id} total={result.total}', user_id, username)
         self.sale_id = result.sale_id
@@ -411,7 +414,7 @@ class PickupsDialog(QDialog):
         st = p.status if p else None
         can = {
             'edit': st in (STATUS_DRAFT, STATUS_SENT), 'delete': st in (STATUS_DRAFT, STATUS_SENT), 'send': st == STATUS_DRAFT,
-            'validate': st in (STATUS_DRAFT, STATUS_SENT), 'deliver': st == STATUS_VALIDATED and p is not None and p.left > 0,
+            'validate': st in (STATUS_DRAFT, STATUS_SENT), 'deliver': st in (STATUS_DRAFT, STATUS_SENT, STATUS_VALIDATED) and p is not None and p.left > 0,
             'close': st == STATUS_VALIDATED, 'print': p is not None, 'details': p is not None, 'signed': False, 'report': True,
         }
         if p:
@@ -422,8 +425,8 @@ class PickupsDialog(QDialog):
         for key, ok in can.items():
             self.btn[key].setEnabled(bool(ok))
         self.hint.setText({
-            STATUS_DRAFT: t("Brouillon : imprimez le bon, envoyez-le au fournisseur, puis validez-le une fois signé."),
-            STATUS_SENT: t("Envoyé : en attente de la signature du fournisseur."),
+            STATUS_DRAFT: t("Brouillon : imprimez le bon, envoyez-le au fournisseur, puis validez-le une fois signé. Vous pouvez déjà livrer (produit en « vente sans stock »)."),
+            STATUS_SENT: t("Envoyé : en attente de la signature du fournisseur. Vous pouvez déjà livrer (produit en « vente sans stock »)."),
             STATUS_VALIDATED: t("Validé : le stock est entré. Livrez aux stations ; clôturez quand c'est terminé pour enregistrer l'écart."),
             STATUS_CLOSED: t("Clôturé : le reste non livré a été enregistré comme perte."),
         }.get(st, t('Sélectionnez un enlèvement ou créez-en un.')))
