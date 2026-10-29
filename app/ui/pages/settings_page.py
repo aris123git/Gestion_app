@@ -154,6 +154,11 @@ class SettingsPage(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet('color: #64748b; font-size: 12px;')
         form.addRow('', hint)
+        from app import __version__ as _app_version
+        update_btn = QPushButton(t('Vérifier les mises à jour'))
+        update_btn.setToolTip(t("Compare la version installée à la dernière version publiée (connexion internet nécessaire). Rien n'est installé automatiquement."))
+        update_btn.clicked.connect(self._check_updates)
+        form.addRow(f"{t('Version installée')} : {_app_version}", update_btn)
         from app.services import catalog_features
         catalog_title = QLabel(f'<b>{t('settings.catalog_section')}</b>')
         form.addRow(catalog_title)
@@ -545,6 +550,21 @@ class SettingsPage(QWidget):
         if fix is not None and box.clickedButton() is fix:
             n = integrity_service.repair_client_balances()
             info(self, f'{n} solde(s) client corrigé(s).', t("Contrôle d'intégrité"))
+
+    def _check_updates(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from app.services import update_service
+        try:
+            upd = update_service.check_for_update()
+        except RuntimeError as exc:
+            warn(self, str(exc), t('Mises à jour'))
+            return
+        if not upd.is_newer:
+            info(self, t("Vous avez la dernière version ({v}).").format(v=upd.current), t('Mises à jour'))
+            return
+        if confirm(self, f"{t('Nouvelle version disponible')} : {upd.latest} ({t('installée')} : {upd.current})\n\n{upd.notes}\n\n{t('Ouvrir la page de téléchargement ? Gardez l’ancien exe à côté pour pouvoir revenir en arrière ; vos données ne sont pas touchées.')}", t('Mises à jour')):
+            QDesktopServices.openUrl(QUrl(upd.asset_url or upd.url))
 
     def _apply_enterprise_visibility(self, *_args) -> None:
         """Bons d'enlèvement / de livraison : réglages visibles seulement pour le type « Entreprise »."""
