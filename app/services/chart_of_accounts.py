@@ -37,6 +37,7 @@ CHART: dict[str, str] = {
     "631": "Frais bancaires",
     "661": "Rémunérations du personnel",
     "658": "Charges diverses",
+    "659": "Pertes sur marchandises (évaporation, écarts d'enlèvement)",
     "671": "Intérêts des emprunts",
     # Classe 7 — Produits
     "701": "Ventes de marchandises",

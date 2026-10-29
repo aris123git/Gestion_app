@@ -25,6 +25,7 @@ from app.database.connection import session_scope
 from app.models.accounting import ManualEntry
 from app.models.debt import Debt, DebtPayment
 from app.models.expense import Expense
+from app.models.pickup import STATUS_CLOSED, Pickup
 from app.models.purchase import Purchase
 from app.models.sale import Sale
 from app.models.supplier_debt import SupplierDebtPayment
@@ -142,6 +143,16 @@ def generate_entries(upto: date) -> list[Entry]:
             e.add("571", credit=paid)
             e.add("401", credit=round(total - paid, 3))
             entries.append(e)
+
+        for pk in session.scalars(
+            select(Pickup).options(joinedload(Pickup.items)).where(Pickup.status == STATUS_CLOSED, Pickup.closed_at <= hi)
+        ).unique().all():
+            loss = round(sum(_f(i.loss_quantity) * _f(i.unit_cost) for i in pk.items), 3)
+            if loss > 0:
+                e = Entry(pk.closed_at, "OD", f"BE-{pk.number}", f"Perte sur enlèvement {pk.number} ({pk.loss_reason})")
+                e.add("659", debit=loss)
+                e.add("311", credit=loss)
+                entries.append(e)
 
         for pay in session.scalars(
             select(SupplierDebtPayment).options(joinedload(SupplierDebtPayment.debt)).where(SupplierDebtPayment.payment_date <= hi)

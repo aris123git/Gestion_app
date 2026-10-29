@@ -13,6 +13,7 @@ from app.models.expense import Expense
 from app.models.loyalty import CustomerPoints, CustomerPointsHistory
 from app.models.open_order import OpenOrder, OpenOrderItem
 from app.models.open_order_payment import OpenOrderPayment
+from app.models.pickup import Pickup, PickupDelivery, PickupItem
 from app.models.price_history import PriceHistory
 from app.models.product import Product
 from app.models.profit_loyalty import ClientProfitLoyalty
@@ -37,6 +38,9 @@ __all__ = [
     "CustomerPoints",
     "CustomerPointsHistory",
     "Debt",
+    "Pickup",
+    "PickupDelivery",
+    "PickupItem",
     "DebtPayment",
     "DiningTable",
     "Expense",

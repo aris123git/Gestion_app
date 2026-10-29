@@ -79,6 +79,24 @@ def run_checks() -> list[Issue]:
                 issues.append(Issue("Numéros", f"{col} {num} attribué {n} fois."))
 
     try:
+        from app.models.pickup import STATUS_CLOSED, STATUS_VALIDATED, Pickup
+        from app.services import pickup_service
+
+        with session_scope() as s:
+            ids = [(p.id, p.number, p.status, p.purchase_id) for p in s.scalars(select(Pickup))]
+        for pid, number, status, purchase_id in ids:
+            if status in (STATUS_VALIDATED, STATUS_CLOSED) and not purchase_id:
+                issues.append(Issue("Enlèvements", f"Enlèvement {number} : validé sans achat associé."))
+            for r in pickup_service.remaining(pid):
+                if r.delivered + r.loss > r.picked + TOL:
+                    issues.append(Issue("Enlèvements", f"Enlèvement {number} : « {r.name} » livré + perdu ({r.delivered + r.loss:g}) dépasse l'enlevé ({r.picked:g})."))
+                if status == STATUS_CLOSED and r.left > TOL:
+                    issues.append(Issue("Enlèvements", f"Enlèvement {number} : « {r.name} » clôturé avec un reste de {r.left:g}."))
+    except Exception:
+        logger.exception("Contrôle des enlèvements impossible.")
+        issues.append(Issue("Enlèvements", "Impossible de contrôler les enlèvements."))
+
+    try:
         from app.services import accounting_service
 
         for e in accounting_service.generate_entries(date.today()):

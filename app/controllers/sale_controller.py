@@ -196,6 +196,7 @@ class SaleController:
         allow_credit: bool = False,
         debt_due_date: Optional[date] = None,
         loyalty_credit: float = 0,
+        pickup_links: Optional[List[tuple]] = None,
     ) -> SaleResult:
         """Enregistre une vente complète, met à jour le stock et les paiements.
 
@@ -340,6 +341,10 @@ class SaleController:
             )
             session.add(sale)
             session.flush()
+            if pickup_links:
+                from app.services import pickup_service
+
+                pickup_service.link_sale(session, sale.id, pickup_links)
 
             # Vérifie le stock avant toute sortie (agrège les lignes du même produit).
             required: dict[int, float] = {}

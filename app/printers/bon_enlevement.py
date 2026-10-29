@@ -35,6 +35,7 @@ SETTING_COMMERCIAL = "bon_commercial"
 SETTING_RCCM = "shop_rccm"
 SETTING_IFU = "shop_ifu"
 SETTING_BANK = "shop_bank_account"
+SETTING_SHOW_PRICES = "bon_show_prices"
 SETTING_BANK_NAME = "shop_bank_name"
 
 INK = colors.HexColor("#111827")
@@ -93,6 +94,7 @@ def build_bon_enlevement(
     fmt: str | None = None,
     font_size: int | None = None,
     overrides: Optional[dict] = None,
+    show_prices: Optional[bool] = None,
 ) -> Path:
     """Génère le bon d'enlèvement des lignes ``selected`` (indices ; ``None`` = toutes)."""
     config.ensure_directories()
@@ -104,6 +106,8 @@ def build_bon_enlevement(
     if not lines:
         raise ValueError("Aucun produit sélectionné pour le bon d'enlèvement.")
 
+    if show_prices is None:
+        show_prices = settings_service.get_setting(SETTING_SHOW_PRICES, "1").strip() == "1"
     half = (fmt or get_format()) == FORMAT_HALF
     page = (A4[0], HALF_H) if half else A4
     k = 0.7 if half else 1.0
@@ -180,6 +184,8 @@ def build_bon_enlevement(
     # Cadres : Bon d'enlèvement (gauche) / client (droite)
     left_rows = [[Paragraph("<b>Bon d'Enlèvement</b>", base)], [Paragraph(f"Date : <b>{day:%d/%m/%Y}</b>", base)],
                  [Paragraph(f"Réf : <b>{sale.ticket_number}</b>", base)], [Paragraph(f"BE N° <b>{number}</b>", base)]]
+    if getattr(sale, "supplier_name", ""):
+        left_rows.append([Paragraph(f"À l'attention de : <b>{sale.supplier_name}</b>", base)])
     left_box = Table(left_rows, colWidths=[frame_w * 0.42])
     left_box.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.9, LINE), ("LINEBELOW", (0, 0), (-1, 0), 0.6, LINE),
                                   ("TOPPADDING", (0, 0), (-1, -1), 1 if half else 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 1 if half else 2)]))
@@ -206,7 +212,7 @@ def build_bon_enlevement(
 
     # Tableau produits
     units = _units_by_product(sale)
-    head_row = ["PRODUIT", "QUANTITÉ", "U.M", "P.U", "P. TOTAL"]
+    head_row = ["PRODUIT", "QUANTITÉ", "U.M", "P.U", "P. TOTAL"] if show_prices else ["PRODUIT", "QUANTITÉ", "U.M"]
     rows = [head_row]
     total = 0.0
     for it in lines:
@@ -214,9 +220,11 @@ def build_bon_enlevement(
         line_total = float(it.line_total or 0)
         total += line_total
         unit = units.get(getattr(it, "product_id", None) or -1, "")
-        rows.append([Paragraph(str(it.product_name or ""), base), f"{qty:g}", unit.upper() if unit else "",
-                     format_amount(float(it.unit_price or 0)), format_amount(line_total)])
-    cw = [frame_w * 0.34, frame_w * 0.14, frame_w * 0.12, frame_w * 0.18, frame_w * 0.22]
+        cells = [Paragraph(str(it.product_name or ""), base), f"{qty:g}", unit.upper() if unit else ""]
+        if show_prices:
+            cells += [format_amount(float(it.unit_price or 0)), format_amount(line_total)]
+        rows.append(cells)
+    cw = [frame_w * 0.34, frame_w * 0.14, frame_w * 0.12, frame_w * 0.18, frame_w * 0.22] if show_prices else [frame_w * 0.60, frame_w * 0.22, frame_w * 0.18]
     table = Table(rows, colWidths=cw, repeatRows=1)
     pad = max(1.2, fs * 0.2) if half else max(2.5, fs * 0.45)
     table.setStyle(TableStyle([
@@ -238,21 +246,24 @@ def build_bon_enlevement(
     totals.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.9, LINE), ("INNERGRID", (0, 0), (-1, -1), 0.6, LINE), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
                                 ("FONTSIZE", (0, 0), (-1, -1), fs), ("ALIGN", (1, 0), (1, -1), "RIGHT"), ("TOPPADDING", (0, 0), (-1, -1), 1.2 if half else 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2 if half else 2.5)]))
     left_cell = []
+    if not show_prices:
+        left_cell.append(Paragraph("<b>Quantités à enlever</b> — prix non mentionnés.", base))
     if legal:
         left_cell.append(Paragraph(legal, small))
         left_cell.append(Spacer(1, 2 * mm))
-    left_cell.append(Paragraph("<b>Arrêté le présent bon d'enlèvement à la somme de :</b>", base))
-    left_cell.append(Paragraph(f"{amount_in_words(grand, currency)} ({format_money(grand, currency)})", base))
+    if show_prices:
+        left_cell.append(Paragraph("<b>Arrêté le présent bon d'enlèvement à la somme de :</b>", base))
+        left_cell.append(Paragraph(f"{amount_in_words(grand, currency)} ({format_money(grand, currency)})", base))
     methods = ", ".join(dict.fromkeys(str(p.method) for p in getattr(sale, "payments", []) if getattr(p, "method", "")))
-    right_cell = [totals]
-    if methods:
+    right_cell = [totals] if show_prices else []
+    if methods and show_prices:
         right_cell += [Spacer(1, 1.5 * mm), Paragraph(f"<b>Mode de règlement :</b> {methods}", base)]
     bottom_block = Table([[left_cell, right_cell]], colWidths=[frame_w * 0.54, frame_w * 0.46])
     bottom_block.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (0, 0), 6 * mm * k), ("RIGHTPADDING", (1, 0), (1, 0), 0)]))
     # Signatures : le nom du commercial (Paramètres) et celui du client (l'entreprise)
     # remplacent les libellés génériques ; sans nom connu on garde le libellé.
     commercial = _opt(SETTING_COMMERCIAL, overrides)
-    company = refs["name"] if (client_id and refs.get("name")) else ""
+    company = refs["name"] if ((client_id or getattr(sale, "is_pickup", False)) and refs.get("name")) else ""
     sign = Table([[Paragraph(f"<b>{commercial or 'Le Commercial'}</b>", base), Paragraph(f"<b>{company or 'Le client'}</b>", ParagraphStyle("c", parent=base, alignment=2))]], colWidths=[frame_w / 2, frame_w / 2])
     sign.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
     story.append(KeepTogether([bottom_block, Spacer(1, (5 if half else 8) * mm * k), sign]))
@@ -263,3 +274,33 @@ def build_bon_enlevement(
 
 def in_print_all() -> bool:
     return settings_service.get_setting("bon_in_all", "1").strip() == "1"
+
+
+def pickup_document(pickup_id: int):
+    """Objet « vente » minimal décrivant un enlèvement, pour ``build_bon_enlevement``."""
+    from types import SimpleNamespace as NS
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
+
+    from app.database.connection import session_scope
+    from app.models.pickup import Pickup
+
+    shop = settings_service.get_shop_info()
+    with session_scope() as session:
+        pk = session.execute(select(Pickup).options(joinedload(Pickup.items), joinedload(Pickup.supplier)).where(Pickup.id == pickup_id)).unique().scalar_one_or_none()
+        if pk is None:
+            raise ValueError("Enlèvement introuvable.")
+        items = [NS(product_name=i.product_name, product_id=i.product_id, quantity=float(i.quantity or 0), unit_price=float(i.unit_cost or 0), line_total=float(i.line_total or 0)) for i in pk.items]
+        return NS(
+            ticket_number=f"BE-{pk.number}", pickup_number=pk.number, date=pk.date, client_id=None, items=items, payments=[], is_pickup=True,
+            supplier_name=pk.supplier.name if pk.supplier else "", client_name=str(shop.name or ""), client_phone=str(shop.phone or ""),
+            client_address=str(shop.address or ""), client_email=str(shop.email or ""),
+        )
+
+
+def build_pickup_bon(pickup_id: int, path: Path | None = None, show_prices: Optional[bool] = None, fmt: str | None = None) -> Path:
+    """Bon d'enlèvement d'un enlèvement : émis par la société, adressé au fournisseur (qui signe)."""
+    doc = pickup_document(pickup_id)
+    overrides = {SETTING_COMMERCIAL: doc.supplier_name or _opt(SETTING_COMMERCIAL)}
+    return build_bon_enlevement(doc, path=path, overrides=overrides, show_prices=show_prices, fmt=fmt)

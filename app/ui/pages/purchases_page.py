@@ -1,7 +1,7 @@
 """Page des achats / réceptions fournisseurs."""
 from __future__ import annotations
 from app.i18n import t
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.product_controller import ProductController
 from app.controllers.supplier_controller import SupplierController
 from app.services import permissions as perms, settings_service
@@ -21,7 +21,15 @@ class PurchasesPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
-        layout.addWidget(page_title(t('Achats / Réceptions')))
+        title_row = QHBoxLayout()
+        title_row.addWidget(page_title(t('Achats / Réceptions')))
+        title_row.addStretch()
+        self.pickups_button = QPushButton(t("Enlèvements (bons d'enlèvement)"))
+        self.pickups_button.setObjectName('Primary')
+        self.pickups_button.setToolTip(t("Bon d'enlèvement chez le fournisseur, livraisons aux stations et suivi des écarts."))
+        self.pickups_button.clicked.connect(self._open_pickups)
+        title_row.addWidget(self.pickups_button)
+        layout.addLayout(title_row)
         form_w = QWidget()
         form = QFormLayout(form_w)
         self.supplier = QComboBox()
@@ -44,6 +52,11 @@ class PurchasesPage(QWidget):
         form.addRow(t('N° facture'), self.invoice)
         form.addRow(t('Produit'), self.product)
         form.addRow(t('Quantité'), self.qty)
+        self.use_catalog_cost = QCheckBox(t("Utiliser le prix d'achat du produit"))
+        self.use_catalog_cost.setChecked(True)
+        self.use_catalog_cost.toggled.connect(self._on_product_changed)
+        self.product.currentIndexChanged.connect(self._on_product_changed)
+        form.addRow('', self.use_catalog_cost)
         form.addRow(t('Coût unitaire'), self.cost)
         form.addRow(t('Nouveau prix de vente (après ancien stock)'), self.new_sale_price)
         form.addRow(t('Montant payé'), self.paid)
@@ -79,7 +92,21 @@ class PurchasesPage(QWidget):
         layout.addLayout(history_actions)
         self._apply_permissions()
 
+    def _open_pickups(self) -> None:
+        from app.ui.dialogs.pickups_dialog import PickupsDialog
+        PickupsDialog(self.state, self).exec()
+        self.refresh()
+
+    def _on_product_changed(self, *_args) -> None:
+        """Prix d'achat prérempli (modifiable si la case est décochée)."""
+        use = self.use_catalog_cost.isChecked()
+        self.cost.setEnabled(not use)
+        if use:
+            self.cost.setValue(getattr(self, '_product_costs', {}).get(self.product.currentData(), 0.0))
+
     def _apply_permissions(self) -> None:
+        from app.services.business_mode import is_enterprise
+        self.pickups_button.setVisible(is_enterprise() and self.state.can(perms.MANAGE_PURCHASES))
         self.cancel_purchase_button.setVisible(self.state.can(perms.MANAGE_PURCHASES))
 
     def refresh(self) -> None:
@@ -97,6 +124,7 @@ class PurchasesPage(QWidget):
             self.product.addItem(p.name, p.id)
             self._product_costs[p.id] = float(p.purchase_price)
         self.product.blockSignals(False)
+        self._on_product_changed()
         self._reload_history()
 
     def _add_line(self) -> None:

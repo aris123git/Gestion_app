@@ -480,8 +480,6 @@ class SettingsPage(QWidget):
         form.addRow(t('Modèle et couleur de la facture'), self.invoice_style)
         form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
-        form.addRow(t("Bon d'enlèvement"), self.bon_enabled)
-        form.addRow('', self.bon_in_all)
         form.addRow(t('Bon de livraison'), self.bl_enabled)
         form.addRow('', self.bl_in_all)
         form.addRow(t('Modèle du bon de livraison'), self.bl_style)
@@ -499,7 +497,7 @@ class SettingsPage(QWidget):
         form.addRow('', self.invoice_show_legal)
         form.addRow('', self.invoice_show_bank)
         form.addRow('', self.bl_show_bank)
-        self._enterprise_rows = [self.bon_enabled, self.bon_in_all, self.bon_legal, ac_row]
+        self._enterprise_rows = [self.bon_legal, ac_row]
         self._invoice_form = form
         self.shop_type.currentTextChanged.connect(self._apply_enterprise_visibility)
         outer.addWidget(make_card(form_widget))

@@ -81,7 +81,7 @@ class BonTestCase(unittest.TestCase):
 
     def test_dialog_buttons_print_selected(self) -> None:
         settings_service.save_shop_info(shop_type="Entreprise")
-        settings_service.set_setting(be.SETTING_ENABLED, "1")
+        settings_service.set_setting("bl_enabled", "1")  # le bon d'enlèvement n'est plus dans la fenêtre de vente
         from app.printers import half_a4_invoice as h
         from app.printers.thermal_printer import PrintResult
         from app.ui.dialogs.ticket_dialog import TicketDialog
@@ -101,7 +101,8 @@ class BonTestCase(unittest.TestCase):
             dialog._print_all()
         finally:
             h.print_half_a4_invoice = original
-        self.assertEqual(len(calls), 2)          # facture + bon
+        self.assertEqual(len(calls), 2)          # facture + bon de livraison
+        self.assertIsNone(dialog.print_bon_button)
         self.assertIsNone(calls[0])              # la facture est générée par l'imprimante
         self.assertTrue(str(calls[1]).endswith(".pdf"))
 

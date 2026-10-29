@@ -105,7 +105,8 @@ class TicketDialog(QDialog):
         self.bon_list = None
         self.print_bon_button = None
         self.print_bl_button = None
-        self._bon_on = bon_enlevement.is_enabled()
+        # Le bon d'enlèvement se fait désormais dans Achats → Enlèvements (avant les ventes) : ici, seulement le bon de livraison.
+        self._bon_on = False
         self._bl_on = delivery_note.is_enabled()
         if not (self._bon_on or self._bl_on) or not list(getattr(self.sale, 'items', []) or []):
             return
