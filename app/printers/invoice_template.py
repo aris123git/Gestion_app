@@ -125,6 +125,13 @@ class _Pen:
 # ── Données communes ─────────────────────────────────────────────────────────
 
 
+def _vat_text(vat: float, currency: str) -> str:
+    from app.printers.invoice_a4 import show_legal
+    from app.utils.helpers import format_money
+
+    return format_money(vat, currency) if vat and show_legal() else ""
+
+
 def _context(sale, shop):
     from app.printers.invoice_a4 import _vat_included, amount_in_words
 
@@ -166,7 +173,7 @@ def _context(sale, shop):
         "logo": logo if logo.is_file() else None,
         "subtotal": format_money(sale.subtotal, currency),
         "discount": format_money(sale.discount, currency) if float(sale.discount or 0) > 0 else "",
-        "vat": "",  # TVA incluse dans le prix : non affichée sur la facture
+        "vat": _vat_text(vat, currency),  # affichée seulement si l'option « TVA et mentions légales » est cochée
         "vat_label": (f"TVA {rate:g} %" if rate else "dont TVA"),
         "total": format_money(sale.total, currency),
         "words": amount_in_words(float(sale.total or 0), currency),

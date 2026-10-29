@@ -405,6 +405,7 @@ class SettingsPage(QWidget):
         self.shop_bank = QLineEdit()
         self.shop_bank.setPlaceholderText(t('Numéro de compte'))
         self.shop_bank_name = QLineEdit()
+        self.invoice_show_legal = QCheckBox(t('Afficher la TVA incluse et les mentions légales (RCCM, IFU) sur la facture'))
         self.invoice_show_bank = QCheckBox(t('Afficher la banque et le compte sur la facture'))
         self.bl_show_bank = QCheckBox(t('Afficher la banque et le compte sur le bon de livraison'))
         self.shop_bank_name.setPlaceholderText(t('Nom de la banque'))
@@ -495,6 +496,7 @@ class SettingsPage(QWidget):
         form.addRow(t('N° IFU (pied du bon)'), self.shop_ifu)
         form.addRow(t('Banque (pied du bon)'), self.shop_bank_name)
         form.addRow(t('Numéro de compte (pied du bon)'), self.shop_bank)
+        form.addRow('', self.invoice_show_legal)
         form.addRow('', self.invoice_show_bank)
         form.addRow('', self.bl_show_bank)
         self._enterprise_rows = [self.bon_enabled, self.bon_in_all, self.bon_legal, ac_row]
@@ -1097,6 +1099,7 @@ class SettingsPage(QWidget):
         settings_service.set_setting('shop_ifu', self.shop_ifu.text().strip())
         settings_service.set_setting('shop_bank_account', self.shop_bank.text().strip())
         settings_service.set_setting('shop_bank_name', self.shop_bank_name.text().strip())
+        settings_service.set_setting('invoice_show_legal', '1' if self.invoice_show_legal.isChecked() else '0')
         settings_service.set_setting('invoice_show_bank', '1' if self.invoice_show_bank.isChecked() else '0')
         settings_service.set_setting('bl_show_bank', '1' if self.bl_show_bank.isChecked() else '0')
         settings_service.set_setting('ticket_feed_lines', str(self.feed_lines.value()))
@@ -1729,6 +1732,7 @@ class SettingsPage(QWidget):
         self.shop_ifu.setText(settings_service.get_setting(_be.SETTING_IFU, ''))
         self.shop_bank.setText(settings_service.get_setting(_be.SETTING_BANK, ''))
         self.shop_bank_name.setText(settings_service.get_setting(_be.SETTING_BANK_NAME, ''))
+        self.invoice_show_legal.setChecked(settings_service.get_setting('invoice_show_legal', '0') == '1')
         self.invoice_show_bank.setChecked(settings_service.get_setting('invoice_show_bank', '1') == '1')
         self.bl_show_bank.setChecked(settings_service.get_setting('bl_show_bank', '1') == '1')
         from app.printers.invoice_a4 import get_format

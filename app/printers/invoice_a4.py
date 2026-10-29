@@ -520,9 +520,25 @@ def bank_text(setting: str = SETTING_SHOW_BANK) -> str:
     return "  ·  ".join(p for p in parts if p)
 
 
+SETTING_SHOW_LEGAL = "invoice_show_legal"
+
+
+def show_legal() -> bool:
+    """TVA incluse + RCCM / IFU sur la facture (désactivé par défaut)."""
+    return settings_service.get_setting(SETTING_SHOW_LEGAL, "0").strip() == "1"
+
+
+def legal_text() -> str:
+    if not show_legal():
+        return ""
+    rccm = settings_service.get_setting("shop_rccm", "").strip()
+    ifu = settings_service.get_setting("shop_ifu", "").strip()
+    return "  ·  ".join(p for p in (f"RCCM : {rccm}" if rccm else "", f"IFU : {ifu}" if ifu else "") if p)
+
+
 def footer_with_bank(footer: str) -> str:
-    bank = bank_text()
-    return f"{footer}  ·  {bank}" if footer and bank else (bank or footer)
+    extra = "  ·  ".join(p for p in (legal_text(), bank_text()) if p)
+    return f"{footer}  ·  {extra}" if footer and extra else (extra or footer)
 
 
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
@@ -694,6 +710,8 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     rate, vat_amount = _vat_included(sale, items)
     total_label_row = len(totals)
     totals.append(["TOTAL", format_money(sale.total, currency)])
+    if vat_amount > 0 and show_legal():
+        totals.append([f"dont TVA {rate:g} %" if rate else "dont TVA", format_money(vat_amount, currency)])
     if float(sale.amount_received or 0) > 0:
         totals.append(["Reçu", format_money(sale.amount_received, currency)])
         totals.append(["Monnaie rendue", format_money(sale.change_due, currency)])
