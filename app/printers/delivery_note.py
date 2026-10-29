@@ -72,7 +72,9 @@ def get_style(style_id: str | None = None) -> DeliveryStyle:
 
 
 def is_enabled() -> bool:
-    return settings_service.get_setting(SETTING_ENABLED, "0").strip() == "1"
+    from app.services.business_mode import is_enterprise
+
+    return is_enterprise() and settings_service.get_setting(SETTING_ENABLED, "0").strip() == "1"
 
 
 def in_print_all() -> bool:

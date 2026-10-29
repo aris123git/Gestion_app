@@ -497,6 +497,10 @@ class SettingsPage(QWidget):
         form.addRow(t('Numéro de compte (pied du bon)'), self.shop_bank)
         form.addRow('', self.invoice_show_bank)
         form.addRow('', self.bl_show_bank)
+        self._enterprise_rows = [self.bon_enabled, self.bon_in_all, self.bl_enabled, self.bl_in_all, self.bl_style, self.bl_legal, self.bon_legal, ac_row,
+                                 self.bon_commercial, self.shop_rccm, self.shop_ifu, self.bl_show_bank]
+        self._invoice_form = form
+        self.shop_type.currentTextChanged.connect(self._apply_enterprise_visibility)
         outer.addWidget(make_card(form_widget))
         hint = QLabel(t("La facture remplit la page : A4 entier, ou A4 coupé en deux (210 × 148,5 mm). Le nom, l'adresse, le téléphone, l'e-mail et le logo viennent de l'onglet <b>Commerce</b> ; le message de bas de page est le <b>Message du ticket</b> (onglet Apparence du ticket). Le type par défaut (ticket ou facture) se règle dans l'onglet Apparence du ticket."))
         hint.setWordWrap(True)
@@ -510,6 +514,7 @@ class SettingsPage(QWidget):
         preview.setToolTip(t('Ouvre un exemple de facture avec le modèle, la couleur et la police choisis.'))
         preview.clicked.connect(self._preview_invoice)
         bon_preview = QPushButton(t("Aperçu du bon d'enlèvement"))
+        self._enterprise_buttons = [bon_preview]
         bon_preview.clicked.connect(self._preview_bon)
         actions.addWidget(save)
         actions.addWidget(preview)
@@ -517,6 +522,8 @@ class SettingsPage(QWidget):
         bl_preview = QPushButton(t('Aperçu du bon de livraison'))
         bl_preview.clicked.connect(self._preview_bl)
         actions.addWidget(bl_preview)
+        self._enterprise_buttons.append(bl_preview)
+        self._apply_enterprise_visibility()
         actions.addStretch()
         outer.addLayout(actions)
         outer.addStretch()
@@ -540,6 +547,15 @@ class SettingsPage(QWidget):
         if fix is not None and box.clickedButton() is fix:
             n = integrity_service.repair_client_balances()
             info(self, f'{n} solde(s) client corrigé(s).', t("Contrôle d'intégrité"))
+
+    def _apply_enterprise_visibility(self, *_args) -> None:
+        """Bons d'enlèvement / de livraison : réglages visibles seulement pour le type « Entreprise »."""
+        from app.services.business_mode import is_enterprise_type
+        show = is_enterprise_type(self.shop_type.currentText())
+        for row in getattr(self, '_enterprise_rows', []):
+            self._invoice_form.setRowVisible(row, show)
+        for button in getattr(self, '_enterprise_buttons', []):
+            button.setVisible(show)
 
     def _preview_bl(self) -> None:
         """Exemple de bon de livraison avec le modèle choisi (sans enregistrer)."""

@@ -42,7 +42,9 @@ LINE = colors.HexColor("#111827")
 
 
 def is_enabled() -> bool:
-    return settings_service.get_setting(SETTING_ENABLED, "0").strip() == "1"
+    from app.services.business_mode import is_enterprise
+
+    return is_enterprise() and settings_service.get_setting(SETTING_ENABLED, "0").strip() == "1"
 
 
 def _opt(key: str, overrides: Optional[dict] = None, default: str = "") -> str:

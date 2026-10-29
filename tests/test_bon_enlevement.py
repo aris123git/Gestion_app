@@ -80,6 +80,7 @@ class BonTestCase(unittest.TestCase):
         self.assertIn("TOTAL GÉNÉRAL", text)
 
     def test_dialog_buttons_print_selected(self) -> None:
+        settings_service.save_shop_info(shop_type="Entreprise")
         settings_service.set_setting(be.SETTING_ENABLED, "1")
         from app.printers import half_a4_invoice as h
         from app.printers.thermal_printer import PrintResult

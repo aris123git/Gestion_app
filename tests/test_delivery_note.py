@@ -58,6 +58,8 @@ class DeliveryNoteTests(unittest.TestCase):
     def test_toggles(self):
         self.assertFalse(dn.is_enabled())
         settings_service.set_setting(dn.SETTING_ENABLED, "1")
+        self.assertFalse(dn.is_enabled())  # une boutique n'a pas les bons, même si le réglage est à 1
+        settings_service.save_shop_info(shop_type="Entreprise")
         self.assertTrue(dn.is_enabled())
         self.assertTrue(dn.in_print_all())
         settings_service.set_setting(dn.SETTING_IN_ALL, "0")

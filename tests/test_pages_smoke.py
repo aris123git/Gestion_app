@@ -45,3 +45,20 @@ class PagesSmokeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnterpriseVisibilityTests(unittest.TestCase):
+    def test_bon_settings_only_for_enterprise(self):
+        from app.ui.pages.settings_page import SettingsPage
+        from app.ui.state import AppState
+        app = QApplication.instance() or QApplication([])
+        init_database(); seed_all()
+        state = AppState(); state.auth.login("admin", "admin")
+        page = SettingsPage(state)
+        page.show()
+        page.shop_type.setCurrentText("Boutique")
+        self.assertTrue(page.bon_enabled.isHidden())
+        self.assertTrue(page.bl_enabled.isHidden())
+        page.shop_type.setCurrentText("Entreprise")
+        self.assertFalse(page.bon_enabled.isHidden())
+        self.assertFalse(page.bl_enabled.isHidden())
