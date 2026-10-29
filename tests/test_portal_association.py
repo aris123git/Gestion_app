@@ -113,6 +113,10 @@ class PortalAssociationTestCase(unittest.TestCase):
             json.dumps({"password_hash": self.portal_main._hash_key("bureau-secret")}),
             encoding="utf-8",
         )
+        # Repartir d'un portail vide : les autres tests (ou une base partagée) ont pu y enregistrer des boutiques.
+        for other in self.portal_data.glob("*.json"):
+            if other.name != "_bureau.json":
+                other.unlink()
         # Seed two shops with snapshots
         for eid, name, ca in (
             ("ENT-A", "Magasin A", 1000),
