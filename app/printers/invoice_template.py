@@ -171,7 +171,7 @@ def _context(sale, shop):
         "total": format_money(sale.total, currency),
         "words": amount_in_words(float(sale.total or 0), currency),
         "payments": payments,
-        "footer": str(shop.ticket_footer or ""),
+        "footer": _footer_text(shop),
     }
 
 
@@ -380,6 +380,12 @@ def _cashier_name(sale) -> str:
     except Exception:
         name = ""
     return "" if name == "—" else str(name)
+
+
+def _footer_text(shop) -> str:
+    from app.printers.invoice_a4 import footer_with_bank
+
+    return footer_with_bank(str(shop.ticket_footer or ""))
 
 
 def build_template_invoice(sale, shop, path: Path, style_id: str, font_size: int) -> Path:

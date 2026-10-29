@@ -390,7 +390,7 @@ def _decor_vagues(canvas, ctx):
     lines = _contact_lines(shop)
     canvas.drawString(MARGIN, 8.5 * mm, "  ·  ".join(lines)[:110])
     canvas.setFont("Helvetica-Oblique", 9)
-    canvas.drawRightString(PAGE_W - MARGIN, 8.5 * mm, ctx["footer"][:60])
+    canvas.drawRightString(PAGE_W - MARGIN, 8.5 * mm, ctx["footer"][:110])
 
 
 def _decor_moderne(canvas, ctx):
@@ -507,6 +507,24 @@ _ZONES = {
 # ── Construction du PDF ──────────────────────────────────────────────────────
 
 
+SETTING_SHOW_BANK = "invoice_show_bank"
+
+
+def bank_text(setting: str = SETTING_SHOW_BANK) -> str:
+    """« Banque : X — Compte : Y » si l'option ``setting`` est active (défaut : oui) et si renseigné."""
+    if settings_service.get_setting(setting, "1").strip() != "1":
+        return ""
+    name = settings_service.get_setting("shop_bank_name", "").strip()
+    number = settings_service.get_setting("shop_bank_account", "").strip()
+    parts = [f"Banque : {name}" if name else "", f"Compte : {number}" if number else ""]
+    return "  ·  ".join(p for p in parts if p)
+
+
+def footer_with_bank(footer: str) -> str:
+    bank = bank_text()
+    return f"{footer}  ·  {bank}" if footer and bank else (bank or footer)
+
+
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
                      style_id: str | None = None, font_size: int | None = None,
                      fmt: str | None = None, fill_empty: bool | None = None) -> Path:
@@ -541,7 +559,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
 
     number = invoice_number(sale)
     moment = sale.date or datetime.now()
-    footer = str(shop.ticket_footer or "Merci pour votre confiance.")
+    footer = footer_with_bank(str(shop.ticket_footer or "Merci pour votre confiance."))
     ctx = {"style": style, "shop": shop, "number": number, "footer": footer}
     top_mm, bottom_mm = (z * k for z in _ZONES[style.layout])
     decor = _DECORS[style.layout]

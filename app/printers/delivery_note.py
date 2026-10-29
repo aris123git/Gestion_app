@@ -143,6 +143,15 @@ class Ctx:
     fs: int
 
 
+SETTING_SHOW_BANK = "bl_show_bank"
+
+
+def _show_bank(overrides=None) -> bool:
+    from app.printers.bon_enlevement import _opt
+
+    return _opt(SETTING_SHOW_BANK, overrides, "1") == "1"
+
+
 def _build_ctx(sale, shop, selected, style_id, overrides, font_size) -> Ctx:
     from app.printers.bon_enlevement import _opt
 
@@ -174,7 +183,7 @@ def _build_ctx(sale, shop, selected, style_id, overrides, font_size) -> Ctx:
         client_no=f"{int(client_id):05d}" if client_id else "", commercial=_opt(SETTING_COMMERCIAL, overrides),
         place=place, info_msg=str(getattr(shop, "ticket_footer", "") or "").strip(),
         legal=_opt(SETTING_LEGAL, overrides), rccm=_opt("shop_rccm", overrides), ifu=_opt("shop_ifu", overrides),
-        bank=_opt("shop_bank_account", overrides), bank_name=_opt("shop_bank_name", overrides), logo=logo if logo.is_file() else None, rows=rows, total=total,
+        bank=_opt("shop_bank_account", overrides) if _show_bank(overrides) else "", bank_name=_opt("shop_bank_name", overrides) if _show_bank(overrides) else "", logo=logo if logo.is_file() else None, rows=rows, total=total,
         fs=max(7, min(13, int(font_size or get_font_size()) - 1)),
     )
 
