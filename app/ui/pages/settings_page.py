@@ -497,8 +497,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Numéro de compte (pied du bon)'), self.shop_bank)
         form.addRow('', self.invoice_show_bank)
         form.addRow('', self.bl_show_bank)
-        self._enterprise_rows = [self.bon_enabled, self.bon_in_all, self.bl_enabled, self.bl_in_all, self.bl_style, self.bl_legal, self.bon_legal, ac_row,
-                                 self.bon_commercial, self.shop_rccm, self.shop_ifu, self.bl_show_bank]
+        self._enterprise_rows = [self.bon_enabled, self.bon_in_all, self.bon_legal, ac_row]
         self._invoice_form = form
         self.shop_type.currentTextChanged.connect(self._apply_enterprise_visibility)
         outer.addWidget(make_card(form_widget))
@@ -522,7 +521,6 @@ class SettingsPage(QWidget):
         bl_preview = QPushButton(t('Aperçu du bon de livraison'))
         bl_preview.clicked.connect(self._preview_bl)
         actions.addWidget(bl_preview)
-        self._enterprise_buttons.append(bl_preview)
         self._apply_enterprise_visibility()
         actions.addStretch()
         outer.addLayout(actions)

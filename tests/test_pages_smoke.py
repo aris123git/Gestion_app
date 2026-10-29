@@ -58,7 +58,7 @@ class EnterpriseVisibilityTests(unittest.TestCase):
         page.show()
         page.shop_type.setCurrentText("Boutique")
         self.assertTrue(page.bon_enabled.isHidden())
-        self.assertTrue(page.bl_enabled.isHidden())
+        self.assertFalse(page.bl_enabled.isHidden())  # le bon de livraison reste pour tous
         page.shop_type.setCurrentText("Entreprise")
         self.assertFalse(page.bon_enabled.isHidden())
         self.assertFalse(page.bl_enabled.isHidden())
