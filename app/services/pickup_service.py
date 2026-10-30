@@ -229,9 +229,19 @@ BEARER_CLIENT = "client"
 BEARER_COMPANY = "company"
 
 
+SETTING_ALLOW_BILLING = "pickup_allow_billing"
+
+
+def billing_allowed() -> bool:
+    """Facturer les pertes aux stations : désactivé par défaut, à activer dans Paramètres."""
+    return settings_service.get_setting(SETTING_ALLOW_BILLING, "0") == "1"
+
+
 def default_bearer() -> str:
     """Traitement de l'écart (réglage) : information seulement par défaut."""
     value = settings_service.get_setting("pickup_loss_bearer", BEARER_INFO).strip()
+    if value == BEARER_CLIENT and not billing_allowed():
+        return BEARER_INFO
     return value if value in (BEARER_INFO, BEARER_CLIENT, BEARER_COMPANY) else BEARER_INFO
 
 
@@ -305,6 +315,8 @@ def close(pickup_id: int, reason: str, *, bearer: Optional[str] = None, user_id:
 
     reason = (reason or "").strip() or "Écart"
     bearer = bearer or default_bearer()
+    if bearer == BEARER_CLIENT and not billing_allowed():
+        raise ValueError("La facturation des pertes aux stations n'est pas activée (Paramètres).")
     with session_scope() as session:
         pickup = session.get(Pickup, pickup_id)
         if pickup is None:

@@ -356,7 +356,8 @@ class ClosePickupDialog(QDialog):
         form.addRow(t('Motif de l’écart'), self.reason)
         self.bearer = QComboBox()
         self.bearer.addItem(t("Information seulement (rien n'est facturé ni débité)"), ps.BEARER_INFO)
-        self.bearer.addItem(t('Le client (facturée aux stations au prorata)'), ps.BEARER_CLIENT)
+        if ps.billing_allowed():
+            self.bearer.addItem(t('Le client (facturée aux stations au prorata)'), ps.BEARER_CLIENT)
         self.bearer.addItem(t("L'entreprise (charge, rien n'est facturé)"), ps.BEARER_COMPANY)
         self.bearer.setCurrentIndex(max(0, self.bearer.findData(ps.default_bearer())))
         form.addRow(t('Traitement de l’écart'), self.bearer)

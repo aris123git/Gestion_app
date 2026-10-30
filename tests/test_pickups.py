@@ -15,7 +15,7 @@ from app.database.connection import engine, init_database, session_scope  # noqa
 from app.database.seed import seed_all  # noqa: E402
 from app.models.product import Product  # noqa: E402
 from app.models.stock import StockMovement  # noqa: E402
-from app.services import accounting_service, integrity_service, pickup_service as ps  # noqa: E402
+from app.services import accounting_service, integrity_service, pickup_service as ps, settings_service  # noqa: E402
 
 
 class PickupTests(unittest.TestCase):
@@ -90,6 +90,7 @@ class PickupTests(unittest.TestCase):
         self.assertEqual(unbillable, [])
         self.assertEqual(round(sum(x.quantity for x in shares), 3), 10)
         self.assertEqual({x.client_id: x.unit_price for x in shares}, {self.client: 800, self.client2: 800})
+        settings_service.set_setting("pickup_allow_billing", "1")
         company_loss = ps.close(pid, "Évaporation", bearer="client")
         self.assertEqual(company_loss, 0)
         with session_scope() as s:
@@ -122,12 +123,24 @@ class PickupTests(unittest.TestCase):
         entries = accounting_service.generate_entries(date.today())
         self.assertFalse(any(e.label.startswith(f"Perte sur enlèvement {number}") for e in entries))   # aucune écriture
 
+    def test_billing_disabled_by_default_and_blocked(self):
+        settings_service.set_setting("pickup_allow_billing", "0")
+        settings_service.set_setting("pickup_loss_bearer", "client")
+        self.assertFalse(ps.billing_allowed())
+        self.assertEqual(ps.default_bearer(), "info")
+        ProductController.update(self.product, {"sell_without_stock": True})
+        pid = ps.create([ps.PickupLine(self.product, 5, 700)], supplier_id=self.supplier)
+        ps.validate(pid)
+        with self.assertRaises(ValueError):
+            ps.close(pid, "Évaporation", bearer="client")
+
     def test_loss_without_any_client_stays_with_company(self):
         ProductController.update(self.product, {"sell_without_stock": True})
         pid = ps.create([ps.PickupLine(self.product, 50, 700)], supplier_id=self.supplier)
         ps.validate(pid)
         shares, unbillable = ps.loss_allocation(pid)
         self.assertEqual((shares, round(unbillable[0][1], 3)), ([], 50))
+        settings_service.set_setting("pickup_allow_billing", "1")
         self.assertEqual(ps.close(pid, "Évaporation", bearer="client"), 50 * 700)
 
     def test_deliver_before_validation_without_stock(self):

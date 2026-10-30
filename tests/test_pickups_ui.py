@@ -66,6 +66,12 @@ class PickupUiTests(unittest.TestCase):
         dlg._reload()
         dlg.table.selectRow(0)
         self.assertEqual(dlg.table.item(0, 6).text(), "40")
+        from app.services import settings_service
+        settings_service.set_setting("pickup_loss_bearer", "info")
+        settings_service.set_setting("pickup_allow_billing", "0")
+        c0 = pd.ClosePickupDialog(None, ps.remaining(pid), pid)
+        self.assertEqual(c0.bearer.findData("client"), -1)     # option masquée tant qu'elle n'est pas activée
+        settings_service.set_setting("pickup_allow_billing", "1")
         c = pd.ClosePickupDialog(None, ps.remaining(pid), pid)
         c.reason.setCurrentIndex(0)
         self.assertEqual(c.bearer.currentData(), "info")       # par défaut : écart noté pour information
