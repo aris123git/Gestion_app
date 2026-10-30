@@ -60,16 +60,14 @@ jobs:
         shell: pwsh
         run: |
           $v = (Select-String -Path app/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
-          Copy-Item dist/GestionCommerciale.exe "dist/GestionCommerciale-v$v.exe"
+          Move-Item dist/GestionCommerciale.exe "dist/GestionCommerciale-v$v.exe"
           "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Publier GestionCommerciale.exe
         uses: actions/upload-artifact@v4
         with:
           name: GestionCommerciale-Windows
-          path: |
-            dist/GestionCommerciale.exe
-            dist/GestionCommerciale-v*.exe
+          path: dist/GestionCommerciale-v*.exe
           if-no-files-found: error
 
       - name: Publier une release (étiquette v*)
