@@ -8,6 +8,7 @@ os.environ["GESTION_DATA_DIR"] = _D
 os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from pdf_text import pdf_text  # noqa: E402
 from app import config  # noqa: E402
 from app.database.connection import engine, init_database  # noqa: E402
 from app.database.seed import seed_all  # noqa: E402
@@ -16,7 +17,7 @@ from app.services import settings_service  # noqa: E402
 
 
 def _text(path):
-    return subprocess.run(["pdftotext", str(path), "-"], capture_output=True, text=True).stdout
+    return pdf_text(path)
 
 
 class LegalTests(unittest.TestCase):

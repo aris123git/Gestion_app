@@ -7,6 +7,7 @@ os.environ["GESTION_DATA_DIR"] = _D
 os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from pdf_text import pdf_text  # noqa: E402
 from app.controllers.client_controller import ClientController  # noqa: E402
 from app.controllers.product_controller import ProductController  # noqa: E402
 from app.controllers.sale_controller import CartLine, PaymentLine, SaleController  # noqa: E402
@@ -181,7 +182,7 @@ class PickupTests(unittest.TestCase):
         from app import config
         for prices in (True, False):
             p = be.build_pickup_bon(pid, path=config.TICKET_DIR / f"pk_{prices}.pdf", show_prices=prices)
-            text = subprocess.run(["pdftotext", str(p), "-"], capture_output=True, text=True).stdout
+            text = pdf_text(p)
             self.assertIn("SONABHY PDF", text)
             self.assertIn("Super95X", text)
             self.assertEqual("P. TOTAL" in text, prices)

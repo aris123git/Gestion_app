@@ -16,6 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+from pdf_text import pdf_text  # noqa: E402
 from app import config  # noqa: E402
 from app.database.connection import engine, init_database  # noqa: E402
 from app.database.seed import seed_all  # noqa: E402
@@ -42,9 +43,8 @@ class BonTestCase(unittest.TestCase):
         shutil.rmtree(config.DATA_DIR, ignore_errors=True)
 
     def _text(self, path):
-        import fitz
 
-        return "".join(p.get_text() for p in fitz.open(str(path)))
+        return pdf_text(path)
 
     def test_only_selected_products(self) -> None:
         path = be.build_bon_enlevement(_sale(), path=config.TICKET_DIR / "a.pdf", selected=[1])

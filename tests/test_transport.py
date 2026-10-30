@@ -7,6 +7,7 @@ os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
+from pdf_text import pdf_text  # noqa: E402
 from app import config  # noqa: E402
 from app.controllers.product_controller import ProductController  # noqa: E402
 from app.controllers.sale_controller import CartLine, PaymentLine, SaleController  # noqa: E402
@@ -46,7 +47,7 @@ class TransportTests(unittest.TestCase):
         from app.printers import delivery_note as dn, invoice_a4 as ia
         sale = SaleController.get(res.sale_id)
         for path in (ia.build_invoice_a4(sale, path=config.TICKET_DIR / "t_inv.pdf"), dn.build_delivery_note(sale, path=config.TICKET_DIR / "t_bl.pdf")):
-            text = subprocess.run(["pdftotext", str(path), "-"], capture_output=True, text=True).stdout
+            text = pdf_text(path)
             self.assertNotIn("9999", text); self.assertNotIn("Sawadogo Issa", text)
 
     def test_ticket_dialog_selects_and_saves(self):
