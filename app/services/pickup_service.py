@@ -89,10 +89,10 @@ def _fill_items(session, pickup: Pickup, lines: List[PickupLine]) -> None:
 
 
 def create(lines: List[PickupLine], *, supplier_id: Optional[int] = None, note: str = "", user_id: Optional[int] = None,
-           driver: str = "", truck: str = "", reference: str = "", tax_rate: float = 0.0) -> int:
+           driver: str = "", truck: str = "", reference: str = "", tax_rate: float = 0.0, tax_label: str = "") -> int:
     with session_scope() as session:
         pickup = Pickup(number=_next_number(session), supplier_id=supplier_id, note=(note or "").strip(), user_id=user_id, status=STATUS_DRAFT,
-                        tax_rate=max(0.0, to_float(tax_rate)),
+                        tax_rate=max(0.0, to_float(tax_rate)), tax_label=(tax_label or "").strip() or default_tax_label(),
                         driver=(driver or "").strip(), truck=(truck or "").strip(), reference=(reference or "").strip())
         session.add(pickup)
         session.flush()
@@ -101,7 +101,7 @@ def create(lines: List[PickupLine], *, supplier_id: Optional[int] = None, note: 
 
 
 def update_draft(pickup_id: int, lines: List[PickupLine], *, supplier_id: Optional[int], note: str = "",
-                 driver: str = "", truck: str = "", reference: str = "", tax_rate: float = 0.0) -> None:
+                 driver: str = "", truck: str = "", reference: str = "", tax_rate: float = 0.0, tax_label: str = "") -> None:
     with session_scope() as session:
         pickup = session.get(Pickup, pickup_id)
         if pickup is None:
@@ -110,6 +110,7 @@ def update_draft(pickup_id: int, lines: List[PickupLine], *, supplier_id: Option
             raise ValueError("Un enlèvement validé ne peut plus être modifié.")
         pickup.supplier_id = supplier_id
         pickup.tax_rate = max(0.0, to_float(tax_rate))
+        pickup.tax_label = (tax_label or "").strip() or default_tax_label()
         pickup.note = (note or "").strip()
         pickup.driver, pickup.truck, pickup.reference = (driver or "").strip(), (truck or "").strip(), (reference or "").strip()
         _fill_items(session, pickup, lines)
@@ -150,6 +151,29 @@ def store_signed_file(pickup_id: int, source: str | Path) -> str:
         shutil.copy2(source, target)
         pickup.signed_file = str(target)
     return str(target)
+
+
+TAX_TYPES = ["BIC", "TVA", "TPA", "IRF", "Autre taxe"]
+SETTING_TAX_LABEL = "pickup_tax_label"
+SETTING_TAX_RATE = "pickup_tax_rate"
+
+
+def default_tax_label() -> str:
+    """Type de taxe du bon d'enlèvement (réglage) : BIC par défaut, au lieu de la TVA."""
+    return settings_service.get_setting(SETTING_TAX_LABEL, "BIC").strip() or "BIC"
+
+
+def default_tax_rate() -> float:
+    try:
+        return max(0.0, float(settings_service.get_setting(SETTING_TAX_RATE, "0").replace(",", ".") or 0))
+    except ValueError:
+        return 0.0
+
+
+def tax_label_of(pickup_id: int) -> str:
+    with session_scope() as session:
+        pickup = session.get(Pickup, pickup_id)
+        return ((pickup.tax_label if pickup else "") or default_tax_label())
 
 
 def amount_due(pickup_id: int) -> tuple[float, float, float]:

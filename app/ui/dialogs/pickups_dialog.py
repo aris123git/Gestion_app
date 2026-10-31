@@ -54,7 +54,7 @@ class PickupEditDialog(QDialog):
         self.supplier_id = None
         self.note_text = ""
         self.driver_text = self.truck_text = self.reference_text = ""
-        self.tax_rate = 0.0
+        self.tax_rate, self.tax_label = 0.0, ''
         self._products = ProductController.list()
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -74,13 +74,19 @@ class PickupEditDialog(QDialog):
         form.addRow(t('Référence'), self.reference)
         form.addRow(t('Note'), self.note)
         layout.addLayout(form)
+        self.tax_type = QComboBox()
+        self.tax_type.setEditable(True)
+        self.tax_type.addItems(ps.TAX_TYPES)
+        self.tax_type.setCurrentText(ps.default_tax_label())
+        self.tax_type.currentTextChanged.connect(lambda _=0: self._recalc())
+        form.addRow(t('Type de taxe'), self.tax_type)
         self.tax = QDoubleSpinBox()
         self.tax.setRange(0, 100)
         self.tax.setDecimals(2)
         self.tax.setSuffix(' %')
-        self.tax.setValue(settings_service.get_vat_rate())
+        self.tax.setValue(ps.default_tax_rate())
         self.tax.valueChanged.connect(lambda _=0: self._recalc())
-        form.addRow(t('Taxe (%)'), self.tax)
+        form.addRow(t('Taux de la taxe (%)'), self.tax)
         self.use_catalog_cost = QCheckBox(t("Utiliser le prix d'achat du produit"))
         self.use_catalog_cost.setChecked(True)
         self.use_catalog_cost.toggled.connect(self._cost_mode_changed)
@@ -167,7 +173,7 @@ class PickupEditDialog(QDialog):
         cur = settings_service.get_currency()
         tax = round(total * self.tax.value() / 100, 2)
         self.total_label.setText(
-            f"{t('Total')} : {format_money(total, cur)} &nbsp; {t('Taxe')} ({self.tax.value():g} %) : {format_money(tax, cur)} &nbsp; "
+            f"{t('Total')} : {format_money(total, cur)} &nbsp; {self.tax_type.currentText() or t('Taxe')} ({self.tax.value():g} %) : {format_money(tax, cur)} &nbsp; "
             f"<b>{t('Montant à payer')} : {format_money(total + tax, cur)}</b>")
 
     def _load(self, pickup_id: int) -> None:
@@ -185,6 +191,7 @@ class PickupEditDialog(QDialog):
             self.truck.setCurrentText(pk.truck or '')
             self.reference.setText(pk.reference or '')
             self.tax.setValue(float(pk.tax_rate or 0))
+            self.tax_type.setCurrentText(pk.tax_label or ps.default_tax_label())
             items = [(i.product_id, float(i.quantity), float(i.unit_cost)) for i in pk.items]
         self.use_catalog_cost.setChecked(False)
         for pid, q, c in items:
@@ -201,7 +208,7 @@ class PickupEditDialog(QDialog):
         if not lines:
             warn(self, t('Ajoutez au moins un produit avec une quantité.'))
             return
-        self.tax_rate = self.tax.value()
+        self.tax_rate, self.tax_label = self.tax.value(), self.tax_type.currentText().strip()
         self.lines, self.supplier_id, self.note_text = lines, self.supplier.currentData(), self.note.text()
         self.driver_text, self.truck_text, self.reference_text = self.driver.currentText(), self.truck.currentText(), self.reference.text()
         self.accept()
@@ -211,7 +218,7 @@ class PickupEditDialog(QDialog):
 class ValidatePickupDialog(QDialog):
     """Validation : le fournisseur a signé le bon ; le stock entre par un achat."""
 
-    def __init__(self, parent=None, total: float = 0.0, tax: float = 0.0):
+    def __init__(self, parent=None, total: float = 0.0, tax: float = 0.0, tax_label: str = 'Taxe'):
         super().__init__(parent)
         self.setWindowTitle(t("Valider l'enlèvement"))
         self.setModal(True)
@@ -224,7 +231,7 @@ class ValidatePickupDialog(QDialog):
         self.paid.setValue(total + tax)   # par défaut : quantité × prix + taxe
         self.paid.setToolTip(t("Par défaut : le montant à payer. Mettez 0 pour un achat à crédit (dette fournisseur)."))
         if tax:
-            form.addRow(t('Taxe incluse'), QLabel(format_money(tax, settings_service.get_currency())))
+            form.addRow(f"{tax_label} ({t('incluse')})", QLabel(format_money(tax, settings_service.get_currency())))
         form.addRow(t('Montant payé au fournisseur'), self.paid)
         row = QHBoxLayout()
         self.file_label = QLabel(t('(aucun scan joint)'))
@@ -510,7 +517,7 @@ class PickupsDialog(QDialog):
         dlg = PickupEditDialog(self)
         if dlg.exec():
             try:
-                ps.create(dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text, user_id=self.state.user_id, driver=dlg.driver_text, truck=dlg.truck_text, reference=dlg.reference_text, tax_rate=dlg.tax_rate)
+                ps.create(dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text, user_id=self.state.user_id, driver=dlg.driver_text, truck=dlg.truck_text, reference=dlg.reference_text, tax_rate=dlg.tax_rate, tax_label=dlg.tax_label)
             except ValueError as exc:
                 warn(self, str(exc))
             self._reload()
@@ -522,7 +529,7 @@ class PickupsDialog(QDialog):
         dlg = PickupEditDialog(self, p.id)
         if dlg.exec():
             try:
-                ps.update_draft(p.id, dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text, driver=dlg.driver_text, truck=dlg.truck_text, reference=dlg.reference_text, tax_rate=dlg.tax_rate)
+                ps.update_draft(p.id, dlg.lines, supplier_id=dlg.supplier_id, note=dlg.note_text, driver=dlg.driver_text, truck=dlg.truck_text, reference=dlg.reference_text, tax_rate=dlg.tax_rate, tax_label=dlg.tax_label)
             except ValueError as exc:
                 warn(self, str(exc))
             self._reload()
@@ -553,7 +560,7 @@ class PickupsDialog(QDialog):
         if not p:
             return
         _ht, _tax, _due = ps.amount_due(p.id)
-        dlg = ValidatePickupDialog(self, _ht, _tax)
+        dlg = ValidatePickupDialog(self, _ht, _tax, ps.tax_label_of(p.id))
         if not dlg.exec():
             return
         user_id, username = _user(self.state)

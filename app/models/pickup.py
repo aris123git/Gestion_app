@@ -39,6 +39,7 @@ class Pickup(Base):
     truck: Mapped[str] = mapped_column(String(60), default="")        # information : n° du camion
     reference: Mapped[str] = mapped_column(String(80), default="")    # information : référence (bon fournisseur…)
     tax_rate: Mapped[float] = mapped_column(Numeric(6, 3), default=0)  # taxe en % ajoutée au montant à payer
+    tax_label: Mapped[str] = mapped_column(String(30), default="")      # type de taxe (BIC, TVA…)
     signed_file: Mapped[str] = mapped_column(String(400), default="")
     purchase_id: Mapped[Optional[int]] = mapped_column(ForeignKey("purchases.id"), nullable=True)
     validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

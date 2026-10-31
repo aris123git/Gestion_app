@@ -130,6 +130,8 @@ class PickupTests(unittest.TestCase):
         self.assertEqual(ps.amount_due(pid), (7000.0, 1260.0, 8260.0))
         ps.update_draft(pid, [ps.PickupLine(self.product, 10, 700)], supplier_id=self.supplier, tax_rate=5)
         self.assertEqual(ps.amount_due(pid), (7000.0, 350.0, 7350.0))
+        from PySide6.QtWidgets import QApplication
+        self._app = QApplication.instance() or QApplication([])
         from app.ui.dialogs.pickups_dialog import ValidatePickupDialog
         ht, tax, due = ps.amount_due(pid)
         dlg = ValidatePickupDialog(None, ht, tax)
@@ -137,7 +139,7 @@ class PickupTests(unittest.TestCase):
         from app.printers import bon_enlevement as be
         path = be.build_pickup_bon(pid, config.TICKET_DIR / "tax_bon.pdf", True, "A4")
         text = pdf_text(path)
-        self.assertIn("TAXE 5%", text.upper())
+        self.assertIn("BIC 5%", text.upper())                                      # type de taxe par défaut : BIC
         for label in ("TOTAL AVANT TAXE", "TOTAL"):
             self.assertIn(label, text.upper())
         settings_service.set_setting("bon_client_name", "NEXADIGIT SARL")
@@ -149,6 +151,10 @@ class PickupTests(unittest.TestCase):
             self.assertIn(expected, text2)
         for key in ("bon_client_name", "bon_client_number", "bon_client_phone", "bon_client_address"):
             settings_service.set_setting(key, "")
+        ps.update_draft(pid, [ps.PickupLine(self.product, 10, 700)], supplier_id=self.supplier, tax_rate=18, tax_label="TVA")
+        self.assertEqual(ps.tax_label_of(pid), "TVA")
+        self.assertIn("TVA 18%", pdf_text(be.build_pickup_bon(pid, config.TICKET_DIR / "tax_bon2.pdf", True, "A4")).upper())
+        ps.update_draft(pid, [ps.PickupLine(self.product, 10, 700)], supplier_id=self.supplier, tax_rate=5, tax_label="BIC")
         ps.validate(pid, amount_paid=due)                                           # taxe payée en plus : pas de dette
 
     def test_billing_disabled_by_default_and_blocked(self):

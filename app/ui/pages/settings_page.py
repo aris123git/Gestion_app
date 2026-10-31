@@ -32,21 +32,34 @@ class SettingsPage(QWidget):
         layout.setSpacing(14)
         layout.addWidget(page_title(t('Paramètres')))
         tabs = QTabWidget()
-        tabs.addTab(self._build_shop_tab(), t('Commerce'))
-        tabs.addTab(self._build_appearance_tab(), t('Apparence du ticket'))
+
+        def add(widget: QWidget, title: str) -> QScrollArea:
+            """Chaque onglet défile verticalement quand le contenu dépasse la fenêtre."""
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setWidget(widget)
+            tabs.addTab(scroll, title)
+            return scroll
+
+        add(self._build_shop_tab(), t('Commerce'))
+        add(self._build_appearance_tab(), t('Apparence du ticket'))
         self._tab_designs = self._build_designs_tab()
-        tabs.addTab(self._tab_designs, t('Designs des tickets'))
-        tabs.addTab(self._build_invoice_tab(), t('Facture'))
-        tabs.addTab(self._build_controls_tab(), t('Contrôles caisse'))
+        add(self._tab_designs, t('Designs des tickets'))
+        add(self._build_invoice_tab(), t('Facture'))
+        self._tab_bon = add(self._build_bon_tab(), t("Bon d'enlèvement"))
+        self._tab_bl = add(self._build_bl_tab(), t('Bon de livraison'))
+        add(self._build_controls_tab(), t('Contrôles caisse'))
         if product_profile.supports_profit_loyalty():
-            tabs.addTab(self._build_loyalty_tab(), t('Fidélité bénéfices'))
+            add(self._build_loyalty_tab(), t('Fidélité bénéfices'))
         self._tab_backup = self._build_backup_tab()
-        tabs.addTab(self._tab_backup, t('Sauvegarde'))
+        add(self._tab_backup, t('Sauvegarde'))
         self._tab_portal = self._build_portal_tab()
-        tabs.addTab(self._tab_portal, t('Portail web'))
+        add(self._tab_portal, t('Portail web'))
         self._tab_audit = self._build_audit_tab()
-        tabs.addTab(self._tab_audit, t("Journal d'audit"))
+        add(self._tab_audit, t("Journal d'audit"))
         self._tabs = tabs
+        self._apply_enterprise_visibility()
         tabs.currentChanged.connect(self._on_tab)
         layout.addWidget(tabs)
 
@@ -424,6 +437,15 @@ class SettingsPage(QWidget):
         self.bon_client_phone.setPlaceholderText(t('Contact'))
         self.bon_client_address = QLineEdit()
         self.bon_client_address.setPlaceholderText(t('Adresse'))
+        self.pickup_tax_type = QComboBox()
+        self.pickup_tax_type.setEditable(True)
+        from app.services import pickup_service as _ps0
+        self.pickup_tax_type.addItems(_ps0.TAX_TYPES)
+        self.pickup_tax_rate = QDoubleSpinBox()
+        self.pickup_tax_rate.setRange(0, 100)
+        self.pickup_tax_rate.setDecimals(2)
+        self.pickup_tax_rate.setSuffix(' %')
+        self.pickup_tax_rate.setToolTip(t("Taux proposé par défaut sur chaque bon d'enlèvement ; modifiable bon par bon."))
         self.bon_commercial = QLineEdit()
         self.bon_commercial.setPlaceholderText(t('Nom du commercial'))
         self.shop_rccm = QLineEdit()
@@ -506,33 +528,15 @@ class SettingsPage(QWidget):
         form.addRow(t('Modèle et couleur de la facture'), self.invoice_style)
         form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
-        form.addRow(t('Bon de livraison'), self.bl_enabled)
-        form.addRow('', self.bl_in_all)
-        form.addRow(t('Chauffeurs'), self.drivers_editor)
-        form.addRow(t('Camions'), self.trucks_editor)
-        form.addRow('', self.pickup_allow_billing)
-        form.addRow(t('Écart d’un enlèvement'), self.pickup_bearer)
-        form.addRow(t('Tolérance de perte (alerte)'), self.pickup_tolerance)
-        form.addRow(t('Modèle du bon de livraison'), self.bl_style)
-        form.addRow(t('Mention du bon de livraison'), self.bl_legal)
-        form.addRow(t('Mention du bon (facultatif)'), self.bon_legal)
-        ac_row = QHBoxLayout()
-        ac_row.addWidget(self.bon_ac_label, 1)
-        ac_row.addWidget(self.bon_ac_rate)
-        form.addRow(t('Acompte sur le bon (libellé et taux)'), ac_row)
-        form.addRow(t('Client du bon : nom'), self.bon_client_name)
-        form.addRow(t('Client du bon : numéro'), self.bon_client_number)
-        form.addRow(t('Client du bon : contact'), self.bon_client_phone)
-        form.addRow(t('Client du bon : adresse'), self.bon_client_address)
-        form.addRow(t('Commercial (signature du bon)'), self.bon_commercial)
-        form.addRow(t('N° RCCM (pied du bon)'), self.shop_rccm)
-        form.addRow(t('N° IFU (pied du bon)'), self.shop_ifu)
-        form.addRow(t('Banque (pied du bon)'), self.shop_bank_name)
-        form.addRow(t('Numéro de compte (pied du bon)'), self.shop_bank)
-        form.addRow('', self.invoice_show_legal)
-        form.addRow('', self.invoice_show_bank)
-        form.addRow('', self.bl_show_bank)
-        self._enterprise_rows = [self.bon_legal, ac_row, self.bon_client_name, self.bon_client_number, self.bon_client_phone, self.bon_client_address, self.pickup_allow_billing, self.pickup_bearer, self.pickup_tolerance]
+        # Le reste (bons, légal, banque) est placé par _layout_bon_rows selon le type de commerce.
+        self.bon_ac_row = QHBoxLayout()
+        self.bon_ac_row.addWidget(self.bon_ac_label, 1)
+        self.bon_ac_row.addWidget(self.bon_ac_rate)
+        tail_widget = QWidget()
+        self._facture_tail = QFormLayout(tail_widget)
+        self._facture_tail.setContentsMargins(0, 0, 0, 0)
+        self._facture_tail.setSpacing(10)
+        form.addRow(tail_widget)
         self._invoice_form = form
         self.shop_type.currentTextChanged.connect(self._apply_enterprise_visibility)
         outer.addWidget(make_card(form_widget))
@@ -556,7 +560,6 @@ class SettingsPage(QWidget):
         bl_preview = QPushButton(t('Aperçu du bon de livraison'))
         bl_preview.clicked.connect(self._preview_bl)
         actions.addWidget(bl_preview)
-        self._apply_enterprise_visibility()
         actions.addStretch()
         outer.addLayout(actions)
         outer.addStretch()
@@ -600,10 +603,107 @@ class SettingsPage(QWidget):
         """Bons d'enlèvement / de livraison : réglages visibles seulement pour le type « Entreprise »."""
         from app.services.business_mode import is_enterprise_type
         show = is_enterprise_type(self.shop_type.currentText())
-        for row in getattr(self, '_enterprise_rows', []):
-            self._invoice_form.setRowVisible(row, show)
+        if hasattr(self, '_tab_bon'):
+            self._layout_bon_rows(show)
+            for tab in (self._tab_bon, self._tab_bl):
+                self._tabs.setTabVisible(self._tabs.indexOf(tab), show)
         for button in getattr(self, '_enterprise_buttons', []):
             button.setVisible(show)
+
+    # -- onglets « Bon d'enlèvement » / « Bon de livraison » (type Entreprise) ----
+    def _mirror(self, src: QLineEdit) -> QLineEdit:
+        """Copie d'un champ partagé (RCCM, banque…), synchronisée dans les deux sens."""
+        mirror = QLineEdit()
+        mirror.setPlaceholderText(src.placeholderText())
+        mirror.setText(src.text())
+        mirror.textChanged.connect(lambda txt, s=src: s.text() != txt and s.setText(txt))
+        src.textChanged.connect(lambda txt, m=mirror: m.text() != txt and m.setText(txt))
+        return mirror
+
+    def _make_tab(self, form_attr: str, intro: str, previews: list) -> QWidget:
+        wrap = QWidget()
+        outer = QVBoxLayout(wrap)
+        intro_label = QLabel(intro)
+        intro_label.setWordWrap(True)
+        intro_label.setStyleSheet('color: #64748b;')
+        outer.addWidget(intro_label)
+        holder = QWidget()
+        form = QFormLayout(holder)
+        form.setSpacing(10)
+        setattr(self, form_attr, form)
+        outer.addWidget(make_card(holder))
+        actions = QHBoxLayout()
+        save = QPushButton(t('Appliquer'))
+        save.setObjectName('Primary')
+        save.clicked.connect(self._save_appearance)
+        actions.addWidget(save)
+        for label, slot in previews:
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            actions.addWidget(button)
+        actions.addStretch()
+        outer.addLayout(actions)
+        outer.addStretch()
+        return wrap
+
+    def _build_bon_tab(self) -> QWidget:
+        from app.printers.bon_enlevement import BON_STYLES
+        self.bon_style = QComboBox()
+        for _s in BON_STYLES:
+            self.bon_style.addItem(t(_s.label), _s.id)
+        self.bon_show_prices = QCheckBox(t('Afficher les prix et les totaux sur le bon'))
+        self._mirrors_bon = [self._mirror(w) for w in (self.bon_commercial, self.shop_rccm, self.shop_ifu, self.shop_bank_name, self.shop_bank)]
+        return self._make_tab('_bon_form', t("Modèle et informations du bon d'enlèvement (type Entreprise). Le client du bon est celui que le fournisseur (ex. SONABHY) connaît."), [(t("Aperçu du bon d'enlèvement"), self._preview_bon)])
+
+    def _build_bl_tab(self) -> QWidget:
+        self._mirrors_bl = [self._mirror(w) for w in (self.bon_commercial, self.shop_rccm, self.shop_ifu, self.shop_bank_name, self.shop_bank)]
+        return self._make_tab('_bl_form', t('Modèle et informations du bon de livraison (type Entreprise).'), [(t('Aperçu du bon de livraison'), self._preview_bl)])
+
+    @staticmethod
+    def _fill_form(form: QFormLayout, rows: list) -> None:
+        while form.rowCount():
+            taken = form.takeRow(0)
+            label = taken.labelItem.widget() if taken.labelItem is not None else None
+            if label is not None:
+                label.deleteLater()
+        for label, field in rows:
+            if label is None:
+                form.addRow(field)
+            else:
+                form.addRow(label, field)
+            if hasattr(field, 'show') and not isinstance(field, QHBoxLayout):
+                field.show()
+
+    def _layout_bon_rows(self, enterprise: bool) -> None:
+        """Place les réglages des bons : onglet Facture (autres types) ou onglets dédiés (Entreprise)."""
+        bl_rows = [(t('Bon de livraison'), self.bl_enabled), ('', self.bl_in_all), (t('Modèle du bon de livraison'), self.bl_style),
+                   (t('Mention du bon de livraison'), self.bl_legal), ('', self.bl_show_bank)]
+        transport_rows = [(t('Chauffeurs'), self.drivers_editor), (t('Camions'), self.trucks_editor)]
+        common = [(t('Commercial (signature du bon)'), self.bon_commercial), (t('N° RCCM (pied du bon)'), self.shop_rccm), (t('N° IFU (pied du bon)'), self.shop_ifu),
+                  (t('Banque (pied du bon)'), self.shop_bank_name), (t('Numéro de compte (pied du bon)'), self.shop_bank)]
+        legal = [('', self.invoice_show_legal), ('', self.invoice_show_bank)]
+        mirror_labels = [t('Commercial (signature du bon)'), t('N° RCCM (pied du bon)'), t('N° IFU (pied du bon)'), t('Banque (pied du bon)'), t('Numéro de compte (pied du bon)')]
+        only_enterprise = [self.bon_legal, self.bon_client_name, self.bon_client_number, self.bon_client_phone, self.bon_client_address,
+                           self.pickup_allow_billing, self.pickup_bearer, self.pickup_tolerance, self.bon_style, self.bon_show_prices, self.bon_ac_label, self.bon_ac_rate, self.pickup_tax_type, self.pickup_tax_rate]
+        for form in (self._facture_tail, self._bon_form, self._bl_form):
+            while form.rowCount():
+                taken = form.takeRow(0)
+                if taken.labelItem is not None and taken.labelItem.widget() is not None:
+                    taken.labelItem.widget().deleteLater()
+        if enterprise:
+            self._fill_form(self._facture_tail, common + legal)
+            self._fill_form(self._bon_form, [
+                (t('Modèle du bon'), self.bon_style), ('', self.bon_show_prices),
+                (t('Mention du bon (facultatif)'), self.bon_legal), (t('Type de taxe du bon'), self.pickup_tax_type), (t('Taux de la taxe (%)'), self.pickup_tax_rate),
+                (t('Client du bon : nom'), self.bon_client_name), (t('Client du bon : numéro'), self.bon_client_number),
+                (t('Client du bon : contact'), self.bon_client_phone), (t('Client du bon : adresse'), self.bon_client_address),
+            ] + list(zip(mirror_labels, self._mirrors_bon)) + transport_rows + [
+                ('', self.pickup_allow_billing), (t('Écart d’un enlèvement'), self.pickup_bearer), (t('Tolérance de perte (alerte)'), self.pickup_tolerance)])
+            self._fill_form(self._bl_form, bl_rows + list(zip(mirror_labels, self._mirrors_bl)))
+        else:
+            self._fill_form(self._facture_tail, bl_rows + transport_rows + common + legal)
+            for w in only_enterprise:
+                w.hide()
 
     def _preview_bl(self) -> None:
         """Exemple de bon de livraison avec le modèle choisi (sans enregistrer)."""
@@ -635,7 +735,7 @@ class SettingsPage(QWidget):
         from app import config
         from app.printers import bon_enlevement as be
         shop = settings_service.get_shop_info()
-        overrides = {be.SETTING_LEGAL: self.bon_legal.text(), be.SETTING_ACOMPTE_LABEL: self.bon_ac_label.text(), be.SETTING_ACOMPTE_RATE: str(self.bon_ac_rate.value()),
+        overrides = {be.SETTING_STYLE: self.bon_style.currentData(), be.SETTING_LEGAL: self.bon_legal.text(), be.SETTING_ACOMPTE_LABEL: self.pickup_tax_type.currentText(), be.SETTING_ACOMPTE_RATE: str(self.pickup_tax_rate.value()),
                      be.SETTING_CLIENT_NAME: self.bon_client_name.text(), be.SETTING_CLIENT_NUMBER: self.bon_client_number.text(), be.SETTING_CLIENT_PHONE: self.bon_client_phone.text(), be.SETTING_CLIENT_ADDRESS: self.bon_client_address.text(),
                      be.SETTING_COMMERCIAL: self.bon_commercial.text(), be.SETTING_RCCM: self.shop_rccm.text(), be.SETTING_IFU: self.shop_ifu.text(), be.SETTING_BANK: self.shop_bank.text(), be.SETTING_BANK_NAME: self.shop_bank_name.text()}
         try:
@@ -1150,6 +1250,10 @@ class SettingsPage(QWidget):
         settings_service.set_setting('bon_acompte_label', self.bon_ac_label.text().strip())
         settings_service.set_setting('bon_acompte_rate', str(self.bon_ac_rate.value()))
         settings_service.set_setting('bon_commercial', self.bon_commercial.text().strip())
+        settings_service.set_setting('pickup_tax_label', self.pickup_tax_type.currentText().strip() or 'BIC')
+        settings_service.set_setting('pickup_tax_rate', str(self.pickup_tax_rate.value()))
+        settings_service.set_setting('bon_style', self.bon_style.currentData() or 'classique')
+        settings_service.set_setting('bon_show_prices', '1' if self.bon_show_prices.isChecked() else '0')
         for _key, _w in (('bon_client_name', self.bon_client_name), ('bon_client_number', self.bon_client_number), ('bon_client_phone', self.bon_client_phone), ('bon_client_address', self.bon_client_address)):
             settings_service.set_setting(_key, _w.text().strip())
         settings_service.set_setting('shop_rccm', self.shop_rccm.text().strip())
@@ -1709,6 +1813,7 @@ class SettingsPage(QWidget):
 
     def _on_tab(self, index: int) -> None:
         tab = self._tabs.widget(index)
+        tab = tab.widget() if isinstance(tab, QScrollArea) else tab
         if tab is self._tab_designs:
             self._load_designs_ui()
         elif tab is self._tab_backup:
@@ -1789,6 +1894,10 @@ class SettingsPage(QWidget):
         self.bon_ac_label.setText(settings_service.get_setting(_be.SETTING_ACOMPTE_LABEL, ''))
         self.bon_ac_rate.setValue(_be.get_acompte()[1])
         self.bon_commercial.setText(settings_service.get_setting(_be.SETTING_COMMERCIAL, ''))
+        self.bon_style.setCurrentIndex(max(0, self.bon_style.findData(_be.get_style().id)))
+        self.pickup_tax_type.setCurrentText(_ps.default_tax_label())
+        self.pickup_tax_rate.setValue(_ps.default_tax_rate())
+        self.bon_show_prices.setChecked(settings_service.get_setting(_be.SETTING_SHOW_PRICES, '1') == '1')
         self.bon_client_name.setText(settings_service.get_setting(_be.SETTING_CLIENT_NAME, ''))
         self.bon_client_number.setText(settings_service.get_setting(_be.SETTING_CLIENT_NUMBER, ''))
         self.bon_client_phone.setText(settings_service.get_setting(_be.SETTING_CLIENT_PHONE, ''))

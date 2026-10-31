@@ -45,6 +45,27 @@ SETTING_CLIENT_ADDRESS = "bon_client_address"
 INK = colors.HexColor("#111827")
 LINE = colors.HexColor("#111827")
 
+SETTING_STYLE = "bon_style"
+
+
+class BonStyle:
+    def __init__(self, id_: str, label: str, accent: str, header_fill: bool):
+        self.id, self.label, self.accent, self.header_fill = id_, label, accent, header_fill
+
+
+BON_STYLES = [
+    BonStyle("classique", "Classique — noir", "#111827", False),
+    BonStyle("bandeau_bleu", "Bandeau bleu", "#1e3a8a", True),
+    BonStyle("bandeau_vert", "Bandeau vert", "#166534", True),
+    BonStyle("bandeau_bordeaux", "Bandeau bordeaux", "#7f1d1d", True),
+    BonStyle("sobre_bleu", "Sobre — lignes bleues", "#1d4ed8", False),
+]
+
+
+def get_style(overrides: Optional[dict] = None) -> BonStyle:
+    wanted = _opt(SETTING_STYLE, overrides)
+    return next((s for s in BON_STYLES if s.id == wanted), BON_STYLES[0])
+
 
 def is_enabled() -> bool:
     from app.services.business_mode import is_enterprise
@@ -112,6 +133,8 @@ def build_bon_enlevement(
 
     if show_prices is None:
         show_prices = settings_service.get_setting(SETTING_SHOW_PRICES, "1").strip() == "1"
+    style = get_style(overrides)
+    LINE = colors.HexColor(style.accent)  # noqa: N806 — couleur des filets selon le modèle
     half = (fmt or get_format()) == FORMAT_HALF
     page = (A4[0], HALF_H) if half else A4
     k = 0.7 if half else 1.0
@@ -132,7 +155,7 @@ def build_bon_enlevement(
     bank_name = _opt(SETTING_BANK_NAME, overrides)
     ac_label, ac_rate = get_acompte(overrides)
     if getattr(sale, 'is_pickup', False) and float(getattr(sale, 'tax_rate', 0) or 0) > 0:
-        ac_label, ac_rate = 'Taxe', float(sale.tax_rate)
+        ac_label, ac_rate = (getattr(sale, 'tax_label', '') or 'Taxe'), float(sale.tax_rate)
 
     base = ParagraphStyle("b", fontName="Helvetica", fontSize=fs, leading=fs * 1.3, textColor=INK)
     bold = ParagraphStyle("bb", parent=base, fontName="Helvetica-Bold")
@@ -184,7 +207,7 @@ def build_bon_enlevement(
     else:
         story.extend(head)
     story.append(Spacer(1, 2 * mm * k))
-    story.append(Paragraph(f"<u>BON D'ENLÈVEMENT</u> &nbsp;&nbsp;<font color='#1d4ed8'>N° {number}</font>", title_st))
+    story.append(Paragraph(f"<u>BON D'ENLÈVEMENT</u> &nbsp;&nbsp;<font color='{style.accent}'>N° {number}</font>", title_st))
     story.append(Spacer(1, 4 * mm * k))
 
     # Cadres : Bon d'enlèvement (gauche) / client (droite)
@@ -242,13 +265,13 @@ def build_bon_enlevement(
         ("ALIGN", (1, 0), (-1, -1), "CENTER"), ("ALIGN", (3, 1), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.8, LINE), ("TOPPADDING", (0, 0), (-1, -1), pad), ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
         ("TEXTCOLOR", (0, 0), (-1, -1), INK),
-    ]))
+    ] + ([("BACKGROUND", (0, 0), (-1, 0), LINE), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white)] if style.header_fill else [])))
     story += [table, Spacer(1, 4 * mm * k)]
 
     # Totaux + mention légale + somme en lettres
     acompte = round(total * ac_rate / 100, 3) if ac_rate > 0 else 0.0
     grand = round(total + acompte, 3)
-    is_tax = ac_label == "Taxe"
+    is_tax = bool(getattr(sale, "is_pickup", False) and float(getattr(sale, "tax_rate", 0) or 0) > 0)
     tot_rows = [["TOTAL AVANT TAXE" if is_tax and acompte > 0 else "TOTAL", format_money(total, currency)]]
     if acompte > 0:
         tot_rows.append([f"{ac_label.upper()} {ac_rate:g}%", format_money(acompte, currency)])
@@ -304,7 +327,7 @@ def pickup_document(pickup_id: int):
             raise ValueError("Enlèvement introuvable.")
         items = [NS(product_name=i.product_name, product_id=i.product_id, quantity=float(i.quantity or 0), unit_price=float(i.unit_cost or 0), line_total=float(i.line_total or 0)) for i in pk.items]
         return NS(
-            ticket_number=f"BE-{pk.number}", pickup_number=pk.number, tax_rate=float(pk.tax_rate or 0), date=pk.date, client_id=None, items=items, payments=[], is_pickup=True,
+            ticket_number=f"BE-{pk.number}", pickup_number=pk.number, tax_rate=float(pk.tax_rate or 0), tax_label=(pk.tax_label or ''), date=pk.date, client_id=None, items=items, payments=[], is_pickup=True,
             supplier_name=pk.supplier.name if pk.supplier else "", client_name=str(shop.name or ""), client_phone=str(shop.phone or ""),
             client_address=str(shop.address or ""), client_email=str(shop.email or ""),
         )
