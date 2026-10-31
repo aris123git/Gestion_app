@@ -298,9 +298,13 @@ def build_bon_enlevement(
     # remplacent les libellés génériques ; sans nom connu on garde le libellé.
     commercial = _opt(SETTING_COMMERCIAL, overrides)
     company = refs["name"] if ((client_id or getattr(sale, "is_pickup", False)) and refs.get("name")) else ""
-    sign = Table([[Paragraph(f"<b>{commercial or 'Le Commercial'}</b>", base), Paragraph(f"<b>{company or 'Le client'}</b>", ParagraphStyle("c", parent=base, alignment=2))]], colWidths=[frame_w / 2, frame_w / 2])
+    sign = Table([[Paragraph(f"<b>{commercial or 'Le Commercial'}</b>" + ("<br/>Signature et cachet" if _opt("bon_pin_bottom", overrides) == "1" else ""), base), Paragraph(f"<b>{company or 'Le client'}</b>" + ("<br/>Signature et cachet" if _opt("bon_pin_bottom", overrides) == "1" else ""), ParagraphStyle("c", parent=base, alignment=2))]], colWidths=[frame_w / 2, frame_w / 2])
     sign.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
-    story.append(KeepTogether([bottom_block, Spacer(1, (5 if half else 8) * mm * k), sign]))
+    final_block = KeepTogether([bottom_block, Spacer(1, (5 if half else 8) * mm * k), sign])
+    if _opt("bon_pin_bottom", overrides) == "1":   # option « remplir la page » : signature et cachet en bas
+        from app.printers.page_fill import PushToBottom
+        story += [PushToBottom(final_block, 4 * mm * k)]
+    story.append(final_block)
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return path

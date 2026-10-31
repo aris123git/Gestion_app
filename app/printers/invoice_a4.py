@@ -54,6 +54,11 @@ INVOICE_FORMATS = (
 SETTING_FILL_EMPTY = "invoice_fill_empty"
 
 
+def get_pin_bottom() -> bool:
+    """Option « remplir la page » : totaux, signature et cachet tout en bas, sans lignes vides."""
+    return settings_service.get_setting("invoice_pin_bottom", "0").strip() == "1"
+
+
 def get_fill_empty() -> bool:
     """True : ajoute des lignes vides pour remplir la page. Défaut : False (aucune ligne sans donnée)."""
     return settings_service.get_setting(SETTING_FILL_EMPTY, "0").strip() == "1"
@@ -543,7 +548,7 @@ def footer_with_bank(footer: str) -> str:
 
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
                      style_id: str | None = None, font_size: int | None = None,
-                     fmt: str | None = None, fill_empty: bool | None = None) -> Path:
+                     fmt: str | None = None, fill_empty: bool | None = None, pin_bottom: bool | None = None) -> Path:
     """Génère la facture (A4 portrait, ou A4 coupé en deux) et retourne le PDF."""
     global PAGE_W, PAGE_H
     config.ensure_directories()
@@ -740,7 +745,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
         for pay in sale.payments:
             left.append(Paragraph(f"{pay.method} : {format_money(pay.amount, currency)}", small))
     sign = Paragraph(
-        "<b>Le responsable</b>" if layout in ("recu", "moderne") else "<b>Signature</b>",
+        ("<b>Le responsable</b>" if layout in ("recu", "moderne") else "<b>Signature</b>") + ("<br/>et cachet" if (get_pin_bottom() if pin_bottom is None else pin_bottom) else ""),
         ParagraphStyle("sg", parent=body, alignment=1),
     )
     bottom = Table([[left, [totals_t, Spacer(1, (2 if half else 6) * mm), sign]]], colWidths=[frame_w - 100 * mm, 100 * mm])
@@ -775,7 +780,8 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             items_t = trial
         _, cur_h = items_t.wrap(frame_w, frame_h)
     # Les totaux suivent directement la dernière ligne (sauf en mode « lignes vides »).
-    gap = 8 * mm * k + (max(0.0, available - cur_h) if fill and cur_h <= available else 0.0)
+    pin = get_pin_bottom() if pin_bottom is None else bool(pin_bottom)
+    gap = 8 * mm * k + (max(0.0, available - cur_h) if (fill or pin) and cur_h <= available else 0.0)
     story += [items_t, Spacer(1, gap), KeepTogether([bottom])]
 
     saved = (PAGE_W, PAGE_H)

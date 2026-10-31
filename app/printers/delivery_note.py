@@ -646,6 +646,10 @@ def build_delivery_note(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     story, first, later, top, bottom = _LAYOUTS[c.style.layout](c)
+    from app.printers.bon_enlevement import _opt
+    if _opt("bl_pin_bottom", overrides) == "1" and len(story) >= 3:     # signature et cachet tout en bas de la page
+        from app.printers.page_fill import PushToBottom
+        story[-2] = PushToBottom(story[-1], 6 * mm)
     doc = BaseDocTemplate(str(path), pagesize=A4, leftMargin=MX, rightMargin=MX, topMargin=top, bottomMargin=bottom,
                           title=f"Bon de livraison {c.number}", author=str(shop.name or ""))
     f_first = Frame(MX, bottom, W - 2 * MX, H - top - bottom, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="first")

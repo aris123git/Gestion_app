@@ -392,6 +392,10 @@ class SettingsPage(QWidget):
         self.invoice_font.setRange(MIN_FONT, MAX_FONT)
         self.invoice_font.setSuffix(' pt')
         self.invoice_font.setToolTip(t('Taille du texte de la facture (désignations, prix, totaux). Plus grand = lecture plus facile.'))
+        self.invoice_pin_bottom = QCheckBox(t('Remplir la page : totaux, signature et cachet tout en bas'))
+        self.invoice_pin_bottom.setToolTip(t("Les totaux, la signature et le cachet restent en bas de la page, peu importe le nombre de lignes."))
+        self.bon_pin_bottom = QCheckBox(t('Remplir la page : signature et cachet tout en bas'))
+        self.bl_pin_bottom = QCheckBox(t('Remplir la page : signature et cachet tout en bas'))
         self.invoice_fill_empty = QCheckBox(t('Ajouter des lignes vides pour remplir la page'))
         self.invoice_fill_empty.setToolTip(t("Décoché (par défaut) : aucune ligne n'est ajoutée s'il n'y a pas de données. Coché : le tableau est complété par des lignes vides jusqu'en bas de la page (modèles dessinés ; les modèles Services et Médical n'ont jamais de lignes vides)."))
         self.bon_enabled = QCheckBox(t("Activer le bon d'enlèvement"))
@@ -528,6 +532,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Modèle et couleur de la facture'), self.invoice_style)
         form.addRow(t('Taille de police facture'), self.invoice_font)
         form.addRow(t('Lignes vides'), self.invoice_fill_empty)
+        form.addRow(t('Bas de page'), self.invoice_pin_bottom)
         # Le reste (bons, légal, banque) est placé par _layout_bon_rows selon le type de commerce.
         self.bon_ac_row = QHBoxLayout()
         self.bon_ac_row.addWidget(self.bon_ac_label, 1)
@@ -677,14 +682,14 @@ class SettingsPage(QWidget):
     def _layout_bon_rows(self, enterprise: bool) -> None:
         """Place les réglages des bons : onglet Facture (autres types) ou onglets dédiés (Entreprise)."""
         bl_rows = [(t('Bon de livraison'), self.bl_enabled), ('', self.bl_in_all), (t('Modèle du bon de livraison'), self.bl_style),
-                   (t('Mention du bon de livraison'), self.bl_legal), ('', self.bl_show_bank)]
+                   (t('Mention du bon de livraison'), self.bl_legal), ('', self.bl_show_bank), (t('Bas de page'), self.bl_pin_bottom)]
         transport_rows = [(t('Chauffeurs'), self.drivers_editor), (t('Camions'), self.trucks_editor)]
         common = [(t('Commercial (signature du bon)'), self.bon_commercial), (t('N° RCCM (pied du bon)'), self.shop_rccm), (t('N° IFU (pied du bon)'), self.shop_ifu),
                   (t('Banque (pied du bon)'), self.shop_bank_name), (t('Numéro de compte (pied du bon)'), self.shop_bank)]
         legal = [('', self.invoice_show_legal), ('', self.invoice_show_bank)]
         mirror_labels = [t('Commercial (signature du bon)'), t('N° RCCM (pied du bon)'), t('N° IFU (pied du bon)'), t('Banque (pied du bon)'), t('Numéro de compte (pied du bon)')]
         only_enterprise = [self.bon_legal, self.bon_client_name, self.bon_client_number, self.bon_client_phone, self.bon_client_address,
-                           self.pickup_allow_billing, self.pickup_bearer, self.pickup_tolerance, self.bon_style, self.bon_show_prices, self.bon_ac_label, self.bon_ac_rate, self.pickup_tax_type, self.pickup_tax_rate]
+                           self.pickup_allow_billing, self.pickup_bearer, self.pickup_tolerance, self.bon_style, self.bon_show_prices, self.bon_pin_bottom, self.bon_ac_label, self.bon_ac_rate, self.pickup_tax_type, self.pickup_tax_rate]
         for form in (self._facture_tail, self._bon_form, self._bl_form):
             while form.rowCount():
                 taken = form.takeRow(0)
@@ -693,7 +698,7 @@ class SettingsPage(QWidget):
         if enterprise:
             self._fill_form(self._facture_tail, common + legal)
             self._fill_form(self._bon_form, [
-                (t('Modèle du bon'), self.bon_style), ('', self.bon_show_prices),
+                (t('Modèle du bon'), self.bon_style), ('', self.bon_show_prices), (t('Bas de page'), self.bon_pin_bottom),
                 (t('Mention du bon (facultatif)'), self.bon_legal), (t('Type de taxe du bon'), self.pickup_tax_type), (t('Taux de la taxe (%)'), self.pickup_tax_rate),
                 (t('Client du bon : nom'), self.bon_client_name), (t('Client du bon : numéro'), self.bon_client_number),
                 (t('Client du bon : contact'), self.bon_client_phone), (t('Client du bon : adresse'), self.bon_client_address),
@@ -714,7 +719,7 @@ class SettingsPage(QWidget):
         from app import config
         from app.printers import delivery_note as dn
         shop = settings_service.get_shop_info()
-        overrides = {dn.SETTING_LEGAL: self.bl_legal.text(), dn.SETTING_COMMERCIAL: self.bon_commercial.text(), 'shop_rccm': self.shop_rccm.text(),
+        overrides = {'bl_pin_bottom': '1' if self.bl_pin_bottom.isChecked() else '0', dn.SETTING_LEGAL: self.bl_legal.text(), dn.SETTING_COMMERCIAL: self.bon_commercial.text(), 'shop_rccm': self.shop_rccm.text(),
                      'shop_ifu': self.shop_ifu.text(), 'shop_bank_account': self.shop_bank.text(), 'shop_bank_name': self.shop_bank_name.text(), 'bl_show_bank': '1' if self.bl_show_bank.isChecked() else '0'}
         try:
             items = [NS(product_name='Produit exemple 1', product_id=None, quantity=1000, unit_price=700, line_total=700000), NS(product_name='Produit exemple 2', product_id=None, quantity=500, unit_price=650, line_total=325000)]
@@ -735,7 +740,7 @@ class SettingsPage(QWidget):
         from app import config
         from app.printers import bon_enlevement as be
         shop = settings_service.get_shop_info()
-        overrides = {be.SETTING_STYLE: self.bon_style.currentData(), be.SETTING_LEGAL: self.bon_legal.text(), be.SETTING_ACOMPTE_LABEL: self.pickup_tax_type.currentText(), be.SETTING_ACOMPTE_RATE: str(self.pickup_tax_rate.value()),
+        overrides = {'bon_pin_bottom': '1' if self.bon_pin_bottom.isChecked() else '0', be.SETTING_STYLE: self.bon_style.currentData(), be.SETTING_LEGAL: self.bon_legal.text(), be.SETTING_ACOMPTE_LABEL: self.pickup_tax_type.currentText(), be.SETTING_ACOMPTE_RATE: str(self.pickup_tax_rate.value()),
                      be.SETTING_CLIENT_NAME: self.bon_client_name.text(), be.SETTING_CLIENT_NUMBER: self.bon_client_number.text(), be.SETTING_CLIENT_PHONE: self.bon_client_phone.text(), be.SETTING_CLIENT_ADDRESS: self.bon_client_address.text(),
                      be.SETTING_COMMERCIAL: self.bon_commercial.text(), be.SETTING_RCCM: self.shop_rccm.text(), be.SETTING_IFU: self.shop_ifu.text(), be.SETTING_BANK: self.shop_bank.text(), be.SETTING_BANK_NAME: self.shop_bank_name.text()}
         try:
@@ -1233,6 +1238,9 @@ class SettingsPage(QWidget):
         settings_service.set_setting('invoice_format', self.invoice_format.currentData() or 'a4')
         settings_service.set_setting('invoice_style', self.invoice_style.currentData() or 'recu')
         settings_service.set_setting('invoice_font_size', str(self.invoice_font.value()))
+        settings_service.set_setting('invoice_pin_bottom', '1' if self.invoice_pin_bottom.isChecked() else '0')
+        settings_service.set_setting('bon_pin_bottom', '1' if self.bon_pin_bottom.isChecked() else '0')
+        settings_service.set_setting('bl_pin_bottom', '1' if self.bl_pin_bottom.isChecked() else '0')
         settings_service.set_setting('invoice_fill_empty', '1' if self.invoice_fill_empty.isChecked() else '0')
         settings_service.set_setting('bon_enabled', '1' if self.bon_enabled.isChecked() else '0')
         settings_service.set_setting('bon_legal_text', self.bon_legal.text().strip())
@@ -1284,7 +1292,7 @@ class SettingsPage(QWidget):
         sale = NS(ticket_number='APERCU-0001', date=datetime.now(), cashier_name='Caissier', client_name='Client exemple', client_phone='', items=items, subtotal=18000.5, discount=0, total=18000.5, amount_received=20000, change_due=1999.5, payments=[NS(method='Espèces', amount=18000.5)])
         try:
             config.ensure_directories()
-            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value(), fmt=self.invoice_format.currentData(), fill_empty=self.invoice_fill_empty.isChecked())
+            path = build_invoice_a4(sale, shop=shop, path=config.TICKET_DIR / 'apercu_facture.pdf', style_id=self.invoice_style.currentData(), font_size=self.invoice_font.value(), fmt=self.invoice_format.currentData(), fill_empty=self.invoice_fill_empty.isChecked(), pin_bottom=self.invoice_pin_bottom.isChecked())
         except Exception as exc:
             warn(self, f'Impossible de générer l\'aperçu : {exc}')
             return
@@ -1877,6 +1885,9 @@ class SettingsPage(QWidget):
         from app.printers.invoice_a4 import get_fill_empty
 
         self.invoice_fill_empty.setChecked(get_fill_empty())
+        self.invoice_pin_bottom.setChecked(settings_service.get_setting('invoice_pin_bottom', '0') == '1')
+        self.bon_pin_bottom.setChecked(settings_service.get_setting('bon_pin_bottom', '0') == '1')
+        self.bl_pin_bottom.setChecked(settings_service.get_setting('bl_pin_bottom', '0') == '1')
         from app.printers import bon_enlevement as _be
         self.bon_enabled.setChecked(_be.is_enabled())
         self.bon_in_all.setChecked(_be.in_print_all())
