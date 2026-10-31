@@ -145,8 +145,15 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox, QDateEdit {{
         min-height: 22px;
     }}
-    QComboBox {{ padding-right: 30px; }}
-    QDoubleSpinBox, QSpinBox, QDateEdit {{ padding-right: 28px; }}
+    QComboBox {{ padding: 6px 28px 6px 8px; min-width: 7em; }}
+    QDoubleSpinBox, QSpinBox, QDateEdit {{ padding: 6px 26px 6px 8px; min-width: 6em; }}
+    QLineEdit {{ min-width: 4em; }}
+    /* Champs placés dans les cellules d'un tableau : marges réduites pour que le texte reste visible */
+    QTableView QLineEdit, QTableView QComboBox, QTableView QDoubleSpinBox, QTableView QSpinBox, QTableView QDateEdit {{
+        padding: 1px 4px; min-height: 18px; min-width: 0; border-radius: 4px;
+    }}
+    QTableView QComboBox {{ padding-right: 20px; }}
+    QTableView QDoubleSpinBox, QTableView QSpinBox {{ padding-right: 4px; }}
     QDoubleSpinBox::up-button, QSpinBox::up-button {{
         subcontrol-origin: border; subcontrol-position: top right;
         width: 22px; border: none; border-left: 1px solid {c['border']};
