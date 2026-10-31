@@ -89,9 +89,10 @@ def _fill_items(session, pickup: Pickup, lines: List[PickupLine]) -> None:
 
 
 def create(lines: List[PickupLine], *, supplier_id: Optional[int] = None, note: str = "", user_id: Optional[int] = None,
-           driver: str = "", truck: str = "", reference: str = "") -> int:
+           driver: str = "", truck: str = "", reference: str = "", tax_rate: float = 0.0) -> int:
     with session_scope() as session:
         pickup = Pickup(number=_next_number(session), supplier_id=supplier_id, note=(note or "").strip(), user_id=user_id, status=STATUS_DRAFT,
+                        tax_rate=max(0.0, to_float(tax_rate)),
                         driver=(driver or "").strip(), truck=(truck or "").strip(), reference=(reference or "").strip())
         session.add(pickup)
         session.flush()
@@ -100,7 +101,7 @@ def create(lines: List[PickupLine], *, supplier_id: Optional[int] = None, note: 
 
 
 def update_draft(pickup_id: int, lines: List[PickupLine], *, supplier_id: Optional[int], note: str = "",
-                 driver: str = "", truck: str = "", reference: str = "") -> None:
+                 driver: str = "", truck: str = "", reference: str = "", tax_rate: float = 0.0) -> None:
     with session_scope() as session:
         pickup = session.get(Pickup, pickup_id)
         if pickup is None:
@@ -108,6 +109,7 @@ def update_draft(pickup_id: int, lines: List[PickupLine], *, supplier_id: Option
         if pickup.status not in (STATUS_DRAFT, STATUS_SENT):
             raise ValueError("Un enlèvement validé ne peut plus être modifié.")
         pickup.supplier_id = supplier_id
+        pickup.tax_rate = max(0.0, to_float(tax_rate))
         pickup.note = (note or "").strip()
         pickup.driver, pickup.truck, pickup.reference = (driver or "").strip(), (truck or "").strip(), (reference or "").strip()
         _fill_items(session, pickup, lines)
@@ -150,6 +152,17 @@ def store_signed_file(pickup_id: int, source: str | Path) -> str:
     return str(target)
 
 
+def amount_due(pickup_id: int) -> tuple[float, float, float]:
+    """(total HT, taxe, montant à payer) = quantité × prix + taxe en %."""
+    with session_scope() as session:
+        pickup = session.execute(select(Pickup).options(joinedload(Pickup.items)).where(Pickup.id == pickup_id)).unique().scalar_one_or_none()
+        if pickup is None:
+            return 0.0, 0.0, 0.0
+        ht = round(sum(_f(i.line_total) for i in pickup.items), 2)
+        tax = round(ht * _f(pickup.tax_rate) / 100, 2)
+        return ht, tax, round(ht + tax, 2)
+
+
 def validate(pickup_id: int, *, amount_paid: float = 0, signed_file: str = "", user_id: Optional[int] = None, username: str = "") -> int:
     """Valide l'enlèvement : crée l'achat (le stock entre, la dette fournisseur est créée si non payé)."""
     from app.services.purchase_service import PurchaseLine, PurchaseService
@@ -164,8 +177,10 @@ def validate(pickup_id: int, *, amount_paid: float = 0, signed_file: str = "", u
             raise ValueError("Choisissez le fournisseur (SONABHY…) pour enregistrer l'achat à crédit.")
         number, supplier_id = pickup.number, pickup.supplier_id
         lines = [PurchaseLine(i.product_id, i.product_name, _f(i.quantity), _f(i.unit_cost)) for i in pickup.items]
+    ht_total = round(sum(l.quantity * l.unit_cost for l in lines), 2)
     purchase = PurchaseService.create(
-        lines, supplier_id=supplier_id, invoice_number=f"BE-{number}", amount_paid=amount_paid,
+        # l'achat enregistre les produits (HT) ; la taxe payée en plus n'est pas une dette supplémentaire
+        lines, supplier_id=supplier_id, invoice_number=f"BE-{number}", amount_paid=min(to_float(amount_paid), ht_total),
         note=f"Enlèvement N° {number}", user_id=user_id, username=username,
     )
     with session_scope() as session:

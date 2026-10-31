@@ -127,6 +127,8 @@ def build_bon_enlevement(
     bank = _opt(SETTING_BANK, overrides)
     bank_name = _opt(SETTING_BANK_NAME, overrides)
     ac_label, ac_rate = get_acompte(overrides)
+    if getattr(sale, 'is_pickup', False) and float(getattr(sale, 'tax_rate', 0) or 0) > 0:
+        ac_label, ac_rate = 'Taxe', float(sale.tax_rate)
 
     base = ParagraphStyle("b", fontName="Helvetica", fontSize=fs, leading=fs * 1.3, textColor=INK)
     bold = ParagraphStyle("bb", parent=base, fontName="Helvetica-Bold")
@@ -293,7 +295,7 @@ def pickup_document(pickup_id: int):
             raise ValueError("Enlèvement introuvable.")
         items = [NS(product_name=i.product_name, product_id=i.product_id, quantity=float(i.quantity or 0), unit_price=float(i.unit_cost or 0), line_total=float(i.line_total or 0)) for i in pk.items]
         return NS(
-            ticket_number=f"BE-{pk.number}", pickup_number=pk.number, date=pk.date, client_id=None, items=items, payments=[], is_pickup=True,
+            ticket_number=f"BE-{pk.number}", pickup_number=pk.number, tax_rate=float(pk.tax_rate or 0), date=pk.date, client_id=None, items=items, payments=[], is_pickup=True,
             supplier_name=pk.supplier.name if pk.supplier else "", client_name=str(shop.name or ""), client_phone=str(shop.phone or ""),
             client_address=str(shop.address or ""), client_email=str(shop.email or ""),
         )

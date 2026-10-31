@@ -201,6 +201,7 @@ def _migrate_schema() -> None:
         },
         "pickups": {
             "loss_bearer": "VARCHAR(20) DEFAULT ''",
+            "tax_rate": "NUMERIC(6, 3) DEFAULT 0",
             "driver": "VARCHAR(120) DEFAULT ''",
             "truck": "VARCHAR(60) DEFAULT ''",
             "reference": "VARCHAR(80) DEFAULT ''",

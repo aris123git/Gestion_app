@@ -8,6 +8,7 @@ os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from pdf_text import pdf_text  # noqa: E402
+from app import config  # noqa: E402
 from app.controllers.client_controller import ClientController  # noqa: E402
 from app.controllers.product_controller import ProductController  # noqa: E402
 from app.controllers.sale_controller import CartLine, PaymentLine, SaleController  # noqa: E402
@@ -123,6 +124,21 @@ class PickupTests(unittest.TestCase):
             self.assertEqual((pk.driver, pk.truck, pk.reference, pk.loss_bearer), ("Kaboré", "12 BB 3456", "BL-77", "info"))
         entries = accounting_service.generate_entries(date.today())
         self.assertFalse(any(e.label.startswith(f"Perte sur enlèvement {number}") for e in entries))   # aucune écriture
+
+    def test_tax_on_amount_due_and_default_paid(self):
+        pid = ps.create([ps.PickupLine(self.product, 10, 700)], supplier_id=self.supplier, tax_rate=18)
+        self.assertEqual(ps.amount_due(pid), (7000.0, 1260.0, 8260.0))
+        ps.update_draft(pid, [ps.PickupLine(self.product, 10, 700)], supplier_id=self.supplier, tax_rate=5)
+        self.assertEqual(ps.amount_due(pid), (7000.0, 350.0, 7350.0))
+        from app.ui.dialogs.pickups_dialog import ValidatePickupDialog
+        ht, tax, due = ps.amount_due(pid)
+        dlg = ValidatePickupDialog(None, ht, tax)
+        self.assertEqual(dlg.paid.value(), due)     # payé par défaut = montant à payer
+        from app.printers import bon_enlevement as be
+        path = be.build_pickup_bon(pid, config.TICKET_DIR / "tax_bon.pdf", True, "A4")
+        text = pdf_text(path)
+        self.assertIn("TAXE 5%", text.upper())
+        ps.validate(pid, amount_paid=due)                                           # taxe payée en plus : pas de dette
 
     def test_billing_disabled_by_default_and_blocked(self):
         settings_service.set_setting("pickup_allow_billing", "0")
