@@ -51,5 +51,5 @@ def check_for_update(fetch: Optional[Callable[[str], dict]] = None) -> UpdateInf
     assets = [a for a in data.get("assets", []) if str(a.get("name", "")).lower().endswith(".exe")]
     return UpdateInfo(
         current=__version__, latest=str(data.get("tag_name", "") or data.get("name", "")).lstrip("vV"), url=str(data.get("html_url", "")),
-        notes=str(data.get("body", "") or "")[:1500], asset_url=str(assets[0].get("browser_download_url", "")) if assets else "",
+        notes=str(data.get("body", "") or "")[:1500], asset_url=str(next((a for a in assets if "setup" in str(a.get("name", "")).lower()), assets[0]).get("browser_download_url", "")) if assets else "",
     )
