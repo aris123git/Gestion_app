@@ -142,6 +142,31 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     QDateEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
         border: 1px solid {primary};
     }}
+    QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox, QDateEdit {{
+        min-height: 22px;
+    }}
+    QComboBox {{ padding-right: 30px; }}
+    QDoubleSpinBox, QSpinBox, QDateEdit {{ padding-right: 28px; }}
+    QDoubleSpinBox::up-button, QSpinBox::up-button {{
+        subcontrol-origin: border; subcontrol-position: top right;
+        width: 22px; border: none; border-left: 1px solid {c['border']};
+        border-top-right-radius: 8px; background: transparent;
+    }}
+    QDoubleSpinBox::down-button, QSpinBox::down-button {{
+        subcontrol-origin: border; subcontrol-position: bottom right;
+        width: 22px; border: none; border-left: 1px solid {c['border']};
+        border-bottom-right-radius: 8px; background: transparent;
+    }}
+    QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {{
+        width: 0; height: 0;
+        border-left: 4px solid transparent; border-right: 4px solid transparent;
+        border-bottom: 5px solid {c['muted']};
+    }}
+    QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {{
+        width: 0; height: 0;
+        border-left: 4px solid transparent; border-right: 4px solid transparent;
+        border-top: 5px solid {c['muted']};
+    }}
     QComboBox::drop-down {{
         subcontrol-origin: padding;
         subcontrol-position: center right;
