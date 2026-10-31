@@ -58,3 +58,22 @@ class PinBottomTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FillRowsTests(PinBottomTests):
+    def test_bon_fill_rows_single_page_and_taller_table(self):
+        import fitz
+        a = be.build_bon_enlevement(self.sale, path=config.TICKET_DIR / "f_a.pdf", overrides={"bon_fill_empty": "0"})
+        b = be.build_bon_enlevement(self.sale, path=config.TICKET_DIR / "f_b.pdf", overrides={"bon_fill_empty": "1"})
+        self.assertEqual(len(fitz.open(str(b))), 1)
+        n_lines = lambda p: len(fitz.open(str(p))[0].get_drawings())
+        self.assertGreater(n_lines(b), n_lines(a))                  # des lignes (filets) en plus
+
+    def test_delivery_fill_rows_all_styles(self):
+        import fitz
+        for style in DELIVERY_STYLES:
+            with self.subTest(style=style.id):
+                a = dn.build_delivery_note(self.sale, path=config.TICKET_DIR / f"fa_{style.id}.pdf", style_id=style.id, overrides={"bl_fill_empty": "0"})
+                b = dn.build_delivery_note(self.sale, path=config.TICKET_DIR / f"fb_{style.id}.pdf", style_id=style.id, overrides={"bl_fill_empty": "1", "bl_pin_bottom": "1"})
+                self.assertEqual(len(fitz.open(str(b))), 1)
+                self.assertGreaterEqual(len(fitz.open(str(b))[0].get_drawings()), len(fitz.open(str(a))[0].get_drawings()))

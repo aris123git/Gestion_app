@@ -188,6 +188,14 @@ def _build_ctx(sale, shop, selected, style_id, overrides, font_size) -> Ctx:
     )
 
 
+def _q(value) -> str:
+    return "" if value is None else f"{value:g}"
+
+
+def _a(value) -> str:
+    return "" if value is None else format_amount(value)
+
+
 def _shop_contact_lines(c: Ctx) -> list[str]:
     s = c.shop
     return [x for x in (str(s.address or ""), f"Tél : {s.phone}" if s.phone else "", str(s.email or "")) if x]
@@ -299,7 +307,7 @@ def _layout_bandeau(c: Ctx):
 
     fs = c.fs
     head = [Paragraph(x, _para(c, fs - 1, True, "#111827")) for x in ("RÉF PRODUIT", "DESCRIPTION", "QUANTITÉ", "UNITÉ")]
-    data = [head] + [[Paragraph(r[0], _para(c)), Paragraph(r[1], _para(c)), f"{r[2]:g}", r[3]] for r in c.rows]
+    data = [head] + [[Paragraph(r[0], _para(c)), Paragraph(r[1], _para(c)), _q(r[2]), r[3]] for r in c.rows]
     cw = [(W - 2 * MX) * x for x in (0.18, 0.46, 0.18, 0.18)]
     t = Table(data, colWidths=cw, repeatRows=1)
     pad = max(3, fs * 0.55)
@@ -371,7 +379,7 @@ def _layout_marine(c: Ctx):
 
     fs = c.fs
     head = ["Référence", "Quantité", "Description", "Prix unitaire", "Prix total"]
-    data = [head] + [[Paragraph(r[0], _para(c)), f"{r[2]:g}", Paragraph(r[1], _para(c)), format_amount(r[4]), format_amount(r[5])] for r in c.rows]
+    data = [head] + [[Paragraph(r[0], _para(c)), _q(r[2]), Paragraph(r[1], _para(c)), _a(r[4]), _a(r[5])] for r in c.rows]
     cw = [(W - 2 * MX) * x for x in (0.14, 0.11, 0.41, 0.17, 0.17)]
     t = Table(data, colWidths=cw, repeatRows=1)
     pad = max(4, fs * 0.8)
@@ -440,7 +448,7 @@ def _layout_cadres(c: Ctx):
 
     fs = c.fs
     head = ["Désignation", "Qté", "Prix", "Montant TTC"]
-    data = [head] + [[Paragraph(r[1], _para(c)), f"{r[2]:g}", format_amount(r[4]), format_amount(r[5])] for r in c.rows]
+    data = [head] + [[Paragraph(r[1], _para(c)), _q(r[2]), _a(r[4]), _a(r[5])] for r in c.rows]
     cw = [(W - 2 * MX) * x for x in (0.52, 0.10, 0.18, 0.20)]
     t = Table(data, colWidths=cw, repeatRows=1)
     pad = max(2.5, fs * 0.4)
@@ -538,7 +546,7 @@ def _layout_cyan(c: Ctx, societe: bool = False):
 
     fs = c.fs
     head = [Paragraph(f"<b>{x}</b>", _para(c, fs - 1)) for x in ("Réf. produit", "Description", "Quantités commandées", "Unité")]
-    data = [head] + [[Paragraph(r[0], _para(c, fs, False, "#6b7280")), Paragraph(r[1], _para(c, fs, False, "#4b5563")), f"{r[2]:g}", r[3]] for r in c.rows]
+    data = [head] + [[Paragraph(r[0], _para(c, fs, False, "#6b7280")), Paragraph(r[1], _para(c, fs, False, "#4b5563")), _q(r[2]), r[3]] for r in c.rows]
     cw = [(W - 2 * MX) * x for x in (0.18, 0.44, 0.22, 0.16)]
     t = Table(data, colWidths=cw, repeatRows=1)
     pad = max(3, fs * 0.5)
@@ -603,7 +611,7 @@ def _layout_classique(c: Ctx):
 
     fs = c.fs
     head = ["Détails", "Qté", "Unité", "PU", "Total"]
-    data = [head] + [[Paragraph(r[1], _para(c)), f"{r[2]:g}", r[3], format_amount(r[4]), format_amount(r[5])] for r in c.rows]
+    data = [head] + [[Paragraph(r[1], _para(c)), _q(r[2]), r[3], _a(r[4]), _a(r[5])] for r in c.rows]
     cw = [(W - 2 * MX) * x for x in (0.44, 0.10, 0.12, 0.17, 0.17)]
     t = Table(data, colWidths=cw, repeatRows=1)
     pad = max(2.5, fs * 0.4)
@@ -645,8 +653,18 @@ def build_delivery_note(
         path = config.TICKET_DIR / f"BL_{c.number}_{datetime.now():%Y%m%d_%H%M%S}.pdf"
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    story, first, later, top, bottom = _LAYOUTS[c.style.layout](c)
     from app.printers.bon_enlevement import _opt
+    story, first, later, top, bottom = _LAYOUTS[c.style.layout](c)
+    if _opt("bl_fill_empty", overrides) == "1" and len(story) >= 3:      # option : lignes vides jusqu'en bas de page
+        from app.printers.page_fill import fit_blank_rows
+        base_rows = list(c.rows)
+
+        def make(n: int):
+            c.rows = base_rows + [("&nbsp;", "&nbsp;", None, "", None, None)] * n
+            return _LAYOUTS[c.style.layout](c)[0]
+
+        n = fit_blank_rows(make, W - 2 * MX, H - top - bottom)
+        story = make(n)
     if _opt("bl_pin_bottom", overrides) == "1" and len(story) >= 3:     # signature et cachet tout en bas de la page
         from app.printers.page_fill import PushToBottom
         story[-2] = PushToBottom(story[-1], 6 * mm)

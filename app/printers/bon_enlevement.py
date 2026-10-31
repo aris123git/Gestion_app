@@ -258,14 +258,21 @@ def build_bon_enlevement(
             cells += [format_amount(float(it.unit_price or 0)), format_amount(line_total)]
         rows.append(cells)
     cw = [frame_w * 0.34, frame_w * 0.14, frame_w * 0.12, frame_w * 0.18, frame_w * 0.22] if show_prices else [frame_w * 0.60, frame_w * 0.22, frame_w * 0.18]
-    table = Table(rows, colWidths=cw, repeatRows=1)
     pad = max(1.2, fs * 0.2) if half else max(2.5, fs * 0.45)
-    table.setStyle(TableStyle([
+    table_cmds = [
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), fs),
         ("ALIGN", (1, 0), (-1, -1), "CENTER"), ("ALIGN", (3, 1), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.8, LINE), ("TOPPADDING", (0, 0), (-1, -1), pad), ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
         ("TEXTCOLOR", (0, 0), (-1, -1), INK),
-    ] + ([("BACKGROUND", (0, 0), (-1, 0), LINE), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white)] if style.header_fill else [])))
+    ] + ([("BACKGROUND", (0, 0), (-1, 0), LINE), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white)] if style.header_fill else [])
+
+    def make_table(extra: int = 0):
+        blank = [[Paragraph("&nbsp;", base)] + [""] * (len(head_row) - 1)] * extra
+        tbl = Table(rows + blank, colWidths=cw, repeatRows=1)
+        tbl.setStyle(TableStyle(table_cmds))
+        return tbl
+
+    table = make_table()
     story += [table, Spacer(1, 4 * mm * k)]
 
     # Totaux + mention légale + somme en lettres
@@ -301,6 +308,16 @@ def build_bon_enlevement(
     sign = Table([[Paragraph(f"<b>{commercial or 'Le Commercial'}</b>" + ("<br/>Signature et cachet" if _opt("bon_pin_bottom", overrides) == "1" else ""), base), Paragraph(f"<b>{company or 'Le client'}</b>" + ("<br/>Signature et cachet" if _opt("bon_pin_bottom", overrides) == "1" else ""), ParagraphStyle("c", parent=base, alignment=2))]], colWidths=[frame_w / 2, frame_w / 2])
     sign.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
     final_block = KeepTogether([bottom_block, Spacer(1, (5 if half else 8) * mm * k), sign])
+    if _opt("bon_fill_empty", overrides) == "1":          # option : lignes vides jusqu'en bas de page
+        from app.printers.page_fill import fit_blank_rows
+        pos = story.index(table)
+        tail = story[pos:] + [final_block]
+
+        def make(n: int):
+            return [make_table(n)] + tail[1:]
+
+        n = fit_blank_rows(make, frame_w, page[1] - 10 * mm * k - bottom - 14, story[:pos])   # 12 pt de marge interne du cadre + sécurité
+        story[pos] = make_table(n)
     if _opt("bon_pin_bottom", overrides) == "1":   # option « remplir la page » : signature et cachet en bas
         from app.printers.page_fill import PushToBottom
         story += [PushToBottom(final_block, 4 * mm * k)]
