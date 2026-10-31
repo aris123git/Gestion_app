@@ -586,16 +586,31 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     decor = _DECORS[style.layout]
     margin = MARGIN * k
 
+    pin_on = get_pin_bottom() if pin_bottom is None else bool(pin_bottom)
+    sign_h = 24 * mm * k if pin_on else 0.0     # place réservée en bas de CHAQUE page (signature + cachet)
+
     def on_page(canvas, doc):
         canvas.saveState()
         if k != 1.0:
             canvas.scale(k, k)  # le décor est dessiné sur une page virtuelle plus grande
         decor(canvas, ctx)
         canvas.restoreState()
+        if pin_on:
+            # même numéro de facture sur chaque page ; cadre « signature et cachet » tout en bas de chaque page
+            canvas.saveState()
+            box_w, y0 = 70 * mm * k, bottom_mm * mm + 1 * mm * k
+            canvas.setStrokeColor(colors.HexColor("#6b7280"))
+            canvas.setLineWidth(0.6)
+            canvas.rect(real_w - margin - box_w, y0, box_w, sign_h - 3 * mm * k, stroke=1, fill=0)
+            canvas.setFont("Helvetica", max(6.5, 8 * k))
+            canvas.setFillColor(colors.HexColor("#374151"))
+            canvas.drawString(real_w - margin - box_w + 2 * mm, y0 + sign_h - 3 * mm * k - 4.2 * mm * k, "Signature et cachet")
+            canvas.drawString(margin, y0 + 1 * mm, f"Facture {number} — page {doc.page}")
+            canvas.restoreState()
 
     frame_w = real_w - 2 * margin
-    frame_h = real_h - (top_mm + bottom_mm) * mm
-    frame = Frame(margin, bottom_mm * mm, frame_w, frame_h,
+    frame_h = real_h - (top_mm + bottom_mm) * mm - sign_h
+    frame = Frame(margin, bottom_mm * mm + sign_h, frame_w, frame_h,
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="body")
     doc = BaseDocTemplate(
         str(path), pagesize=(real_w, real_h), leftMargin=margin, rightMargin=margin,
@@ -745,7 +760,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
         for pay in sale.payments:
             left.append(Paragraph(f"{pay.method} : {format_money(pay.amount, currency)}", small))
     sign = Paragraph(
-        ("<b>Le responsable</b>" if layout in ("recu", "moderne") else "<b>Signature</b>") + ("<br/>et cachet" if (get_pin_bottom() if pin_bottom is None else pin_bottom) else ""),
+        ("<b>Le responsable</b>" if layout in ("recu", "moderne") else "<b>Signature</b>") if not pin_on else "",
         ParagraphStyle("sg", parent=body, alignment=1),
     )
     bottom = Table([[left, [totals_t, Spacer(1, (2 if half else 6) * mm), sign]]], colWidths=[frame_w - 100 * mm, 100 * mm])
@@ -780,7 +795,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             items_t = trial
         _, cur_h = items_t.wrap(frame_w, frame_h)
     # Les totaux suivent directement la dernière ligne (sauf en mode « lignes vides »).
-    pin = get_pin_bottom() if pin_bottom is None else bool(pin_bottom)
+    pin = pin_on
     gap = 8 * mm * k + (max(0.0, available - cur_h) if (fill or pin) and cur_h <= available else 0.0)
     story += [items_t, Spacer(1, gap), KeepTogether([bottom])]
 

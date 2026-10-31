@@ -15,13 +15,7 @@ from app.printers import bon_enlevement as be, delivery_note as dn, invoice_a4 a
 from app.printers.delivery_note import DELIVERY_STYLES  # noqa: E402
 
 
-def _lowest_y_ratio(path, words) -> float:
-    """Position verticale (0 = haut, 1 = bas) du dernier mot trouvé parmi ``words``."""
-    import fitz
-    doc = fitz.open(str(path))
-    page = doc[len(doc) - 1]
-    ys = [w[3] for w in page.get_text("words") if any(k.lower() in w[4].lower() for k in words)]
-    return max(ys) / page.rect.height if ys else 0.0
+from pdf_text import content_size, lowest_y_ratio, page_count, page_texts  # noqa: E402
 
 
 class PinBottomTests(unittest.TestCase):
@@ -39,21 +33,20 @@ class PinBottomTests(unittest.TestCase):
     def test_invoice(self):
         a = ia.build_invoice_a4(self.sale, path=config.TICKET_DIR / "p_a.pdf", pin_bottom=False)
         b = ia.build_invoice_a4(self.sale, path=config.TICKET_DIR / "p_b.pdf", pin_bottom=True)
-        self.assertGreater(_lowest_y_ratio(b, ["cachet"]), 0.75)
-        self.assertLess(_lowest_y_ratio(a, ["Signature", "responsable"]), 0.6)
+        self.assertLess(lowest_y_ratio(b, ["cachet"]), 0.25)
+        self.assertGreater(lowest_y_ratio(a, ["Signature", "responsable"]), 0.4)
 
     def test_bon_enlevement(self):
         a = be.build_bon_enlevement(self.sale, path=config.TICKET_DIR / "p_c.pdf", overrides={"bon_pin_bottom": "0"})
         b = be.build_bon_enlevement(self.sale, path=config.TICKET_DIR / "p_d.pdf", overrides={"bon_pin_bottom": "1"})
-        self.assertGreater(_lowest_y_ratio(b, ["cachet"]), 0.75)
-        self.assertLess(_lowest_y_ratio(a, ["Commercial", "client"]), 0.6)
+        self.assertLess(lowest_y_ratio(b, ["cachet"]), 0.25)
+        self.assertGreater(lowest_y_ratio(a, ["Commercial"]), 0.4)
 
     def test_delivery_note_all_styles_single_page(self):
-        import fitz
         for style in DELIVERY_STYLES:
             with self.subTest(style=style.id):
                 p = dn.build_delivery_note(self.sale, path=config.TICKET_DIR / f"p_{style.id}.pdf", style_id=style.id, overrides={"bl_pin_bottom": "1"})
-                self.assertEqual(len(fitz.open(str(p))), 1)          # pas de page blanche en plus
+                self.assertEqual(page_count(p), 1)          # pas de page blanche en plus
 
 
 if __name__ == "__main__":
@@ -62,18 +55,29 @@ if __name__ == "__main__":
 
 class FillRowsTests(PinBottomTests):
     def test_bon_fill_rows_single_page_and_taller_table(self):
-        import fitz
         a = be.build_bon_enlevement(self.sale, path=config.TICKET_DIR / "f_a.pdf", overrides={"bon_fill_empty": "0"})
         b = be.build_bon_enlevement(self.sale, path=config.TICKET_DIR / "f_b.pdf", overrides={"bon_fill_empty": "1"})
-        self.assertEqual(len(fitz.open(str(b))), 1)
-        n_lines = lambda p: len(fitz.open(str(p))[0].get_drawings())
-        self.assertGreater(n_lines(b), n_lines(a))                  # des lignes (filets) en plus
+        self.assertEqual(page_count(b), 1)
+        self.assertGreater(content_size(b), content_size(a))        # des lignes (filets) en plus
 
     def test_delivery_fill_rows_all_styles(self):
-        import fitz
         for style in DELIVERY_STYLES:
             with self.subTest(style=style.id):
                 a = dn.build_delivery_note(self.sale, path=config.TICKET_DIR / f"fa_{style.id}.pdf", style_id=style.id, overrides={"bl_fill_empty": "0"})
                 b = dn.build_delivery_note(self.sale, path=config.TICKET_DIR / f"fb_{style.id}.pdf", style_id=style.id, overrides={"bl_fill_empty": "1", "bl_pin_bottom": "1"})
-                self.assertEqual(len(fitz.open(str(b))), 1)
-                self.assertGreaterEqual(len(fitz.open(str(b))[0].get_drawings()), len(fitz.open(str(a))[0].get_drawings()))
+                self.assertEqual(page_count(b), 1)
+                self.assertGreaterEqual(content_size(b), content_size(a))
+
+
+class LongInvoiceTests(PinBottomTests):
+    def test_signature_box_on_every_page_same_number(self):
+        pid = ProductController.create({"name": "Long P", "sale_price": 100, "purchase_price": 50, "quantity": 1000}).id
+        res = SaleController.create_sale([CartLine(pid, f"Long P {i}", 100, 1) for i in range(70)], [PaymentLine("Espèces", 7000)], amount_received=7000)
+        sale = SaleController.get(res.sale_id)
+        path = ia.build_invoice_a4(sale, path=config.TICKET_DIR / "long.pdf", pin_bottom=True)
+        texts = page_texts(path)
+        self.assertGreaterEqual(len(texts), 2)
+        number = ia.invoice_number(sale)
+        for text in texts:
+            self.assertIn("Signature et cachet", text)
+            self.assertIn(str(number), text)
