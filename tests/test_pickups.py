@@ -138,6 +138,17 @@ class PickupTests(unittest.TestCase):
         path = be.build_pickup_bon(pid, config.TICKET_DIR / "tax_bon.pdf", True, "A4")
         text = pdf_text(path)
         self.assertIn("TAXE 5%", text.upper())
+        for label in ("TOTAL AVANT TAXE", "TOTAL"):
+            self.assertIn(label, text.upper())
+        settings_service.set_setting("bon_client_name", "NEXADIGIT SARL")
+        settings_service.set_setting("bon_client_number", "SNB-4521")
+        settings_service.set_setting("bon_client_phone", "70 11 22 33")
+        settings_service.set_setting("bon_client_address", "Ouagadougou, secteur 15")
+        text2 = pdf_text(be.build_pickup_bon(pid, config.TICKET_DIR / "client_bon.pdf", True, "A4"))
+        for expected in ("NEXADIGIT SARL", "SNB-4521", "70 11 22 33", "secteur 15"):
+            self.assertIn(expected, text2)
+        for key in ("bon_client_name", "bon_client_number", "bon_client_phone", "bon_client_address"):
+            settings_service.set_setting(key, "")
         ps.validate(pid, amount_paid=due)                                           # taxe payée en plus : pas de dette
 
     def test_billing_disabled_by_default_and_blocked(self):

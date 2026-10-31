@@ -37,6 +37,10 @@ SETTING_IFU = "shop_ifu"
 SETTING_BANK = "shop_bank_account"
 SETTING_SHOW_PRICES = "bon_show_prices"
 SETTING_BANK_NAME = "shop_bank_name"
+SETTING_CLIENT_NAME = "bon_client_name"
+SETTING_CLIENT_NUMBER = "bon_client_number"      # n° du client chez le fournisseur (ex. SONABHY)
+SETTING_CLIENT_PHONE = "bon_client_phone"
+SETTING_CLIENT_ADDRESS = "bon_client_address"
 
 INK = colors.HexColor("#111827")
 LINE = colors.HexColor("#111827")
@@ -194,14 +198,18 @@ def build_bon_enlevement(
     refs = client_refs(sale)
     client_id = getattr(sale, "client_id", None)
     right_rows = []
-    if client_id:
-        right_rows.append([Paragraph(f"<b>N° Client :</b> {int(client_id):05d}", base)])
-    if refs.get("name") and (client_id or refs["name"] != "Client"):
-        right_rows.append([Paragraph(f"<b>Nom Client :</b> {refs['name']}", base)])
-    if refs.get("contact"):
-        right_rows.append([Paragraph(f"<b>Contact :</b> {refs['contact']}", base)])
-    if refs.get("address"):
-        right_rows.append([Paragraph(f"<b>Adresse :</b> {refs['address']}", base)])
+    c_number = _opt(SETTING_CLIENT_NUMBER, overrides) or (f"{int(client_id):05d}" if client_id else "")
+    c_name = _opt(SETTING_CLIENT_NAME, overrides) or (refs.get("name") if (client_id or refs.get("name") != "Client") else "")
+    c_phone = _opt(SETTING_CLIENT_PHONE, overrides) or refs.get("contact", "")
+    c_address = _opt(SETTING_CLIENT_ADDRESS, overrides) or refs.get("address", "")
+    if c_number:
+        right_rows.append([Paragraph(f"<b>N° Client :</b> {c_number}", base)])
+    if c_name:
+        right_rows.append([Paragraph(f"<b>Nom Client :</b> {c_name}", base)])
+    if c_phone:
+        right_rows.append([Paragraph(f"<b>Contact :</b> {c_phone}", base)])
+    if c_address:
+        right_rows.append([Paragraph(f"<b>Adresse :</b> {c_address}", base)])
     if right_rows:
         right_box = Table(right_rows, colWidths=[frame_w * 0.52])
         right_box.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.9, LINE), ("TOPPADDING", (0, 0), (-1, -1), 1 if half else 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 1 if half else 2)]))
@@ -240,11 +248,12 @@ def build_bon_enlevement(
     # Totaux + mention légale + somme en lettres
     acompte = round(total * ac_rate / 100, 3) if ac_rate > 0 else 0.0
     grand = round(total + acompte, 3)
-    tot_rows = [["TOTAL", format_money(total, currency)]]
+    is_tax = ac_label == "Taxe"
+    tot_rows = [["TOTAL AVANT TAXE" if is_tax and acompte > 0 else "TOTAL", format_money(total, currency)]]
     if acompte > 0:
         tot_rows.append([f"{ac_label.upper()} {ac_rate:g}%", format_money(acompte, currency)])
-        tot_rows.append(["TOTAL GÉNÉRAL", format_money(grand, currency)])
-    totals = Table(tot_rows, colWidths=[frame_w * 0.20, frame_w * 0.26])
+        tot_rows.append(["TOTAL" if is_tax else "TOTAL GÉNÉRAL", format_money(grand, currency)])
+    totals = Table(tot_rows, colWidths=[frame_w * 0.24, frame_w * 0.22])
     totals.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.9, LINE), ("INNERGRID", (0, 0), (-1, -1), 0.6, LINE), ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
                                 ("FONTSIZE", (0, 0), (-1, -1), fs), ("ALIGN", (1, 0), (1, -1), "RIGHT"), ("TOPPADDING", (0, 0), (-1, -1), 1.2 if half else 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2 if half else 2.5)]))
     left_cell = []

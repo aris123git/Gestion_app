@@ -416,6 +416,14 @@ class SettingsPage(QWidget):
         self.bon_ac_rate.setDecimals(2)
         self.bon_ac_rate.setSuffix(' %')
         self.bon_ac_rate.setToolTip(t("0 = aucune ligne d'acompte sur le bon. Sinon l'acompte est ajouté au total (TOTAL GÉNÉRAL)."))
+        self.bon_client_name = QLineEdit()
+        self.bon_client_name.setPlaceholderText(t('Nom du client (par défaut : le commerce)'))
+        self.bon_client_number = QLineEdit()
+        self.bon_client_number.setPlaceholderText(t('N° client chez le fournisseur (ex. SONABHY)'))
+        self.bon_client_phone = QLineEdit()
+        self.bon_client_phone.setPlaceholderText(t('Contact'))
+        self.bon_client_address = QLineEdit()
+        self.bon_client_address.setPlaceholderText(t('Adresse'))
         self.bon_commercial = QLineEdit()
         self.bon_commercial.setPlaceholderText(t('Nom du commercial'))
         self.shop_rccm = QLineEdit()
@@ -512,6 +520,10 @@ class SettingsPage(QWidget):
         ac_row.addWidget(self.bon_ac_label, 1)
         ac_row.addWidget(self.bon_ac_rate)
         form.addRow(t('Acompte sur le bon (libellé et taux)'), ac_row)
+        form.addRow(t('Client du bon : nom'), self.bon_client_name)
+        form.addRow(t('Client du bon : numéro'), self.bon_client_number)
+        form.addRow(t('Client du bon : contact'), self.bon_client_phone)
+        form.addRow(t('Client du bon : adresse'), self.bon_client_address)
         form.addRow(t('Commercial (signature du bon)'), self.bon_commercial)
         form.addRow(t('N° RCCM (pied du bon)'), self.shop_rccm)
         form.addRow(t('N° IFU (pied du bon)'), self.shop_ifu)
@@ -520,7 +532,7 @@ class SettingsPage(QWidget):
         form.addRow('', self.invoice_show_legal)
         form.addRow('', self.invoice_show_bank)
         form.addRow('', self.bl_show_bank)
-        self._enterprise_rows = [self.bon_legal, ac_row, self.pickup_allow_billing, self.pickup_bearer, self.pickup_tolerance]
+        self._enterprise_rows = [self.bon_legal, ac_row, self.bon_client_name, self.bon_client_number, self.bon_client_phone, self.bon_client_address, self.pickup_allow_billing, self.pickup_bearer, self.pickup_tolerance]
         self._invoice_form = form
         self.shop_type.currentTextChanged.connect(self._apply_enterprise_visibility)
         outer.addWidget(make_card(form_widget))
@@ -624,6 +636,7 @@ class SettingsPage(QWidget):
         from app.printers import bon_enlevement as be
         shop = settings_service.get_shop_info()
         overrides = {be.SETTING_LEGAL: self.bon_legal.text(), be.SETTING_ACOMPTE_LABEL: self.bon_ac_label.text(), be.SETTING_ACOMPTE_RATE: str(self.bon_ac_rate.value()),
+                     be.SETTING_CLIENT_NAME: self.bon_client_name.text(), be.SETTING_CLIENT_NUMBER: self.bon_client_number.text(), be.SETTING_CLIENT_PHONE: self.bon_client_phone.text(), be.SETTING_CLIENT_ADDRESS: self.bon_client_address.text(),
                      be.SETTING_COMMERCIAL: self.bon_commercial.text(), be.SETTING_RCCM: self.shop_rccm.text(), be.SETTING_IFU: self.shop_ifu.text(), be.SETTING_BANK: self.shop_bank.text(), be.SETTING_BANK_NAME: self.shop_bank_name.text()}
         try:
             items = [NS(product_name='Produit exemple 1', product_id=None, quantity=1000, unit_price=700, line_total=700000), NS(product_name='Produit exemple 2', product_id=None, quantity=500, unit_price=650, line_total=325000)]
@@ -1137,6 +1150,8 @@ class SettingsPage(QWidget):
         settings_service.set_setting('bon_acompte_label', self.bon_ac_label.text().strip())
         settings_service.set_setting('bon_acompte_rate', str(self.bon_ac_rate.value()))
         settings_service.set_setting('bon_commercial', self.bon_commercial.text().strip())
+        for _key, _w in (('bon_client_name', self.bon_client_name), ('bon_client_number', self.bon_client_number), ('bon_client_phone', self.bon_client_phone), ('bon_client_address', self.bon_client_address)):
+            settings_service.set_setting(_key, _w.text().strip())
         settings_service.set_setting('shop_rccm', self.shop_rccm.text().strip())
         settings_service.set_setting('shop_ifu', self.shop_ifu.text().strip())
         settings_service.set_setting('shop_bank_account', self.shop_bank.text().strip())
@@ -1774,6 +1789,10 @@ class SettingsPage(QWidget):
         self.bon_ac_label.setText(settings_service.get_setting(_be.SETTING_ACOMPTE_LABEL, ''))
         self.bon_ac_rate.setValue(_be.get_acompte()[1])
         self.bon_commercial.setText(settings_service.get_setting(_be.SETTING_COMMERCIAL, ''))
+        self.bon_client_name.setText(settings_service.get_setting(_be.SETTING_CLIENT_NAME, ''))
+        self.bon_client_number.setText(settings_service.get_setting(_be.SETTING_CLIENT_NUMBER, ''))
+        self.bon_client_phone.setText(settings_service.get_setting(_be.SETTING_CLIENT_PHONE, ''))
+        self.bon_client_address.setText(settings_service.get_setting(_be.SETTING_CLIENT_ADDRESS, ''))
         self.shop_rccm.setText(settings_service.get_setting(_be.SETTING_RCCM, ''))
         self.shop_ifu.setText(settings_service.get_setting(_be.SETTING_IFU, ''))
         self.shop_bank.setText(settings_service.get_setting(_be.SETTING_BANK, ''))
