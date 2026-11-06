@@ -36,6 +36,10 @@ VIEW_ASSISTANT = "view_assistant"
 APPLY_DISCOUNT = "apply_discount"
 SELL_ON_CREDIT = "sell_on_credit"
 VIEW_AUDIT = "view_audit"
+# Chantiers / marchés (type Entreprise) : le chef de chantier (Caissier) saisit dépenses et avancement sans voir marges ni encaissements.
+MANAGE_CHANTIERS = "manage_chantiers"
+ADD_CHANTIER_EXPENSES = "add_chantier_expenses"
+VIEW_CHANTIER_FINANCE = "view_chantier_finance"
 
 _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
     {
@@ -64,6 +68,9 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         APPLY_DISCOUNT,
         SELL_ON_CREDIT,
         VIEW_AUDIT,
+        MANAGE_CHANTIERS,
+        ADD_CHANTIER_EXPENSES,
+        VIEW_CHANTIER_FINANCE,
     }
 )
 
@@ -92,6 +99,9 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             APPLY_DISCOUNT,
             SELL_ON_CREDIT,
             VIEW_AUDIT,
+            MANAGE_CHANTIERS,
+            ADD_CHANTIER_EXPENSES,
+            VIEW_CHANTIER_FINANCE,
         }
     ),
     ROLE_CASHIER: frozenset(
@@ -106,6 +116,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             APPLY_DISCOUNT,
             # Crédit depuis la caisse OK ; saisie libre page Dettes = admin only.
             SELL_ON_CREDIT,
+            ADD_CHANTIER_EXPENSES,
         }
     ),
 }

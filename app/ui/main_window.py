@@ -16,6 +16,7 @@ from app.ui.pages.categories_page import CategoriesPage
 from app.ui.pages.clients_page import ClientsPage
 from app.ui.pages.dashboard_page import DashboardPage
 from app.ui.pages.debts_page import DebtsPage
+from app.ui.pages.chantiers_page import ChantiersPage
 from app.ui.pages.expenses_page import ExpensesPage
 from app.ui.pages.orders_page import OrdersPage
 from app.ui.pages.pos_page import POSPage
@@ -49,6 +50,8 @@ def build_nav_items():
         (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
         (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
     ]
+    from app.services.business_mode import is_enterprise
+    chantiers = [(t("Chantiers"), "🏗️", ChantiersPage, perms.ADD_CHANTIER_EXPENSES)] if is_enterprise() else []
     return [
         (t("nav.pos"), "🛒", POSPage, perms.SELL),
         (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
@@ -60,6 +63,7 @@ def build_nav_items():
         (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
+        *chantiers,
         (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
         *common_tail,
     ]

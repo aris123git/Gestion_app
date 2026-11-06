@@ -304,6 +304,8 @@ class SettingsPage(QWidget):
                 logo_stored = self._logo_path
         previous_lang = get_language()
         new_lang = self.ui_language.currentData() or previous_lang
+        from app.services.business_mode import is_enterprise, is_enterprise_type
+        was_enterprise = is_enterprise()
         settings_service.save_shop_info(name=self.name.text().strip(), address=self.address.text().strip(), phone=self.phone.text().strip(), email=self.email.text().strip(), currency=self.currency.currentText().strip() or 'FCFA', shop_type=self.shop_type.currentText(), vat_rate=self.vat.value(), logo_path=logo_stored, is_configured=True)
         settings_service.set_setting('shop_fax', self.fax.text().strip())
         catalog_features.set_product_images_enabled(self.catalog_images.isChecked())
@@ -324,6 +326,8 @@ class SettingsPage(QWidget):
                 QApplication.quit()
             return
         info(self, t('Informations enregistrées.'))
+        if was_enterprise != is_enterprise_type(self.shop_type.currentText()):
+            info(self, t("Le type de commerce a changé : fermez puis rouvrez le logiciel pour afficher ou masquer le menu « Chantiers » et les fonctions Entreprise."))
         self.state.notify_data_changed()
 
     def _build_appearance_tab(self) -> QWidget:
