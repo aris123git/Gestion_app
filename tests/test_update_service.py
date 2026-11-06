@@ -50,3 +50,41 @@ class PreferSetupAssetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SelfUpdateTests(unittest.TestCase):
+    def test_commands(self):
+        from pathlib import Path
+        from app.services import update_service as us
+        cmd = us.update_command(Path("C:/t/GestionCommerciale-Setup-v2.exe"), Path("C:/app/GestionCommerciale.exe"), 123)
+        self.assertIn("/SILENT", cmd); self.assertIn("/CLOSEAPPLICATIONS", cmd)
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            portable = Path(d) / "GestionCommerciale-v2.exe"
+            portable.write_bytes(b"x")
+            cmd2 = us.update_command(portable, Path("C:/app/GestionCommerciale.exe"), 123)
+            self.assertEqual(cmd2[:2], ["cmd", "/c"])
+            script = Path(cmd2[2]).read_text(encoding="utf-8")
+            self.assertIn("move /Y", script); self.assertIn("start", script); self.assertIn("123", script)
+
+    def test_download_rules(self):
+        from unittest import mock
+        from app.services import update_service as us
+        with self.assertRaises(RuntimeError):
+            us.download("http://example.com/x.exe")                  # https obligatoire
+
+        class Resp:
+            headers = {"Content-Length": "10"}
+            def __init__(self, data): self.data = data
+            def read(self, n): d, self.data = self.data[:n], self.data[n:]; return d
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch("urllib.request.urlopen", return_value=Resp(b"short")):
+                with self.assertRaises(RuntimeError):
+                    us.download("https://x/y.exe", directory=Path(d))       # trop petit = incomplet
+            with mock.patch("urllib.request.urlopen", return_value=Resp(b"a" * 1_200_000)):
+                path = us.download("https://x/GestionCommerciale-Setup-v2.exe", directory=Path(d))
+            self.assertTrue(path.is_file()); self.assertTrue(us.is_installer(path))

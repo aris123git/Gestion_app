@@ -39,3 +39,4 @@ Name: "{autodesktop}\Gestion Commerciale"; Filename: "{app}\GestionCommerciale.e
 
 [Run]
 Filename: "{app}\GestionCommerciale.exe"; Description: "Lancer Gestion Commerciale"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\GestionCommerciale.exe"; Flags: nowait; Check: WizardSilent

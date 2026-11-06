@@ -603,8 +603,41 @@ class SettingsPage(QWidget):
         if not upd.is_newer:
             info(self, t("Vous avez la dernière version ({v}).").format(v=upd.current), t('Mises à jour'))
             return
-        if confirm(self, f"{t('Nouvelle version disponible')} : {upd.latest} ({t('installée')} : {upd.current})\n\n{upd.notes}\n\n{t('Ouvrir la page de téléchargement ? Gardez l’ancien exe à côté pour pouvoir revenir en arrière ; vos données ne sont pas touchées.')}", t('Mises à jour')):
+        if update_service.can_self_update() and upd.asset_url:
+            if not confirm(self, f"{t('Nouvelle version disponible')} : {upd.latest} ({t('installée')} : {upd.current})\n\n{upd.notes}\n\n{t('Mettre à jour maintenant ? Le logiciel va se fermer puis se rouvrir tout seul. Vos données ne sont pas touchées.')}", t('Mises à jour')):
+                return
+            self._download_and_apply(upd)
+            return
+        if confirm(self, f"{t('Nouvelle version disponible')} : {upd.latest} ({t('installée')} : {upd.current})\n\n{upd.notes}\n\n{t('Ouvrir la page de téléchargement ? Vos données ne sont pas touchées.')}", t('Mises à jour')):
             QDesktopServices.openUrl(QUrl(upd.asset_url or upd.url))
+
+    def _download_and_apply(self, upd) -> None:
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication, QProgressDialog
+        from app.services import backup_service, update_service
+        try:
+            backup_service.create_full_backup()          # filet de sécurité avant toute mise à jour
+        except Exception:  # noqa: BLE001 — la sauvegarde ne doit pas bloquer la mise à jour
+            pass
+        dialog = QProgressDialog(t('Téléchargement de la mise à jour…'), t('Annuler'), 0, 100, self)
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)
+
+        def progress(done: int, total: int) -> bool:
+            dialog.setValue(int(done * 100 / total) if total else 0)
+            QApplication.processEvents()
+            return not dialog.wasCanceled()
+
+        try:
+            path = update_service.download(upd.asset_url, progress)
+        except RuntimeError as exc:
+            dialog.close()
+            if 'annulé' not in str(exc):
+                warn(self, str(exc), t('Mises à jour'))
+            return
+        dialog.close()
+        update_service.apply_update(path)
+        QApplication.quit()
 
     def _apply_enterprise_visibility(self, *_args) -> None:
         """Bons d'enlèvement / de livraison : réglages visibles seulement pour le type « Entreprise »."""
