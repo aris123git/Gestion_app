@@ -54,6 +54,26 @@ class ChantierUITests(unittest.TestCase):
             dlg._add_payment()
         self.assertEqual(cs.summary(cid).received, 600_000)
 
+    def test_edit_client_and_invoice(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QDialog
+        from app.ui.dialogs.chantier_dialog import ChantierDialog
+        from app.ui.pages import chantiers_page
+        cid = cs.create("Commande mobilier", client_label="Ancien", amount=5_000_000, status="en_cours")
+        dlg = ChantierDialog(self._state(), cid); self.keep.append(dlg)
+
+        def fake_exec(self_):
+            self_.client.setCurrentText("Société Nouvelle")
+            self_.name.setText("100 tables, 200 chaises, 50 portes")
+            return QDialog.DialogCode.Accepted
+
+        with mock.patch.object(chantiers_page.NewChantierDialog, "exec", fake_exec):
+            dlg._edit_info()
+        self.assertEqual(cs.summary(cid).name, "100 tables, 200 chaises, 50 portes")
+        with mock.patch.object(dlg, "_open_pdf") as opened:
+            dlg._pdf_invoice()
+        self.assertTrue(str(opened.call_args[0][0]).endswith(".pdf"))
+
     def test_site_manager_sees_no_finance(self):
         from app.ui.dialogs.chantier_dialog import ChantierDialog
         cid = cs.create("Chantier chef", amount=1_000_000, status="en_cours")

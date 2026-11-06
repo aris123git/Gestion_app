@@ -85,6 +85,45 @@ def build_quote(chantier_id: int, path: Path | None = None) -> Path:
     return _build(path or config.TICKET_DIR / f"{c.number}_{'devis' if is_quote else 'marche'}.pdf", story)
 
 
+def build_invoice(chantier_id: int, path: Path | None = None) -> Path:
+    """Facture du client pour tout le marché : lignes du devis + avenants, acomptes déjà encaissés, reste à payer."""
+    from app.printers import invoice_a4 as ia
+
+    shop, c = settings_service.get_shop_info(), _load(chantier_id)
+    cur = shop.currency or "FCFA"
+    base, h1, h2 = _styles()
+    number = f"FAC-{c.number}"
+    client = c.client_label or "—"
+    story = _header(shop, f"FACTURE N° {number}", f"Date : {datetime.now():%d/%m/%Y}<br/>Client : <b>{client}</b><br/>Objet : {c.name}" + (f" — {c.location}" if c.location else ""), base, h1)
+    rows = [["Désignation", "Qté", "Unité", "P.U", "Total"]]
+    lines_total = 0.0
+    for l in c.lines:
+        rows.append([Paragraph(l.label, base), f"{float(l.quantity):g}", l.unit, f"{float(l.unit_price):,.0f}".replace(",", " "), f"{l.total:,.0f}".replace(",", " ")])
+        lines_total += l.total
+    amount = float(c.amount or 0)
+    if not c.lines or abs(amount - lines_total) > 0.5:
+        # montant convenu différent des lignes (ou pas de lignes) : ligne d'ajustement pour que la facture colle au marché
+        rows.append([Paragraph(c.name if not c.lines else "Ajustement du marché", base), "1", "", "", f"{amount - lines_total:,.0f}".replace(",", " ")])
+    for a in c.addenda:
+        rows.append([Paragraph(f"Avenant n°{a.number} — {a.label}", base), "1", "", "", f"{float(a.amount):,.0f}".replace(",", " ")])
+    total = amount + sum(float(a.amount) for a in c.addenda)
+    received = sum(float(p.amount) for p in c.payments)
+    story += [_grid(rows, [88 * mm, 18 * mm, 20 * mm, 24 * mm, 26 * mm]), Spacer(1, 3 * mm)]
+    sums = [["TOTAL", format_money(total, cur)]]
+    if ia.show_legal() and float(shop.vat_rate or 0) > 0:        # TVA seulement si l'option est cochée (Paramètres → Facture)
+        vat = round(total * float(shop.vat_rate) / (100 + float(shop.vat_rate)), 0)
+        sums.append([f"dont TVA {float(shop.vat_rate):g} %", format_money(vat, cur)])
+    for p in sorted(c.payments, key=lambda p: p.date):
+        sums.append([f"Acompte reçu le {p.date:%d/%m/%Y} ({p.kind}, {p.method})", "− " + format_money(float(p.amount), cur)])
+    sums.append(["RESTE À PAYER", format_money(max(0.0, total - received), cur)])
+    story += [_grid(sums, [130 * mm, 46 * mm], header=False)]
+    extra = "  ·  ".join(x for x in (ia.legal_text(), ia.bank_text()) if x)
+    if extra:
+        story += [Spacer(1, 6 * mm), Paragraph(extra, base)]
+    story += [Spacer(1, 16 * mm), Table([["Signature et cachet"], [""]], colWidths=[70 * mm], rowHeights=[6 * mm, 22 * mm], style=TableStyle([("FONTSIZE", (0, 0), (-1, -1), 9), ("BOX", (0, 1), (0, 1), 0.5, colors.grey)]))]
+    return _build(path or config.TICKET_DIR / f"{number}.pdf", story)
+
+
 def build_receipt(payment_id: int, path: Path | None = None) -> Path:
     """Reçu imprimable pour un encaissement."""
     shop = settings_service.get_shop_info()

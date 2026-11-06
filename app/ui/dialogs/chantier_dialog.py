@@ -218,10 +218,14 @@ class ChantierDialog(QDialog):
         row.addWidget(self.status_combo)
         row.addWidget(self.btn_status)
         row.addWidget(self.btn_convert)
+        self.btn_edit = QPushButton(t("✏️ Modifier client / informations"))
+        self.btn_edit.clicked.connect(self._edit_info)
+        self.btn_edit.setEnabled(self.can_manage)
+        row.addWidget(self.btn_edit)
         row.addStretch()
         v.addLayout(row)
         docs_row = QHBoxLayout()
-        for label, fn in ((t("🖨 Devis / marché (PDF)"), self._pdf_quote), (t("🖨 Rapport de chantier (PDF)"), self._pdf_report)):
+        for label, fn in ((t("🖨 Devis / marché (PDF)"), self._pdf_quote), (t("🧾 Facture du client (PDF)"), self._pdf_invoice), (t("🖨 Rapport de chantier (PDF)"), self._pdf_report)):
             button = QPushButton(label)
             button.clicked.connect(fn)
             docs_row.addWidget(button)
@@ -281,6 +285,33 @@ class ChantierDialog(QDialog):
 
     def _pdf_quote(self) -> None:
         self._open_pdf(docs.build_quote(self.chantier_id))
+
+    def _pdf_invoice(self) -> None:
+        self._open_pdf(docs.build_invoice(self.chantier_id))
+
+    def _edit_info(self) -> None:
+        from app.ui.pages.chantiers_page import NewChantierDialog
+        dlg = NewChantierDialog(self, self.data['status'] in PENDING)
+        dlg.setWindowTitle(t("Modifier le chantier"))
+        with session_scope() as session:
+            c = session.get(Chantier, self.chantier_id)
+            dlg.name.setText(c.name)
+            dlg.client.setCurrentText(c.client_label or '')
+            if c.client_id is not None and dlg.client.findData(c.client_id) >= 0:
+                dlg.client.setCurrentIndex(dlg.client.findData(c.client_id))
+            dlg.location.setText(c.location or '')
+            dlg.amount.setValue(float(c.amount or 0))
+            dlg.retention.setValue(float(c.retention_pct or 0))
+            dlg.notes.setPlainText(c.notes or '')
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        v = dlg.values()
+        ok, _ = self._run(cs.update, self.chantier_id, name=v['name'], client_id=v['client_id'], client_label=v['client_label'], location=v['location'],
+                          start_date=v['start_date'], end_planned=v['end_planned'], amount=v['amount'], notes=v['notes'], retention_pct=v['retention_pct'])
+        if ok:
+            self._log('Chantier modifié', self.data['number'])
+            self.refresh()
+            self.state.data_changed.emit()
 
     def _pdf_report(self) -> None:
         self._open_pdf(docs.build_report(self.chantier_id))

@@ -148,6 +148,8 @@ class ChantierTests(unittest.TestCase):
         pid = cs.add_payment(cid, amount=100_000, kind="Avance")
         cs.add_expense(cid, category="Matériel", amount=50_000)
         self.assertIn("REÇU", " ".join(page_texts(docs.build_receipt(pid, config.TICKET_DIR / "t_recu.pdf"))))
+        inv = " ".join(page_texts(docs.build_invoice(cid, config.TICKET_DIR / "t_facture.pdf")))
+        self.assertIn("FACTURE", inv); self.assertIn("Mme Ouedraogo", inv); self.assertIn("RESTE", inv); self.assertIn("Acompte", inv)
         report = " ".join(page_texts(docs.build_report(cid, config.TICKET_DIR / "t_rapport.pdf")))
         self.assertIn("RAPPORT", report); self.assertIn("Reste à encaisser", report)
 
