@@ -417,6 +417,11 @@ class Summary:
     by_category: dict = field(default_factory=dict)
     cost_budget: dict = field(default_factory=dict)      # budget de dépenses prévu par poste
     cost_budget_total: float = 0.0
+    retention_pct: float = 0.0       # retenue de garantie retenue par le client
+    retention_amount: float = 0.0    # = marché × pourcentage
+    retention_released: float = 0.0  # déjà reversée par le client (encaissements « Retenue de garantie »)
+    retention_held: float = 0.0      # encore détenue par le client
+    collectable_now: float = 0.0     # facturable avant réception (marché − retenue − déjà encaissé hors retenue)
     planned_vs_received: List[tuple] = field(default_factory=list)   # (libellé, prévu, cumul prévu, échéance)
     alerts: List[str] = field(default_factory=list)
 
@@ -450,6 +455,11 @@ def _summarize(chantier: Chantier) -> Summary:
         budget=sum(l.total for l in chantier.lines), by_category=by_category,
         cost_budget=cost_budget, cost_budget_total=sum(cost_budget.values()),
     )
+    s.retention_pct = _f(chantier.retention_pct)
+    s.retention_amount = round(contract * s.retention_pct / 100, 3)
+    s.retention_released = sum(_f(p.amount) for p in chantier.payments if p.kind == "Retenue de garantie")
+    s.retention_held = max(0.0, s.retention_amount - s.retention_released)
+    s.collectable_now = max(0.0, contract - s.retention_amount - (received - s.retention_released))
     cumulative = 0.0
     for m in sorted(chantier.milestones, key=lambda m: (m.due_date or datetime.max, m.id)):
         planned = round(contract * _f(m.pct) / 100, 3)
@@ -466,6 +476,8 @@ def _summarize(chantier: Chantier) -> Summary:
                 s.alerts.append(f"Budget dépassé « {cat} » : {used:g} dépensé pour {planned:g} prévu.")
             elif planned and used >= planned * BUDGET_WARN_PCT / 100:
                 s.alerts.append(f"Budget « {cat} » presque épuisé : {used * 100 / planned:.0f} % consommé.")
+        if chantier.status in (STATUS_DONE, STATUS_PAID) and s.retention_held > EPS:
+            s.alerts.append(f"Retenue de garantie à réclamer au client : {s.retention_held:g} ({s.retention_pct:g} % du marché).")
         late = [label for label, _p, cum, due in s.planned_vs_received if due and due < datetime.now() and received + EPS < cum]
         if late:
             s.alerts.append("Encaissement en retard : " + ", ".join(late) + ".")

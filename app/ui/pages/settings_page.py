@@ -96,12 +96,9 @@ class SettingsPage(QWidget):
             return
         audit_service.log_action('Changement produit', 'NexaGes', f'{product_profile.product_label(previous)} → {product_profile.product_label(selected)}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         self.product_profile_label.setText(product_profile.product_label(selected))
-        info(self, f"Produit défini : {product_profile.product_label(selected)}.\n\nL'application va se fermer. Relancez-la pour appliquer le changement (menus Tables / Commandes selon le produit).", t('Produit mis à jour'))
-        app = QApplication.instance()
-        if app is not None:
-            app.quit()
-        else:
-            QApplication.quit()
+        info(self, f"Produit défini : {product_profile.product_label(selected)}.\n\nL'application va redémarrer automatiquement.", t('Produit mis à jour'))
+        from app.ui.relaunch import relaunch_application
+        relaunch_application()
 
     def _build_shop_tab(self) -> QWidget:
         wrap = QWidget()
@@ -320,6 +317,7 @@ class SettingsPage(QWidget):
         new_lang = self.ui_language.currentData() or previous_lang
         from app.services.business_mode import is_enterprise, is_enterprise_type
         was_enterprise = is_enterprise()
+        menu_before = self._menu_signature()
         settings_service.save_shop_info(name=self.name.text().strip(), address=self.address.text().strip(), phone=self.phone.text().strip(), email=self.email.text().strip(), currency=self.currency.currentText().strip() or 'FCFA', shop_type=self.shop_type.currentText(), vat_rate=self.vat.value(), logo_path=logo_stored, is_configured=True)
         settings_service.set_setting('shop_fax', self.fax.text().strip())
         catalog_features.set_product_images_enabled(self.catalog_images.isChecked())
@@ -338,16 +336,15 @@ class SettingsPage(QWidget):
         audit_service.log_action('Paramètres commerce', 'ShopInfo', '', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         if lang_changed:
             info(self, t('settings.language_saved', restart=t('common.restart_required')))
-            app = QApplication.instance()
-            if app is not None:
-                app.quit()
-            else:
-                QApplication.quit()
+            from app.ui.relaunch import relaunch_application
+            relaunch_application()
             return
         info(self, t('Informations enregistrées.'))
-        if was_enterprise != is_enterprise_type(self.shop_type.currentText()):
-            info(self, t("Le type de commerce a changé : fermez puis rouvrez le logiciel pour afficher ou masquer le menu « Chantiers » et les fonctions Entreprise."))
         self.state.notify_data_changed()
+        if was_enterprise != is_enterprise_type(self.shop_type.currentText()) or menu_before != self._menu_signature():
+            if confirm(self, t("Ce changement modifie les menus : l'application doit redémarrer pour l'appliquer.\n\nRedémarrer maintenant ?")):
+                from app.ui.relaunch import relaunch_application
+                relaunch_application()
 
     def _build_appearance_tab(self) -> QWidget:
         wrap = QWidget()
@@ -661,6 +658,16 @@ class SettingsPage(QWidget):
         dialog.close()
         update_service.apply_update(path)
         QApplication.quit()
+
+    def _menu_signature(self) -> tuple:
+        """Réglages qui changent le menu latéral (appliqués seulement au démarrage)."""
+        from app.services import chantiers_nav, maquis_settings
+
+        return (
+            chantiers_nav.sales_enabled(),
+            chantiers_nav.rentals_enabled(),
+            maquis_settings.tables_enabled() if product_profile.is_maquis() else None,
+        )
 
     def _apply_enterprise_visibility(self, *_args) -> None:
         """Bons d'enlèvement / de livraison : réglages visibles seulement pour le type « Entreprise »."""
@@ -1655,13 +1662,9 @@ class SettingsPage(QWidget):
             error(self, str(exc), t('Restauration'))
             return
         audit_service.log_action('Restauration', 'Backup', str(zip_path), self.state.user_id, getattr(self.state.current_user, 'username', ''))
-        info(self, t("Restauration effectuée avec succès.\n\nL'application va se fermer. Veuillez la relancer pour utiliser les données restaurées."), t('Restauration terminée'))
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        if app is not None:
-            app.quit()
-        else:
-            QApplication.quit()
+        info(self, t("Restauration effectuée avec succès.\n\nL'application va redémarrer automatiquement pour utiliser les données restaurées."), t('Restauration terminée'))
+        from app.ui.relaunch import relaunch_application
+        relaunch_application()
 
     def _restore_from_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, 'Choisir une sauvegarde à restaurer', self._default_documents_dir(), 'Archives ZIP (*.zip)')

@@ -26,6 +26,21 @@ class ChantierTests(unittest.TestCase):
     def _market(self, amount=1_000_000):
         return cs.create("Villa test", client_label="M. Zongo", amount=amount, status="en_cours")
 
+    def test_client_retention(self):
+        c = cs.create("Retenue", client_label="Client", amount=1_000_000, status="en_cours", retention_pct=10)
+        s = cs.summary(c)
+        self.assertEqual((s.retention_amount, s.retention_held, s.collectable_now), (100_000, 100_000, 900_000))
+        cs.add_payment(c, amount=900_000, kind="Tranche")
+        s = cs.summary(c)
+        self.assertEqual((s.collectable_now, s.remaining_to_receive), (0, 100_000))
+        self.assertFalse(any("Retenue" in a for a in s.alerts))
+        cs.set_status(c, "termine")
+        self.assertTrue(any("Retenue de garantie à réclamer" in a for a in cs.summary(c).alerts))
+        cs.add_payment(c, amount=100_000, kind="Retenue de garantie")
+        s = cs.summary(c)
+        self.assertEqual((s.retention_held, s.retention_released, s.collectable_now), (0, 100_000, 0))
+        self.assertFalse(any("Retenue de garantie à réclamer" in a for a in s.alerts))
+
     def test_quote_to_market_flow(self):
         cid = cs.create("Hangar", client_label="X", status="devis", lines=[
             cs.LineInput("Fondations", 1, "forfait", 400_000, "Matériel"), cs.LineInput("Charpente", 2, "u", 150_000, "Matériel")])

@@ -43,6 +43,7 @@ def set_rentals_enabled(enabled: bool) -> None:
 
 def build_chantiers_nav_items() -> List[NavEntry]:
     from app.ui.pages.audit_page import AuditPage
+    from app.ui.pages.chantiers_dashboard_page import ChantiersDashboardPage
     from app.ui.pages.chantiers_page import ChantiersPage
     from app.ui.pages.clients_page import ClientsPage
     from app.ui.pages.expenses_page import ExpensesPage
@@ -73,6 +74,7 @@ def build_chantiers_nav_items() -> List[NavEntry]:
             (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         ]
     return [
+        (t("Tableau de bord"), "📊", ChantiersDashboardPage, perms.ADD_CHANTIER_EXPENSES),
         *sales,
         (t("Chantiers"), "🏗️", ChantiersPage, perms.ADD_CHANTIER_EXPENSES),
         (t("Main-d'œuvre"), "👷", LaborPage, perms.MANAGE_LABOR),

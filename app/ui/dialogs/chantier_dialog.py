@@ -325,6 +325,10 @@ class ChantierDialog(QDialog):
             ]
         else:
             lines.append(f"<b>{t('Dépensé')}</b> : {self._money_text(s.spent)}")
+        if self.can_finance and s.retention_pct:
+            lines.append(f"<b>{t('Retenue de garantie')}</b> ({s.retention_pct:g} %) : {self._money_text(s.retention_amount)} &nbsp;·&nbsp; "
+                         f"<b>{t('Détenue par le client')}</b> : <span style='color:#b45309'>{self._money_text(s.retention_held)}</span> &nbsp;·&nbsp; "
+                         f"<b>{t('Facturable avant réception')}</b> : {self._money_text(s.collectable_now)}")
         if s.by_category:
             lines.append("<br/>" + " &nbsp;|&nbsp; ".join(f"{t(k)} : {self._money_text(v)}" for k, v in sorted(s.by_category.items())))
         self.kpi.setText("<br/>".join(lines))
