@@ -35,6 +35,37 @@ class RentalTests(unittest.TestCase):
         rs.return_rental(rid)
         self.assertEqual(next(r for r in rs.list_items() if r.id == i).available, 2)
 
+    def test_same_dates_refused_other_dates_allowed(self):
+        i = self._item("Marteau-piqueur F", qty=1)
+        now = datetime.now()
+        rs.create_rental(client_label="A", start_date=now + timedelta(days=1), due_date=now + timedelta(days=4), lines=[rs.LineInput(i, 1)])
+        with self.assertRaises(ValueError):          # mêmes dates : refusé
+            rs.create_rental(client_label="B", start_date=now + timedelta(days=2), due_date=now + timedelta(days=3), lines=[rs.LineInput(i, 1)])
+        # dates différentes : accepté (avant, et après)
+        rs.create_rental(client_label="C", start_date=now, due_date=now + timedelta(hours=20), lines=[rs.LineInput(i, 1)])
+        rs.create_rental(client_label="D", start_date=now + timedelta(days=5), due_date=now + timedelta(days=7), lines=[rs.LineInput(i, 1)])
+        self.assertEqual(rs.available_between(i, now + timedelta(days=2), now + timedelta(days=3)), 0)
+        self.assertEqual(rs.available_between(i, now + timedelta(days=10), now + timedelta(days=11)), 1)
+
+    def test_same_dates_refused_other_dates_accepted(self):
+        i = self._item("Echafaudage F", qty=1)
+        d = datetime.now() + timedelta(days=10)
+        rs.create_rental(client_label="A", start_date=d, due_date=d + timedelta(days=3), lines=[rs.LineInput(i, 1)])
+        with self.assertRaises(ValueError):          # chevauchement
+            rs.create_rental(client_label="B", start_date=d + timedelta(days=1), due_date=d + timedelta(days=2), lines=[rs.LineInput(i, 1)])
+        # avant et après : accepté, même si la première location n'est pas encore rendue
+        rs.create_rental(client_label="C", start_date=d - timedelta(days=5), due_date=d - timedelta(days=1), lines=[rs.LineInput(i, 1)])
+        rs.create_rental(client_label="D", start_date=d + timedelta(days=4), due_date=d + timedelta(days=6), lines=[rs.LineInput(i, 1)])
+
+    def test_extension_blocked_by_next_booking(self):
+        i = self._item("Compacteur G", qty=1)
+        d = datetime.now() + timedelta(days=20)
+        a = rs.create_rental(client_label="A", start_date=d, due_date=d + timedelta(days=2), lines=[rs.LineInput(i, 1)])
+        rs.create_rental(client_label="B", start_date=d + timedelta(days=5), due_date=d + timedelta(days=7), lines=[rs.LineInput(i, 1)])
+        rs.update_due_date(a, d + timedelta(days=4))                 # libre jusque-là
+        with self.assertRaises(ValueError):
+            rs.update_due_date(a, d + timedelta(days=6))
+
     def test_totals_deposit_and_late_fee(self):
         i = self._item("Echafaudage B", qty=1, rate=5000, deposit=10000)
         start = datetime.now() - timedelta(days=5) + timedelta(hours=1)

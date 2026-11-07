@@ -102,6 +102,48 @@ def _out_map(session, exclude_rental: Optional[int] = None) -> dict:
     return {i: int(n) for i, n in session.execute(q)}
 
 
+def booked_between(session, item_id: int, start: datetime, end: datetime, exclude_rental: Optional[int] = None) -> int:
+    """Quantité déjà louée qui chevauche la période [start, end[.
+
+    Une location non rendue dont la date de retour est passée occupe encore le matériel jusqu'à son retour réel.
+    """
+    now = datetime.now()
+    total = 0
+    q = (select(Rental, RentalLine.quantity).join(RentalLine, RentalLine.rental_id == Rental.id)
+         .where(RentalLine.item_id == item_id, Rental.status == RENTAL_OUT))
+    if exclude_rental:
+        q = q.where(Rental.id != exclude_rental)
+    for rental, qty in session.execute(q):
+        busy_until = max(rental.due_date, now)
+        if rental.start_date < end and busy_until > start:
+            total += int(qty)
+    return total
+
+
+def available_between(item_id: int, start: datetime, end: datetime) -> int:
+    with session_scope() as session:
+        item = session.get(RentalItem, item_id)
+        return max(0, item.quantity - booked_between(session, item_id, start, end)) if item else 0
+
+
+def _booked(session, start: datetime, end: datetime, exclude_rental: Optional[int] = None) -> dict:
+    """Quantités déjà réservées par article sur la période [start, end] (locations non rendues qui se chevauchent).
+
+    Une location non rendue et déjà en retard garde son matériel : sa fin effective est « maintenant ».
+    """
+    now = datetime.now()
+    q = (select(Rental.id, Rental.start_date, Rental.due_date, RentalLine.item_id, RentalLine.quantity)
+         .join(RentalLine, RentalLine.rental_id == Rental.id).where(Rental.status == RENTAL_OUT))
+    booked: dict = {}
+    for rid, r_start, r_due, item_id, qty in session.execute(q):
+        if exclude_rental and rid == exclude_rental:
+            continue
+        r_end = max(r_due, now)
+        if r_start < end and r_end > start:
+            booked[item_id] = booked.get(item_id, 0) + int(qty)
+    return booked
+
+
 def list_items(include_inactive: bool = False) -> List[ItemRow]:
     with session_scope() as session:
         out = _out_map(session)
@@ -147,7 +189,6 @@ def create_rental(*, client_label: str, due_date: datetime, lines: List[LineInpu
     if not lines:
         raise ValueError("Ajoutez au moins un matériel.")
     with session_scope() as session:
-        out = _out_map(session)
         rental = Rental(number=_next(COUNTER_KEY, "LOC", session, Rental.number), client_id=client_id, client_label=client_label,
                         phone=(phone or "").strip(), id_document=(id_document or "").strip(), start_date=start, due_date=due_date,
                         chantier_id=chantier_id, out_condition=(out_condition or "").strip(), notes=(notes or "").strip(),
@@ -162,8 +203,9 @@ def create_rental(*, client_label: str, due_date: datetime, lines: List[LineInpu
             if item is None or not item.active:
                 raise ValueError("Matériel introuvable ou désactivé.")
             wanted[item.id] = wanted.get(item.id, 0) + qty
-            if wanted[item.id] > item.quantity - out.get(item.id, 0):
-                raise ValueError(f"« {item.name} » : seulement {max(0, item.quantity - out.get(item.id, 0))} disponible(s).")
+            free = item.quantity - booked_between(session, item.id, start, due_date)
+            if wanted[item.id] > free:
+                raise ValueError(f"« {item.name} » : seulement {max(0, free)} disponible(s) du {start:%d/%m/%Y} au {due_date:%d/%m/%Y}.")
             rate = _f(item.rate_day) if li.rate_day is None else max(0.0, to_float(li.rate_day))
             rental.lines.append(RentalLine(item_id=item.id, label=item.name, quantity=qty, rate_day=rate))
             default_deposit += _f(item.deposit) * qty
@@ -174,13 +216,17 @@ def create_rental(*, client_label: str, due_date: datetime, lines: List[LineInpu
 
 
 def update_due_date(rental_id: int, due_date: datetime) -> None:
-    """Prolongation de la location."""
+    """Prolongation de la location (refusée si le matériel est réservé par une autre location sur les nouveaux jours)."""
     with session_scope() as session:
-        r = session.get(Rental, rental_id)
+        r = _load(session, rental_id) if session.get(Rental, rental_id) else None
         if r is None or r.status != RENTAL_OUT:
             raise ValueError("Location introuvable ou déjà rendue.")
         if due_date <= r.start_date:
             raise ValueError("La date de retour doit être après le départ.")
+        for line in r.lines:
+            item = session.get(RentalItem, line.item_id)
+            if booked_between(session, line.item_id, r.due_date, due_date, exclude_rental=r.id) + int(line.quantity) > item.quantity:
+                raise ValueError(f"« {item.name} » est déjà réservé après le {r.due_date:%d/%m/%Y} : prolongation impossible.")
         r.due_date = due_date
 
 

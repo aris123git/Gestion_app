@@ -110,7 +110,7 @@ class NewRentalDialog(QDialog):
         self.setWindowTitle(t("Nouvelle location"))
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=560, min_height=560, preferred_width=680, preferred_height=700)
-        self.items = [i for i in rs.list_items() if i.available > 0]
+        self.items = rs.list_items()
         root = QVBoxLayout(self)
         form = QFormLayout()
         self.client = QComboBox()
@@ -167,7 +167,7 @@ class NewRentalDialog(QDialog):
         self.rows.insertRow(r)
         combo = QComboBox()
         for i in self.items:
-            combo.addItem(f"{i.name} ({i.available} {t('dispo')})", i.id)
+            combo.addItem(f"{i.name} ({i.available} {t('dispo aujourd’hui')})", i.id)
         qty = QSpinBox()
         qty.setRange(1, 9999)
         rate = _money()

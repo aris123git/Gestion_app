@@ -41,6 +41,8 @@ def build_contract(rental_id: int, path: str | Path) -> Path:
     story.append(Paragraph("Conditions : le matériel doit être rendu complet et en bon état à la date prévue. Tout jour de retard est facturé "
                            "au tarif journalier. Les dégâts ou pièces manquantes sont retenus sur la caution.", base))
     story.append(Spacer(1, 14 * mm))
-    sign = Table([["Le loueur", "Le client (lu et approuvé)"], ["\n\n\n", "\n\n\n"]], colWidths=[85 * mm, 85 * mm])
+    from reportlab.lib import colors
+    sign = Table([["Le loueur (nom, signature, cachet)", "Le client (lu et approuvé, signature)"], ["\n\n\n\n", "\n\n\n\n"]], colWidths=[85 * mm, 85 * mm])
+    sign.setStyle([("BOX", (0, 0), (0, 1), 0.5, colors.grey), ("BOX", (1, 0), (1, 1), 0.5, colors.grey), ("FONTSIZE", (0, 0), (-1, 0), 8)])
     story.append(sign)
     return _build(Path(path), story)
