@@ -98,6 +98,12 @@ class ChantierUITests(unittest.TestCase):
             names = [i[0] for i in main_window.build_nav_items()]
             self.assertEqual(names[0], "Chantiers")
             self.assertNotIn("Caisse", names)
+            from app.services import chantiers_nav
+            chantiers_nav.set_sales_enabled(True)
+            names = [i[0] for i in main_window.build_nav_items()]
+            self.assertIn("Caisse", names)
+            self.assertIn("Chantiers", names)
+            chantiers_nav.set_sales_enabled(False)
         finally:
             product_profile.set_product(product_profile.PRODUCT_GESTION)
 
