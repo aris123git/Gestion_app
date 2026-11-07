@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.connection import Base
@@ -27,6 +27,7 @@ class Client(Base, TimestampMixin):
     # CRM (Sprint 9) — cache mis à jour par CustomerService
     last_visit: Mapped[Optional[str]] = mapped_column(String(40), default="")
     purchase_count: Mapped[int] = mapped_column(Integer, default=0)
+    no_marketing: Mapped[bool] = mapped_column(Boolean, default=False)   # a demandé à ne plus recevoir de messages
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"<Client {self.name!r} debt={self.debt}>"

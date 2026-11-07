@@ -10,7 +10,7 @@ from app.ui.widgets.money_spin import MoneySpinBox
 class ContactDialog(QDialog):
     """Formulaire nom/téléphone/adresse/email (+ dette pour les clients)."""
 
-    def __init__(self, title: str, contact=None, with_debt: bool=False, parent=None):
+    def __init__(self, title: str, contact=None, with_debt: bool=False, parent=None, with_marketing: bool=False):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -53,6 +53,11 @@ class ContactDialog(QDialog):
                 due_row.addWidget(self.debt_due_date)
                 form.addRow(t('Échéance'), due_row)
         form.addRow(t('Notes'), self.notes)
+        self.no_marketing = None
+        if with_marketing:
+            self.no_marketing = QCheckBox(t('Ne souhaite plus recevoir de messages (WhatsApp / e-mail)'))
+            self.no_marketing.setChecked(bool(getattr(contact, 'no_marketing', False)))
+            form.addRow('', self.no_marketing)
         layout.addLayout(form)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('Annuler'))
@@ -86,6 +91,8 @@ class ContactDialog(QDialog):
         if not name:
             name = f'Client {phone}'
         self.data = {'name': name, 'phone': phone, 'phone2': self.phone2.text().strip(), 'address': self.address.text().strip(), 'email': self.email.text().strip(), 'notes': self.notes.toPlainText().strip()}
+        if self.no_marketing is not None:
+            self.data['no_marketing'] = self.no_marketing.isChecked()
         if self.with_debt and self.debt.isEnabled():
             self.data['debt'] = self.debt.value()
             if self.debt.value() > 0 and hasattr(self, 'debt_due_enabled') and self.debt_due_enabled.isChecked():

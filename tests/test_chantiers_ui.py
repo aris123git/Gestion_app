@@ -93,6 +93,38 @@ class ChantierUITests(unittest.TestCase):
         self.assertEqual(lab.payroll.rowCount(), 1)
         self.assertEqual(lab.workers.rowCount(), 1)
 
+    def test_bulk_message_dialog_whatsapp_queue(self):
+        from unittest import mock
+        from app.database.connection import session_scope
+        from app.models.client import Client
+        from app.services import messaging_service as ms
+        from app.ui.dialogs import bulk_message_dialog as bmd
+        settings_service.set_setting("messaging_min_gap_days", "0")
+        settings_service.set_setting("messaging_cap_whatsapp", "40")
+        with session_scope() as s:
+            s.add_all([Client(name="Wa Un", phone="70 11 11 11"), Client(name="Wa Deux", phone="70 22 22 22")])
+        dlg = bmd.BulkMessageDialog(None, 1, "admin"); self.keep.append(dlg)
+        dlg.text.setPlainText("Bonjour {prenom}")
+        dlg._load_recipients()
+        names = [r.name for r in dlg.recipients]
+        self.assertIn("Wa Un", names)
+        dlg.table.item(names.index("Wa Deux"), 0).setCheckState(__import__("PySide6.QtCore", fromlist=["Qt"]).Qt.CheckState.Unchecked)
+        opened = []
+        with mock.patch.object(bmd.QDesktopServices, "openUrl", side_effect=lambda u: opened.append(u.toString())), \
+                mock.patch.object(bmd, "info"), mock.patch.object(dlg, "accept"):
+            dlg._start()
+            self.assertEqual(dlg.stack.currentIndex(), 1)
+            first = dlg.queue[0].name
+            self.assertFalse(dlg.wa_sent.isEnabled())             # il faut d'abord ouvrir WhatsApp
+            dlg._wa_open()
+            self.assertTrue(dlg.wa_sent.isEnabled())
+            self.assertIn("https://wa.me/226", opened[0])
+            before = ms.sent_today(ms.WHATSAPP)
+            dlg._wa_next(ms.SENT)
+            self.assertEqual(ms.sent_today(ms.WHATSAPP), before + 1)
+        self.assertNotIn("Wa Deux", [r.name for r in dlg.queue])
+        self.assertTrue(first)
+
     def test_dashboard(self):
         from datetime import datetime, timedelta
         from app.services import chantier_dashboard, subcontract_service as ss

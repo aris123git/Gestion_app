@@ -97,6 +97,7 @@ class ClientController:
                 email=str(data.get("email", "")).strip(),
                 debt=0,
                 notes=str(data.get("notes", "")).strip(),
+                no_marketing=bool(data.get("no_marketing", False)),
             )
             session.add(client)
             session.flush()
@@ -129,6 +130,8 @@ class ClientController:
             client.address = str(data.get("address", client.address)).strip()
             client.email = str(data.get("email", client.email)).strip()
             client.notes = str(data.get("notes", client.notes)).strip()
+            if "no_marketing" in data:
+                client.no_marketing = bool(data["no_marketing"])
 
     @staticmethod
     def delete(client_id: int) -> None:

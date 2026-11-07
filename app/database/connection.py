@@ -78,7 +78,7 @@ def init_database() -> None:
 
 
 # Version du schéma : à incrémenter à chaque ajout de colonne dans ``_migrate_schema``.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _PRE_MIGRATION_KEEP = 3
 
 
@@ -155,6 +155,7 @@ def _migrate_schema() -> None:
             "phone2": "VARCHAR(80) DEFAULT ''",
             "last_visit": "VARCHAR(40) DEFAULT ''",
             "purchase_count": "INTEGER DEFAULT 0",
+            "no_marketing": "BOOLEAN DEFAULT 0",
         },
         "products": {
             "is_active": "BOOLEAN DEFAULT 1",
