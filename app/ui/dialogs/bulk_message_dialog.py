@@ -113,12 +113,29 @@ class BulkMessageDialog(QDialog):
         note.setStyleSheet("color: #64748b;")
         lay.addWidget(note)
         form = QFormLayout()
+        self.form = form
         self.channel = QComboBox()
         self.channel.addItem("WhatsApp", ms.WHATSAPP)
         self.channel.addItem(t("E-mail"), ms.EMAIL)
         self.segment = QComboBox()
         for key, label in ms.SEGMENT_LABELS.items():
             self.segment.addItem(t(label), key)
+        self.category = QComboBox()
+        from app.database.connection import session_scope
+        from app.models.category import Category
+        from sqlalchemy import select
+        with session_scope() as session:
+            for cat in session.scalars(select(Category).order_by(Category.name)):
+                self.category.addItem(cat.name, cat.id)
+        self.template = QComboBox()
+        self.template.addItem(t("— Choisir un modèle —"), None)
+        for name in ms.TEMPLATES:
+            self.template.addItem(t(name), name)
+        self.template.currentIndexChanged.connect(lambda _i: self.template.currentData() and self.text.setPlainText(ms.TEMPLATES[self.template.currentData()]))
+        self.cap = QSpinBox()
+        self.cap.setRange(1, 1000)
+        self.cap.setSuffix(" " + t("par jour"))
+        self.cap.setToolTip(t("Au-delà d'une centaine de messages par jour, le risque de signalement et de blocage augmente."))
         today = QDate.currentDate()
         self.d_from = QDateEdit(today.addDays(-7))
         self.d_to = QDateEdit(today)
@@ -139,6 +156,11 @@ class BulkMessageDialog(QDialog):
         self.days.setSuffix(" " + t("jours"))
         self.subject = QLineEdit()
         self.subject.setPlaceholderText(t("Objet de l'e-mail"))
+        self.template = QComboBox()
+        self.template.addItem(t("— Modèle de message —"), None)
+        for name, body in ms.TEMPLATES.items():
+            self.template.addItem(t(name), body)
+        self.template.currentIndexChanged.connect(self._apply_template)
         self.text = QPlainTextEdit(DEFAULT_TEXT)
         self.text.setMinimumHeight(110)
         self.footer = QCheckBox(t("Ajouter « répondez STOP pour ne plus recevoir nos messages » (recommandé)"))
@@ -146,13 +168,35 @@ class BulkMessageDialog(QDialog):
         form.addRow(t("Canal"), self.channel)
         form.addRow(t("Destinataires"), self.segment)
         form.addRow(t("Période d'achat"), self.dates)
+        form.addRow(t("Catégorie"), self.category)
         form.addRow(t("Sans achat depuis"), self.days)
         form.addRow(t("Objet"), self.subject)
+        form.addRow(t("Modèle"), self.template)
+        form.addRow(t("Modèle"), self.template)
         form.addRow(t("Message"), self.text)
-        hint = QLabel(t("Variables : {nom}  {prenom}  {dette}  {entreprise}"))
+        form.addRow(t("Plafond d'envois"), self.cap)
+        hint = QLabel(t("Variables : {nom}  {prenom}  {entreprise}  {dette}  {dernier_achat}  {suggestion} (produit similaire)"))
+        hint.setWordWrap(True)
         hint.setStyleSheet("color: #64748b;")
         form.addRow("", hint)
         form.addRow("", self.footer)
+        limits = QWidget()
+        lh = QHBoxLayout(limits)
+        lh.setContentsMargins(0, 0, 0, 0)
+        self.cap_wa = QSpinBox()
+        self.cap_wa.setRange(1, 1000)
+        self.cap_wa.setValue(ms.cfg_int("messaging_cap_whatsapp"))
+        self.cap_em = QSpinBox()
+        self.cap_em.setRange(1, 2000)
+        self.cap_em.setValue(ms.cfg_int("messaging_cap_email"))
+        self.gap = QSpinBox()
+        self.gap.setRange(0, 365)
+        self.gap.setValue(ms.cfg_int("messaging_min_gap_days"))
+        for lab, spin in ((t("WhatsApp / jour"), self.cap_wa), (t("E-mails / jour"), self.cap_em), (t("Jours entre 2 messages"), self.gap)):
+            lh.addWidget(QLabel(lab))
+            lh.addWidget(spin)
+        lh.addStretch()
+        form.addRow(t("Limites"), limits)
         lay.addLayout(form)
         row = QHBoxLayout()
         show = QPushButton(t("Afficher les destinataires"))
@@ -164,6 +208,7 @@ class BulkMessageDialog(QDialog):
         row.addStretch()
         lay.addLayout(row)
         self.table = QTableWidget(0, 4)
+        self.table.setMinimumHeight(140)
         self.table.setHorizontalHeaderLabels([t("Client"), t("Téléphone"), t("E-mail"), t("Dette")])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         lay.addWidget(self.table, 1)
@@ -187,23 +232,38 @@ class BulkMessageDialog(QDialog):
 
     def _sync_fields(self, *_a) -> None:
         seg, email = self.segment.currentData(), self.channel.currentData() == ms.EMAIL
-        self.dates.setVisible(seg == ms.SEG_BOUGHT)
-        self.days.setVisible(seg == ms.SEG_INACTIVE)
-        self.subject.setVisible(email)
+        self.form.setRowVisible(self.dates, seg == ms.SEG_BOUGHT)
+        self.form.setRowVisible(self.days, seg == ms.SEG_INACTIVE)
+        self.form.setRowVisible(self.subject, email)
         self.btn_cfg.setVisible(email)
         self.table.setRowCount(0)
         self.recipients = []
         self.count.setText("")
 
+    def _apply_template(self, *_a) -> None:
+        body = self.template.currentData()
+        if body:
+            self.text.setPlainText(body)
+            if "{dette}" in body and self.segment.currentData() != ms.SEG_DEBT:
+                self.segment.setCurrentIndex(self.segment.findData(ms.SEG_DEBT))
+
+    def _save_limits(self) -> None:
+        ms.save_limits(cap_whatsapp=self.cap_wa.value(), cap_email=self.cap_em.value(), gap_days=self.gap.value())
+
     def _load_recipients(self) -> None:
+        self._save_limits()
         a, b = self.d_from.date(), self.d_to.date()
         try:
             rows = ms.find_recipients(self.segment.currentData(), self.channel.currentData(),
                                       start=datetime(a.year(), a.month(), a.day()), end=datetime(b.year(), b.month(), b.day()) + timedelta(days=1),
-                                      days=self.days.value())
+                                      days=self.days.value(), category_id=self.category.currentData())
         except ValueError as exc:
             warn(self, str(exc))
             return
+        dropped = 0
+        template = self.text.toPlainText()
+        if ms.uses_products(template):
+            rows, dropped = ms.drop_incomplete(ms.enrich_products(rows), template)
         self.recipients = rows
         self.table.setRowCount(len(rows))
         for r, rc in enumerate(rows):
@@ -214,8 +274,13 @@ class BulkMessageDialog(QDialog):
             self.table.setItem(r, 0, name)
             for c, v in enumerate((rc.phone, rc.email, f"{rc.debt:,.0f}".replace(",", " ") if rc.debt else ""), 1):
                 self.table.setItem(r, c, QTableWidgetItem(v))
+        ms.set_cap(self.channel.currentData(), self.cap.value())
         left = ms.remaining_today(self.channel.currentData())
         msg = f"<b>{len(rows)}</b> {t('destinataire(s)')} · {t('plafond restant aujourd’hui')} : <b>{left}</b>"
+        if dropped:
+            msg += f"<br/>{dropped} {t('client(s) écarté(s) : pas de produit acheté ou de produit similaire à citer.')}"
+        if self.channel.currentData() == ms.WHATSAPP and self.cap_wa.value() > 100:
+            msg += f"<br/><span style='color:#b45309'>{t('Au-delà de 100 par jour, le risque de signalement augmente : étalez les envois sur plusieurs jours.')}</span>"
         if len(rows) > left:
             msg += f"<br/><span style='color:#b45309'>{t('Seuls les')} {left} {t('premiers seront traités aujourd’hui ; reprenez demain pour les autres.')}</span>"
         self.count.setText(msg)
@@ -228,6 +293,7 @@ class BulkMessageDialog(QDialog):
         return out
 
     def _start(self) -> None:
+        self._save_limits()
         if not self.recipients:
             self._load_recipients()
         chosen = self._selected()
@@ -237,6 +303,10 @@ class BulkMessageDialog(QDialog):
             return
         if not self.text.toPlainText().strip():
             warn(self, t("Le message est vide."))
+            return
+        ms.set_cap(channel, self.cap.value())
+        if channel == ms.WHATSAPP and self.cap.value() > 100 and not confirm(
+                self, t("Plus de 100 messages WhatsApp par jour augmente le risque de blocage de votre numéro. Continuer quand même ?")):
             return
         left = ms.remaining_today(channel)
         if left <= 0:

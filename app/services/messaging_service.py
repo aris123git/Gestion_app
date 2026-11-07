@@ -22,7 +22,8 @@ from sqlalchemy import func, select
 from app.database.connection import session_scope
 from app.models.client import Client
 from app.models.message_log import MessageLog
-from app.models.sale import Sale
+from app.models.product import Product
+from app.models.sale import Sale, SaleItem
 from app.services import settings_service
 
 WHATSAPP = "whatsapp"
@@ -33,17 +34,26 @@ SEG_ALL = "all"
 SEG_BOUGHT = "bought_between"
 SEG_INACTIVE = "inactive"
 SEG_DEBT = "with_debt"
+SEG_CATEGORY = "bought_category"
 SEGMENT_LABELS = {
     SEG_ALL: "Tous les clients",
     SEG_BOUGHT: "Ont acheté entre deux dates",
     SEG_INACTIVE: "Sans achat depuis N jours (relance)",
     SEG_DEBT: "Avec une dette (rappel)",
+    SEG_CATEGORY: "Ont acheté un produit d'une catégorie (suggestion)",
+}
+TEMPLATES = {
+    "Merci pour votre achat": "Bonjour {prenom}, merci d'avoir acheté chez {entreprise} ! Nous espérons que {dernier_achat} vous donne entière satisfaction. À très bientôt.",
+    "Bonne fête": "Bonjour {prenom}, toute l'équipe de {entreprise} vous souhaite une très bonne fête, à vous et à votre famille !",
+    "Produit qui ressemble à votre achat": "Bonjour {prenom}, vous avez acheté {dernier_achat} chez {entreprise}. Nous avons de nouveaux articles du même genre qui pourraient vous plaire : passez les voir !",
+    "Rappel de dette": "Bonjour {prenom}, petit rappel amical : votre solde chez {entreprise} est de {dette}. Merci de passer le régler quand vous pouvez.",
+    "Nous vous avons manqué": "Bonjour {prenom}, cela fait un moment que nous ne vous avons pas vus chez {entreprise}. Passez nous voir, nous serons ravis de vous accueillir !",
 }
 OPT_OUT_FOOTER = "\n\nPour ne plus recevoir nos messages, répondez STOP."
 
 DEFAULTS = {
     "messaging_country_code": "226",
-    "messaging_cap_whatsapp": "40",       # envois WhatsApp par jour (au-delà, risque de signalements)
+    "messaging_cap_whatsapp": "100",      # envois WhatsApp par jour (modifiable ; au-delà, risque de signalements)
     "messaging_cap_email": "150",
     "messaging_min_gap_days": "3",        # pas deux messages au même client avant ce délai
     "messaging_email_delay": "8",         # secondes entre deux e-mails
@@ -106,10 +116,13 @@ class Recipient:
     email: str
     debt: float
     last_visit: str = ""
+    last_product: str = ""      # dernier produit acheté (variable {dernier_achat})
+    last_product: str = ""     # dernier produit acheté
+    suggestion: str = ""       # produit de la même catégorie, pas encore acheté
 
 
 def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = None, end: Optional[datetime] = None, days: int = 90,
-                    respect_gap: bool = True) -> List[Recipient]:
+                    respect_gap: bool = True, category_id: Optional[int] = None) -> List[Recipient]:
     """Clients du segment joignables par le canal, hors « ne plus contacter » et hors contactés récemment."""
     now = datetime.now()
     with session_scope() as session:
@@ -123,6 +136,17 @@ def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = N
                 raise ValueError("Choisissez une période valide.")
             in_range = {cid for (cid,) in session.execute(select(Sale.client_id).where(
                 Sale.client_id.is_not(None), Sale.status == "completed", Sale.date >= start, Sale.date < end).distinct())}
+        in_category: set = set()
+        if segment == SEG_CATEGORY:
+            if not category_id:
+                raise ValueError("Choisissez une catégorie.")
+            in_category = {cid for (cid,) in session.execute(select(Sale.client_id).join(SaleItem, SaleItem.sale_id == Sale.id).join(
+                Product, Product.id == SaleItem.product_id).where(Sale.client_id.is_not(None), Sale.status == "completed",
+                                                                  Product.category_id == category_id).distinct())}
+        last_product: dict = {}
+        for cid, name in session.execute(select(Sale.client_id, SaleItem.product_name).join(SaleItem, SaleItem.sale_id == Sale.id).where(
+                Sale.client_id.is_not(None), Sale.status == "completed").order_by(Sale.date, Sale.id, SaleItem.id)):
+            last_product[cid] = name
         recent: set = set()
         gap = cfg_int("messaging_min_gap_days")
         if respect_gap and gap:
@@ -131,6 +155,8 @@ def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = N
         out: List[Recipient] = []
         for c in clients:
             if segment == SEG_BOUGHT and c.id not in in_range:
+                continue
+            if segment == SEG_CATEGORY and c.id not in in_category:
                 continue
             if segment == SEG_INACTIVE:
                 last = last_sale.get(c.id)
@@ -144,15 +170,79 @@ def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = N
                 continue
             if channel == EMAIL and not valid_email(c.email):
                 continue
-            out.append(Recipient(c.id, c.name, c.phone if normalize_phone(c.phone) else c.phone2, (c.email or "").strip(), float(c.debt or 0), c.last_visit or ""))
+            out.append(Recipient(c.id, c.name, c.phone if normalize_phone(c.phone) else c.phone2, (c.email or "").strip(), float(c.debt or 0), c.last_visit or "", last_product.get(c.id, "")))
         return out
 
 
 def render(template: str, r: Recipient, shop_name: str = "", currency: str = "FCFA", footer: bool = True) -> str:
     first = (r.name or "").split()[0] if (r.name or "").strip() else ""
-    values = {"nom": r.name, "prenom": first, "entreprise": shop_name, "dette": f"{r.debt:,.0f} {currency}".replace(",", " ")}
+    values = {"nom": r.name, "prenom": first, "entreprise": shop_name, "dette": f"{r.debt:,.0f} {currency}".replace(",", " "),
+              "dernier_achat": r.last_product, "suggestion": r.suggestion}
     text = re.sub(r"\{(\w+)\}", lambda m: str(values.get(m.group(1), m.group(0))), template or "")
     return text.rstrip() + (OPT_OUT_FOOTER if footer else "")
+
+
+PRODUCT_VARS = ("{dernier_achat}", "{suggestion}")
+
+
+def uses_products(template: str) -> bool:
+    return any(v in (template or "") for v in PRODUCT_VARS)
+
+
+def enrich_products(recipients: List[Recipient]) -> List[Recipient]:
+    """Renseigne le dernier produit acheté et un produit similaire (même catégorie, jamais acheté, disponible, le plus vendu)."""
+    from app.models.product import Product
+    from app.models.sale import SaleItem
+
+    with session_scope() as session:
+        sold = {pid: float(q or 0) for pid, q in session.execute(
+            select(SaleItem.product_id, func.sum(SaleItem.quantity)).where(SaleItem.product_id.is_not(None)).group_by(SaleItem.product_id))}
+        products = list(session.scalars(select(Product).where(Product.is_active.is_(True))))
+        by_cat: dict = {}
+        for p in sorted(products, key=lambda p: -sold.get(p.id, 0.0)):
+            if p.category_id is not None and (float(p.quantity or 0) > 0 or p.sell_without_stock):
+                by_cat.setdefault(p.category_id, []).append(p)
+        cat_of = {p.id: p.category_id for p in products}
+        for r in recipients:
+            rows = list(session.execute(
+                select(SaleItem.product_id, SaleItem.product_name).join(Sale, Sale.id == SaleItem.sale_id)
+                .where(Sale.client_id == r.id, Sale.status == "completed").order_by(Sale.date.desc(), SaleItem.id)))
+            if not rows:
+                continue
+            r.last_product = next((n for _pid, n in rows if (n or "").strip()), "")
+            bought = {pid for pid, _n in rows if pid is not None}
+            first_pid = next((pid for pid, _n in rows if pid is not None), None)
+            cat = cat_of.get(first_pid)
+            if cat is not None:
+                pick = next((p for p in by_cat.get(cat, []) if p.id not in bought), None)
+                r.suggestion = pick.name if pick else ""
+    return recipients
+
+
+def drop_incomplete(recipients: List[Recipient], template: str) -> tuple:
+    """Retire ceux pour qui une variable produit du message n'a pas de valeur (évite « vous avez acheté  »)."""
+    keep, dropped = [], 0
+    for r in recipients:
+        if ("{dernier_achat}" in template and not r.last_product) or ("{suggestion}" in template and not r.suggestion):
+            dropped += 1
+        else:
+            keep.append(r)
+    return keep, dropped
+
+
+TEMPLATES = {
+    "Bonne fête": "Bonjour {prenom}, toute l'équipe de {entreprise} vous souhaite une très bonne fête ! Merci pour votre fidélité.",
+    "Merci pour votre achat": "Bonjour {prenom}, merci d'avoir acheté chez {entreprise}. Nous espérons que {dernier_achat} vous donne entière satisfaction. À très bientôt !",
+    "Produit similaire": "Bonjour {prenom}, vous avez acheté {dernier_achat} chez {entreprise}. Nous avons aussi {suggestion} qui pourrait vous plaire. Passez nous voir !",
+    "Nouveautés": "Bonjour {prenom}, de nouveaux articles viennent d'arriver chez {entreprise}. Venez les découvrir !",
+    "Rappel de dette": "Bonjour {prenom}, petit rappel : il reste {dette} à régler chez {entreprise}. Merci de passer quand vous pouvez.",
+}
+
+
+def save_limits(*, cap_whatsapp: int, cap_email: int, gap_days: int) -> None:
+    settings_service.set_setting("messaging_cap_whatsapp", str(max(1, int(cap_whatsapp))))
+    settings_service.set_setting("messaging_cap_email", str(max(1, int(cap_email))))
+    settings_service.set_setting("messaging_min_gap_days", str(max(0, int(gap_days))))
 
 
 # --- journal et plafonds ---------------------------------------------------------------------------
@@ -171,6 +261,13 @@ def sent_today(channel: str) -> int:
 def remaining_today(channel: str) -> int:
     cap = cfg_int("messaging_cap_whatsapp" if channel == WHATSAPP else "messaging_cap_email")
     return max(0, cap - sent_today(channel))
+
+
+def set_cap(channel: str, value: int) -> None:
+    value = int(value)
+    if value < 1:
+        raise ValueError("Le plafond doit être d'au moins 1.")
+    settings_service.set_setting("messaging_cap_whatsapp" if channel == WHATSAPP else "messaging_cap_email", str(value))
 
 
 def opt_out(client_id: int) -> None:
