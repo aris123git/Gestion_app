@@ -42,6 +42,10 @@ def build_nav_items():
         from app.services.maquis_nav import build_maquis_nav_items
 
         return build_maquis_nav_items()
+    if product_profile.is_chantiers():
+        from app.services.chantiers_nav import build_chantiers_nav_items
+
+        return build_chantiers_nav_items()
     common_tail = [
         (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
         (t("nav.accounting"), "🧮", AccountingPage, perms.VIEW_PROFITS),
@@ -50,8 +54,6 @@ def build_nav_items():
         (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
         (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
     ]
-    from app.services.business_mode import is_enterprise
-    chantiers = [(t("Chantiers"), "🏗️", ChantiersPage, perms.ADD_CHANTIER_EXPENSES)] if is_enterprise() else []
     return [
         (t("nav.pos"), "🛒", POSPage, perms.SELL),
         (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
@@ -63,7 +65,6 @@ def build_nav_items():
         (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
-        *chantiers,
         (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
         *common_tail,
     ]

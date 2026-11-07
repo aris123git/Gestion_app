@@ -21,10 +21,12 @@ logger = logging.getLogger(__name__)
 
 PRODUCT_GESTION = "gestion_app"
 PRODUCT_MAQUIS = "maquis_caisse"
+PRODUCT_CHANTIERS = "chantiers"
 
 PRODUCT_LABELS = {
     PRODUCT_GESTION: "Gestion App",
     PRODUCT_MAQUIS: "Maquis Caisse",
+    PRODUCT_CHANTIERS: "Chantier Pro",
 }
 
 PRODUCT_DESCRIPTIONS = {
@@ -37,6 +39,11 @@ PRODUCT_DESCRIPTIONS = {
         "Restaurants, maquis, buvettes, bars… "
         "Caisse, tables, commandes ouvertes, stock, avoirs, dettes — "
         "fidélité bénéfices (produit offert) — version PC de Maquis Caisse."
+    ),
+    PRODUCT_CHANTIERS: (
+        "Entreprises de BTP, soudure, menuiserie, électricité, plomberie… "
+        "Devis, marchés, dépenses de chantier, encaissements par tranche, "
+        "avenants, avancement, résultat par chantier et facture client."
     ),
 }
 
@@ -66,6 +73,8 @@ def get_product() -> Optional[str]:
             return PRODUCT_GESTION
         if key in ("maquis", "maquis_caisse", "maquiscaisse"):
             return PRODUCT_MAQUIS
+        if key in ("chantier", "chantiers", "chantier_pro", "chantierpro", "btp"):
+            return PRODUCT_CHANTIERS
     path = profile_path()
     if not path.exists():
         return None
@@ -89,6 +98,8 @@ def set_product(product: str) -> None:
         code = PRODUCT_GESTION
     if code in ("maquis", "maquiscaisse"):
         code = PRODUCT_MAQUIS
+    if code in ("chantier", "chantierpro", "chantier_pro", "btp"):
+        code = PRODUCT_CHANTIERS
     if code not in PRODUCT_LABELS:
         raise ValueError(f"Produit inconnu : {product}")
     path = profile_path()
@@ -117,6 +128,10 @@ def is_gestion() -> bool:
 
 def is_maquis() -> bool:
     return require_product() == PRODUCT_MAQUIS
+
+
+def is_chantiers() -> bool:
+    return require_product() == PRODUCT_CHANTIERS
 
 
 def supports_profit_loyalty() -> bool:

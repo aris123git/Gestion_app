@@ -85,15 +85,21 @@ class ChantierUITests(unittest.TestCase):
         self.assertNotIn("Encaissements", titles); self.assertNotIn("Avenants", titles)
         self.assertNotIn("Marge", dlg.kpi.text())
 
-    def test_menu_only_for_enterprise(self):
+    def test_menu_only_in_chantiers_product(self):
+        from app.services import product_profile
         from app.ui import main_window
-        shop = settings_service.get_shop_info()
-        settings_service.save_shop_info(name=shop.name, address=shop.address, phone=shop.phone, email=shop.email, currency=shop.currency,
-                                        shop_type="Boutique", vat_rate=shop.vat_rate, logo_path=shop.logo_path, is_configured=True)
+        import os
+        saved = os.environ.pop("NEXAGES_PRODUCT", None)
+        self.addCleanup(lambda: saved is not None and os.environ.__setitem__("NEXAGES_PRODUCT", saved))
+        product_profile.set_product(product_profile.PRODUCT_GESTION)
         self.assertNotIn("Chantiers", [i[0] for i in main_window.build_nav_items()])
-        settings_service.save_shop_info(name=shop.name, address=shop.address, phone=shop.phone, email=shop.email, currency=shop.currency,
-                                        shop_type="Entreprise", vat_rate=shop.vat_rate, logo_path=shop.logo_path, is_configured=True)
-        self.assertIn("Chantiers", [i[0] for i in main_window.build_nav_items()])
+        product_profile.set_product(product_profile.PRODUCT_CHANTIERS)
+        try:
+            names = [i[0] for i in main_window.build_nav_items()]
+            self.assertEqual(names[0], "Chantiers")
+            self.assertNotIn("Caisse", names)
+        finally:
+            product_profile.set_product(product_profile.PRODUCT_GESTION)
 
 
 if __name__ == "__main__":

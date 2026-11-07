@@ -34,6 +34,13 @@ class ProductProfileTestCase(unittest.TestCase):
         engine.dispose()
         shutil.rmtree(config.DATA_DIR, ignore_errors=True)
 
+    def test_chantiers_product(self):
+        product_profile.set_product("chantier")
+        self.assertEqual(product_profile.get_product(), product_profile.PRODUCT_CHANTIERS)
+        self.assertTrue(product_profile.is_chantiers())
+        self.assertEqual(product_profile.product_label(), "Chantier Pro")
+        self.assertFalse(product_profile.is_gestion())
+
     def setUp(self) -> None:
         path = product_profile.profile_path()
         if path.exists():

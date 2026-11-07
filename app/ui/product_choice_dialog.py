@@ -25,7 +25,7 @@ class ProductChoiceDialog(QDialog):
         self.setWindowTitle(
             f"{product_profile.PARENT_NAME} — {t('Choix du produit')}"
         )
-        self.setMinimumSize(720, 420)
+        self.setMinimumSize(980, 440)
         self.selected: str | None = None
         self.switch_mode = switch_mode
         current = product_profile.get_product() if switch_mode else None
@@ -81,6 +81,14 @@ class ProductChoiceDialog(QDialog):
                 product_profile.PRODUCT_MAQUIS,
                 t(product_profile.PRODUCT_LABELS[product_profile.PRODUCT_MAQUIS]),
                 t(product_profile.PRODUCT_DESCRIPTIONS[product_profile.PRODUCT_MAQUIS]),
+                current=current,
+            )
+        )
+        cards.addWidget(
+            self._build_card(
+                product_profile.PRODUCT_CHANTIERS,
+                t(product_profile.PRODUCT_LABELS[product_profile.PRODUCT_CHANTIERS]),
+                t(product_profile.PRODUCT_DESCRIPTIONS[product_profile.PRODUCT_CHANTIERS]),
                 current=current,
             )
         )

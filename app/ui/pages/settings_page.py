@@ -646,7 +646,8 @@ class SettingsPage(QWidget):
     def _apply_enterprise_visibility(self, *_args) -> None:
         """Bons d'enlèvement / de livraison : réglages visibles seulement pour le type « Entreprise »."""
         from app.services.business_mode import is_enterprise_type
-        show = is_enterprise_type(self.shop_type.currentText())
+        from app.services import product_profile as _pp
+        show = is_enterprise_type(self.shop_type.currentText()) and not _pp.is_chantiers()
         if hasattr(self, '_tab_bon'):
             self._layout_bon_rows(show)
             for tab in (self._tab_bon, self._tab_bl):
