@@ -50,6 +50,7 @@ def build_chantiers_nav_items() -> List[NavEntry]:
     from app.ui.pages.rentals_page import RentalsPage
     from app.ui.pages.settings_page import SettingsPage
     from app.ui.pages.suppliers_page import SuppliersPage
+    from app.ui.pages.subcontractors_page import SubcontractorsPage
     from app.ui.pages.users_page import UsersPage
 
     if not product_profile.is_chantiers():
@@ -75,6 +76,7 @@ def build_chantiers_nav_items() -> List[NavEntry]:
         *sales,
         (t("Chantiers"), "🏗️", ChantiersPage, perms.ADD_CHANTIER_EXPENSES),
         (t("Main-d'œuvre"), "👷", LaborPage, perms.MANAGE_LABOR),
+        (t("Sous-traitants"), "🤝", SubcontractorsPage, perms.MANAGE_SUBCONTRACTORS),
         *([(t("Locations"), "🚜", RentalsPage, perms.MANAGE_RENTALS)] if rentals_enabled() else []),
         (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
         (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),

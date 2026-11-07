@@ -67,3 +67,4 @@ __all__ = [
 
 from app.models.rental import Rental, RentalItem, RentalLine  # noqa: E402,F401
 from app.models.labor import Worker, WorkerAdvance, WorkerDay  # noqa: E402,F401
+from app.models.subcontract import Subcontract, SubcontractPayment, Subcontractor  # noqa: E402,F401

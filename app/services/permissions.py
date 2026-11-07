@@ -42,6 +42,7 @@ ADD_CHANTIER_EXPENSES = "add_chantier_expenses"
 VIEW_CHANTIER_FINANCE = "view_chantier_finance"
 MANAGE_RENTALS = "manage_rentals"
 MANAGE_LABOR = "manage_labor"
+MANAGE_SUBCONTRACTORS = "manage_subcontractors"
 
 _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
     {
@@ -75,6 +76,7 @@ _ALL_PERMISSIONS: FrozenSet[str] = frozenset(
         VIEW_CHANTIER_FINANCE,
         MANAGE_RENTALS,
         MANAGE_LABOR,
+        MANAGE_SUBCONTRACTORS,
     }
 )
 
@@ -108,6 +110,7 @@ ROLE_PERMISSIONS: dict[str, FrozenSet[str]] = {
             VIEW_CHANTIER_FINANCE,
             MANAGE_RENTALS,
             MANAGE_LABOR,
+            MANAGE_SUBCONTRACTORS,
         }
     ),
     ROLE_CASHIER: frozenset(

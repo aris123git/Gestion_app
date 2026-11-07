@@ -93,6 +93,28 @@ class ChantierUITests(unittest.TestCase):
         self.assertEqual(lab.payroll.rowCount(), 1)
         self.assertEqual(lab.workers.rowCount(), 1)
 
+    def test_subcontractors_page(self):
+        from app.services import subcontract_service as ss
+        from app.ui.pages.subcontractors_page import SubcontractorsPage
+        from app.printers import subcontract_docs
+        from tests.pdf_text import pdf_text
+        c = cs.create("Chantier ST", client_label="C", amount=100_000, status="en_cours")
+        st = ss.save_subcontractor(name="Elec UI", trade="Électricien")
+        sid = ss.create_subcontract(c, st, "Électricité lot 4", 500_000, retention_pct=10)
+        ss.add_payment(sid, 100_000, reference="CH-01")
+        page = SubcontractorsPage(self._state()); self.keep.append(page)
+        page.refresh()
+        self.assertEqual(page.contracts.rowCount(), 1)
+        page.contracts.selectRow(0)
+        self.assertEqual(page.payments.rowCount(), 1)
+        self.assertEqual(page.directory.rowCount(), 1)
+        self.assertIn("350", page.banner.text().replace("\xa0", " ").replace(" ", ""))
+        out = os.path.join(_D, "st.pdf")
+        subcontract_docs.build_contract(sid, out)
+        text = pdf_text(out)
+        self.assertIn("Elec UI", text)
+        self.assertIn("CH-01", text)
+
     def test_edit_client_and_invoice(self):
         from unittest import mock
         from PySide6.QtWidgets import QDialog
@@ -144,6 +166,7 @@ class ChantierUITests(unittest.TestCase):
             self.assertIn("Chantiers", names)
             chantiers_nav.set_sales_enabled(False)
             self.assertIn("Main-d'œuvre", names)
+            self.assertIn("Sous-traitants", names)
             self.assertNotIn("Locations", names)
             chantiers_nav.set_rentals_enabled(True)
             self.assertIn("Locations", [i[0] for i in main_window.build_nav_items()])
