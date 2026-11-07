@@ -121,6 +121,8 @@ class ChantierDialog(QDialog):
             self.tabs.addTab(_scroll(self.tab_quote), t("Devis / budget"))
             self.tab_schedule = self._build_schedule()
             self.tabs.addTab(_scroll(self.tab_schedule), t("Échéancier"))
+            self.tab_budget = self._build_budget()
+            self.tabs.addTab(_scroll(self.tab_budget), t("Budget par poste"))
         close = QPushButton(t("Fermer"))
         close.clicked.connect(self.accept)
         row = QHBoxLayout()
@@ -188,9 +190,81 @@ class ChantierDialog(QDialog):
             self._refresh_addenda()
             self._refresh_quote()
             self._refresh_schedule()
+            self._refresh_budget()
             self.pay_form_box.setEnabled(not pending and self.can_manage)
             self.add_form_box.setEnabled(self.can_manage)
         self._refresh_progress()
+
+    # -- Budget par poste ------------------------------------------------------------------
+    def _build_budget(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        hint = QLabel(t("Fixez ce que vous comptez dépenser pour chaque poste. Une alerte apparaît à 90 % du budget, puis au dépassement."))
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #64748b;")
+        v.addWidget(hint)
+        self.budget_table = QTableWidget(len(EXPENSE_CATEGORIES), 5)
+        self.budget_table.setHorizontalHeaderLabels([t(h) for h in ("Poste", "Budget prévu", "Dépensé", "Reste", "Consommé")])
+        self.budget_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.budget_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.budget_table.setMinimumHeight(260)
+        self.budget_spins = {}
+        for r, cat in enumerate(EXPENSE_CATEGORIES):
+            self.budget_table.setItem(r, 0, _item(t(cat)))
+            spin = _money()
+            self.budget_spins[cat] = spin
+            self.budget_table.setCellWidget(r, 1, spin)
+        v.addWidget(self.budget_table)
+        self.budget_total = QLabel()
+        v.addWidget(self.budget_total)
+        row = QHBoxLayout()
+        save = QPushButton(t("Enregistrer le budget"))
+        save.setObjectName("Primary")
+        save.clicked.connect(self._save_budget)
+        from_quote = QPushButton(t("Pré-remplir depuis le devis"))
+        from_quote.clicked.connect(self._budget_from_quote)
+        self.budget_buttons = (save, from_quote)
+        row.addWidget(save)
+        row.addWidget(from_quote)
+        row.addStretch()
+        v.addLayout(row)
+        v.addStretch()
+        return w
+
+    def _refresh_budget(self) -> None:
+        s = self.summary
+        for r, cat in enumerate(EXPENSE_CATEGORIES):
+            spin = self.budget_spins[cat]
+            if not spin.hasFocus():
+                spin.setValue(s.cost_budget.get(cat, 0))
+            spent = s.by_category.get(cat, 0.0)
+            planned = s.cost_budget.get(cat, 0.0)
+            left = planned - spent
+            pct = f"{spent * 100 / planned:.0f} %" if planned else "—"
+            for c, text in ((2, self._money_text(spent)), (3, self._money_text(left) if planned else "—"), (4, pct)):
+                it = _item(text, True)
+                if planned and spent > planned:
+                    it.setForeground(Qt.GlobalColor.red)
+                self.budget_table.setItem(r, c, it)
+        extra = [c for c in s.by_category if c not in EXPENSE_CATEGORIES]
+        total = sum(s.cost_budget.values())
+        self.budget_total.setText(f"<b>{t('Budget total')}</b> : {self._money_text(total)} &nbsp;·&nbsp; <b>{t('Dépensé')}</b> : {self._money_text(s.spent)}"
+                                  + (f" &nbsp;·&nbsp; {t('Autres postes')} : {', '.join(extra)}" if extra else ""))
+        for b in self.budget_buttons:
+            b.setEnabled(self.can_manage)
+
+    def _save_budget(self) -> None:
+        try:
+            cs.set_budget(self.chantier_id, {cat: spin.value() for cat, spin in self.budget_spins.items()})
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        audit_service.log_action("Budget chantier", "Chantier", str(self.chantier_id), self.user_id, self.username)
+        self.refresh()
+
+    def _budget_from_quote(self) -> None:
+        cs.budget_from_quote(self.chantier_id)
+        self.refresh()
 
     # -- Résumé ----------------------------------------------------------------------------
     def _build_summary(self) -> QWidget:

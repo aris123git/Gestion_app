@@ -5,7 +5,7 @@ from app.models.audit import AuditLog
 from app.models.price_layer import PriceLayer
 from app.models.avoir import Avoir, AvoirRedemption
 from app.models.cash_session import CashSession
-from app.models.chantier import Chantier, ChantierAddendum, ChantierExpense, ChantierLine, ChantierLot, ChantierMilestone, ChantierPayment
+from app.models.chantier import Chantier, ChantierAddendum, ChantierExpense, ChantierLine, ChantierLot, ChantierMilestone, ChantierPayment, ChantierBudget
 from app.models.category import Category
 from app.models.client import Client
 from app.models.debt import Debt, DebtPayment
@@ -64,3 +64,6 @@ __all__ = [
     "Unit",
     "User",
 ]
+
+from app.models.rental import Rental, RentalItem, RentalLine  # noqa: E402,F401
+from app.models.labor import Worker, WorkerAdvance, WorkerDay  # noqa: E402,F401

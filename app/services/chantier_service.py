@@ -21,7 +21,7 @@ from app.database.connection import session_scope
 from app.models.chantier import (
     MARKET_STATUSES, STATUS_ACCEPTED, STATUS_DISPUTE, STATUS_DONE, STATUS_LABELS, STATUS_PAID, STATUS_QUOTE,
     STATUS_REFUSED, STATUS_RUNNING, Chantier, ChantierAddendum, ChantierExpense, ChantierLine, ChantierLot,
-    ChantierMilestone, ChantierPayment,
+    ChantierMilestone, ChantierPayment, ChantierBudget,
 )
 from app.models.expense import Expense
 from app.services import audit_service, settings_service
@@ -31,6 +31,7 @@ COUNTER_KEY = "chantier_counter"
 RECEIPT_KEY = "chantier_receipt_counter"
 DRIFT_ALERT_POINTS = 15.0     # dépenses consommées − avancement (en points) au-delà desquels on alerte
 EPS = 0.0005
+BUDGET_WARN_PCT = 90.0       # alerte quand un poste a consommé 90 % de son budget
 
 
 def _f(value) -> float:
@@ -358,6 +359,40 @@ def delete_milestone(milestone_id: int) -> None:
             session.delete(milestone)
 
 
+# --- budget par poste --------------------------------------------------------------------
+def set_budget(chantier_id: int, amounts: dict) -> None:
+    """Remplace le budget de dépenses prévu : {poste: montant}. Un montant à 0 retire le poste."""
+    with session_scope() as session:
+        chantier = session.get(Chantier, chantier_id)
+        if chantier is None:
+            raise ValueError("Chantier introuvable.")
+        existing = {b.category: b for b in chantier.budgets}
+        for cat, raw in amounts.items():
+            value = to_float(raw)
+            if value < 0:
+                raise ValueError("Un budget ne peut pas être négatif.")
+            row = existing.get(cat)
+            if value == 0:
+                if row is not None:
+                    session.delete(row)
+            elif row is not None:
+                row.amount = value
+            else:
+                chantier.budgets.append(ChantierBudget(category=cat, amount=value))
+
+
+def budget_from_quote(chantier_id: int) -> None:
+    """Pré-remplit le budget avec les lignes du devis regroupées par poste (à ajuster ensuite)."""
+    with session_scope() as session:
+        chantier = session.execute(select(Chantier).options(joinedload(Chantier.lines)).where(Chantier.id == chantier_id)).unique().scalar_one_or_none()
+        if chantier is None:
+            raise ValueError("Chantier introuvable.")
+        totals: dict = {}
+        for l in chantier.lines:
+            totals[l.category] = totals.get(l.category, 0.0) + l.total
+    set_budget(chantier_id, totals)
+
+
 # --- résultat -------------------------------------------------------------------------------
 @dataclass
 class Summary:
@@ -380,6 +415,8 @@ class Summary:
     spent_pct: float = 0.0           # dépenses / marché
     budget: float = 0.0              # budget prévisionnel (lignes du devis)
     by_category: dict = field(default_factory=dict)
+    cost_budget: dict = field(default_factory=dict)      # budget de dépenses prévu par poste
+    cost_budget_total: float = 0.0
     planned_vs_received: List[tuple] = field(default_factory=list)   # (libellé, prévu, cumul prévu, échéance)
     alerts: List[str] = field(default_factory=list)
 
@@ -403,6 +440,7 @@ def _summarize(chantier: Chantier) -> Summary:
     for e in chantier.expenses:
         by_category[e.category] = by_category.get(e.category, 0.0) + _f(e.amount)
     progress = progress_of(chantier)
+    cost_budget = {b.category: _f(b.amount) for b in chantier.budgets if _f(b.amount) > 0}
     s = Summary(
         chantier_id=chantier.id, number=chantier.number, name=chantier.name, status=chantier.status, contract=contract,
         base_amount=base, addenda_total=addenda, received=received, remaining_to_receive=max(0.0, contract - received),
@@ -410,6 +448,7 @@ def _summarize(chantier: Chantier) -> Summary:
         margin_pct=round((contract - spent) * 100 / contract, 2) if contract else 0.0, cash=received - paid_out,
         progress_pct=progress, spent_pct=round(spent * 100 / contract, 2) if contract else 0.0,
         budget=sum(l.total for l in chantier.lines), by_category=by_category,
+        cost_budget=cost_budget, cost_budget_total=sum(cost_budget.values()),
     )
     cumulative = 0.0
     for m in sorted(chantier.milestones, key=lambda m: (m.due_date or datetime.max, m.id)):
@@ -421,6 +460,12 @@ def _summarize(chantier: Chantier) -> Summary:
             s.alerts.append("Chantier en perte : les dépenses dépassent le montant du marché.")
         elif contract and s.spent_pct - progress >= DRIFT_ALERT_POINTS and spent > 0:
             s.alerts.append(f"Dérapage : {s.spent_pct:g} % du marché dépensé pour {progress:g} % d'avancement.")
+        for cat, planned in cost_budget.items():
+            used = by_category.get(cat, 0.0)
+            if used > planned + EPS:
+                s.alerts.append(f"Budget dépassé « {cat} » : {used:g} dépensé pour {planned:g} prévu.")
+            elif planned and used >= planned * BUDGET_WARN_PCT / 100:
+                s.alerts.append(f"Budget « {cat} » presque épuisé : {used * 100 / planned:.0f} % consommé.")
         late = [label for label, _p, cum, due in s.planned_vs_received if due and due < datetime.now() and received + EPS < cum]
         if late:
             s.alerts.append("Encaissement en retard : " + ", ".join(late) + ".")
@@ -431,7 +476,7 @@ def summary(chantier_id: int) -> Summary:
     with session_scope() as session:
         chantier = session.execute(
             select(Chantier).options(joinedload(Chantier.lines), joinedload(Chantier.expenses), joinedload(Chantier.payments),
-                                     joinedload(Chantier.addenda), joinedload(Chantier.lots), joinedload(Chantier.milestones))
+                                     joinedload(Chantier.addenda), joinedload(Chantier.lots), joinedload(Chantier.milestones), joinedload(Chantier.budgets))
             .where(Chantier.id == chantier_id)).unique().scalar_one_or_none()
         if chantier is None:
             raise ValueError("Chantier introuvable.")
@@ -441,7 +486,7 @@ def summary(chantier_id: int) -> Summary:
 def list_summaries(status: str | None = None, search: str = "") -> List[Summary]:
     with session_scope() as session:
         query = select(Chantier).options(joinedload(Chantier.lines), joinedload(Chantier.expenses), joinedload(Chantier.payments),
-                                         joinedload(Chantier.addenda), joinedload(Chantier.lots), joinedload(Chantier.milestones)).order_by(Chantier.id.desc())
+                                         joinedload(Chantier.addenda), joinedload(Chantier.lots), joinedload(Chantier.milestones), joinedload(Chantier.budgets)).order_by(Chantier.id.desc())
         if status:
             query = query.where(Chantier.status == status)
         rows = session.execute(query).unique().scalars().all()

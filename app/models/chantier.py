@@ -61,6 +61,7 @@ class Chantier(Base, TimestampMixin):
     addenda: Mapped[list["ChantierAddendum"]] = relationship(back_populates="chantier", cascade="all, delete-orphan")
     lots: Mapped[list["ChantierLot"]] = relationship(back_populates="chantier", cascade="all, delete-orphan")
     milestones: Mapped[list["ChantierMilestone"]] = relationship(back_populates="chantier", cascade="all, delete-orphan")
+    budgets: Mapped[list["ChantierBudget"]] = relationship(back_populates="chantier", cascade="all, delete-orphan")
 
 
 class ChantierLine(Base):
@@ -168,3 +169,16 @@ class ChantierMilestone(Base):
     due_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     chantier: Mapped[Chantier] = relationship(back_populates="milestones")
+
+
+class ChantierBudget(Base):
+    """Budget de dépenses prévu par poste (matériel, main-d'œuvre…) : comparé au dépensé réel."""
+
+    __tablename__ = "chantier_budgets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chantier_id: Mapped[int] = mapped_column(ForeignKey("chantiers.id"), index=True)
+    category: Mapped[str] = mapped_column(String(50))
+    amount: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
+
+    chantier: Mapped[Chantier] = relationship(back_populates="budgets")

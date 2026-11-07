@@ -217,6 +217,7 @@ class SettingsPage(QWidget):
             form.addRow("", self._maquis_tables_cb)
             form.addRow("", self._maquis_kitchen_cb)
         self._chantiers_sales_cb = None
+        self._chantiers_rentals_cb = None
         if _pp.is_chantiers():
             from app.services import chantiers_nav
 
@@ -226,6 +227,9 @@ class SettingsPage(QWidget):
             )
             self._chantiers_sales_cb.setChecked(chantiers_nav.sales_enabled())
             form.addRow("", self._chantiers_sales_cb)
+            self._chantiers_rentals_cb = QCheckBox(t("Activer la location de matériel (parc, contrats, dates de retour, cautions)"))
+            self._chantiers_rentals_cb.setChecked(chantiers_nav.rentals_enabled())
+            form.addRow("", self._chantiers_rentals_cb)
         outer.addWidget(make_card(form_widget))
         save = QPushButton(t('Enregistrer les informations'))
         save.setObjectName('Primary')
@@ -329,6 +333,7 @@ class SettingsPage(QWidget):
             from app.services import chantiers_nav
 
             chantiers_nav.set_sales_enabled(self._chantiers_sales_cb.isChecked())
+            chantiers_nav.set_rentals_enabled(self._chantiers_rentals_cb.isChecked())
         lang_changed = set_language(new_lang) != previous_lang
         audit_service.log_action('Paramètres commerce', 'ShopInfo', '', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         if lang_changed:

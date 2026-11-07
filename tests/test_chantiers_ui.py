@@ -44,7 +44,7 @@ class ChantierUITests(unittest.TestCase):
         self.assertGreaterEqual(page.table.rowCount(), 1)
         self.assertIn("Villa UI", page.table.item(0, 1).text())
         dlg = ChantierDialog(state, cid); self.keep.append(dlg)
-        self.assertEqual(dlg.tabs.count(), 7)
+        self.assertEqual(dlg.tabs.count(), 8)
         self.assertIn("1 500 000", dlg.kpi.text().replace(" ", " ").replace("\xa0", " "))     # reste à encaisser
         dlg.exp_amount.setValue(10_000); dlg.exp_label.setText("Clous"); dlg._add_expense()
         self.assertEqual(cs.summary(cid).spent, 310_000)
@@ -53,6 +53,45 @@ class ChantierUITests(unittest.TestCase):
         with mock.patch("app.ui.dialogs.chantier_dialog.confirm", return_value=False):
             dlg._add_payment()
         self.assertEqual(cs.summary(cid).received, 600_000)
+
+    def test_budget_tab_saves_and_alerts(self):
+        from app.ui.dialogs.chantier_dialog import ChantierDialog
+        cid = cs.create("Budget UI", client_label="C", amount=1_000_000, status="en_cours")
+        cs.add_expense(cid, category="Matériel", amount=60_000)
+        dlg = ChantierDialog(self._state(), cid); self.keep.append(dlg)
+        dlg.budget_spins["Matériel"].setValue(50_000)
+        dlg._save_budget()
+        self.assertEqual(cs.summary(cid).cost_budget, {"Matériel": 50_000})
+        self.assertTrue(any("Budget dépassé" in a for a in cs.summary(cid).alerts))
+
+    def test_rentals_and_labor_pages(self):
+        from datetime import datetime, timedelta
+        from app.services import labor_service as ls, rental_service as rs
+        from app.ui.pages.labor_page import LaborPage
+        from app.ui.pages.rentals_page import RentalsPage
+        i = rs.save_item(name="Bétonnière UI", quantity=1, rate_day=10_000, deposit=20_000)
+        rid = rs.create_rental(client_label="Client Loc", due_date=datetime.now() - timedelta(days=1), start_date=datetime.now() - timedelta(days=3),
+                               lines=[rs.LineInput(i, 1)])
+        state = self._state()
+        page = RentalsPage(state); self.keep.append(page)
+        page.refresh()
+        self.assertEqual(page.table.rowCount(), 1)
+        self.assertIn("EN RETARD", page.table.item(0, 5).text())
+        self.assertIn("retard", page.banner.text())
+        self.assertEqual(page.park.rowCount(), 1)
+        from app.printers import rental_docs
+        from tests.pdf_text import pdf_text
+        out = os.path.join(_D, "contrat.pdf")
+        rental_docs.build_contract(rid, out)
+        self.assertIn("Client Loc", pdf_text(out))
+        c = cs.create("Chantier Paie", client_label="C", amount=100_000, status="en_cours")
+        w = ls.save_worker(name="Ouvrier UI", daily_rate=4000)
+        ls.clock_in(w, c, date=datetime(2026, 11, 3))
+        lab = LaborPage(state); self.keep.append(lab)
+        lab.refresh()
+        self.assertEqual(lab.days.rowCount(), 1)
+        self.assertEqual(lab.payroll.rowCount(), 1)
+        self.assertEqual(lab.workers.rowCount(), 1)
 
     def test_edit_client_and_invoice(self):
         from unittest import mock
@@ -104,6 +143,11 @@ class ChantierUITests(unittest.TestCase):
             self.assertIn("Caisse", names)
             self.assertIn("Chantiers", names)
             chantiers_nav.set_sales_enabled(False)
+            self.assertIn("Main-d'œuvre", names)
+            self.assertNotIn("Locations", names)
+            chantiers_nav.set_rentals_enabled(True)
+            self.assertIn("Locations", [i[0] for i in main_window.build_nav_items()])
+            chantiers_nav.set_rentals_enabled(False)
         finally:
             product_profile.set_product(product_profile.PRODUCT_GESTION)
 
