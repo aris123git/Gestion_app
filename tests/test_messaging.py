@@ -94,18 +94,17 @@ class MessagingTests(unittest.TestCase):
             for sale in s.query(Sale).filter(Sale.client_id == buyer).order_by(Sale.date):
                 pid, name = (ids[0], "Basket rouge") if sale.date < now - timedelta(days=5) else (ids[1], "Sandale bleue")
                 s.add(SaleItem(sale_id=sale.id, product_id=pid, product_name=name, quantity=1, unit_price=1000, line_total=1000))
-        rows = ms.find_recipients(ms.SEG_CATEGORY, ms.WHATSAPP, category_id=cat_id)
+        rows = ms.enrich_products(ms.find_recipients(ms.SEG_CATEGORY, ms.WHATSAPP, category_id=cat_id))
         self.assertEqual([r.name for r in rows], ["Acheteur Cat"])
         self.assertEqual(rows[0].last_product, "Sandale bleue")
-        self.assertIn("Sandale bleue", ms.render(ms.TEMPLATES["Produit qui ressemble à votre achat"], rows[0], "Boutique"))
+        self.assertIn("Sandale bleue", ms.render(ms.TEMPLATES["Merci pour votre achat"], rows[0], "Boutique"))
         with self.assertRaises(ValueError):
             ms.find_recipients(ms.SEG_CATEGORY, ms.WHATSAPP)
 
     def test_cap_is_adjustable(self):
-        ms.set_cap(ms.WHATSAPP, 250)
+        ms.save_limits(cap_whatsapp=250, cap_email=300, gap_days=1)
         self.assertEqual(ms.cfg_int("messaging_cap_whatsapp"), 250)
-        with self.assertRaises(ValueError):
-            ms.set_cap(ms.WHATSAPP, 0)
+        self.assertEqual(ms.cfg_int("messaging_min_gap_days"), 1)
 
     def test_render_placeholders_and_footer(self):
         r = ms.Recipient(1, "Aicha Ouedraogo", "70123456", "a@x.com", 12500)

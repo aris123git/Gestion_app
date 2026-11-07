@@ -42,13 +42,6 @@ SEGMENT_LABELS = {
     SEG_DEBT: "Avec une dette (rappel)",
     SEG_CATEGORY: "Ont acheté un produit d'une catégorie (suggestion)",
 }
-TEMPLATES = {
-    "Merci pour votre achat": "Bonjour {prenom}, merci d'avoir acheté chez {entreprise} ! Nous espérons que {dernier_achat} vous donne entière satisfaction. À très bientôt.",
-    "Bonne fête": "Bonjour {prenom}, toute l'équipe de {entreprise} vous souhaite une très bonne fête, à vous et à votre famille !",
-    "Produit qui ressemble à votre achat": "Bonjour {prenom}, vous avez acheté {dernier_achat} chez {entreprise}. Nous avons de nouveaux articles du même genre qui pourraient vous plaire : passez les voir !",
-    "Rappel de dette": "Bonjour {prenom}, petit rappel amical : votre solde chez {entreprise} est de {dette}. Merci de passer le régler quand vous pouvez.",
-    "Nous vous avons manqué": "Bonjour {prenom}, cela fait un moment que nous ne vous avons pas vus chez {entreprise}. Passez nous voir, nous serons ravis de vous accueillir !",
-}
 OPT_OUT_FOOTER = "\n\nPour ne plus recevoir nos messages, répondez STOP."
 
 DEFAULTS = {
@@ -116,7 +109,6 @@ class Recipient:
     email: str
     debt: float
     last_visit: str = ""
-    last_product: str = ""      # dernier produit acheté (variable {dernier_achat})
     last_product: str = ""     # dernier produit acheté
     suggestion: str = ""       # produit de la même catégorie, pas encore acheté
 
@@ -143,10 +135,6 @@ def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = N
             in_category = {cid for (cid,) in session.execute(select(Sale.client_id).join(SaleItem, SaleItem.sale_id == Sale.id).join(
                 Product, Product.id == SaleItem.product_id).where(Sale.client_id.is_not(None), Sale.status == "completed",
                                                                   Product.category_id == category_id).distinct())}
-        last_product: dict = {}
-        for cid, name in session.execute(select(Sale.client_id, SaleItem.product_name).join(SaleItem, SaleItem.sale_id == Sale.id).where(
-                Sale.client_id.is_not(None), Sale.status == "completed").order_by(Sale.date, Sale.id, SaleItem.id)):
-            last_product[cid] = name
         recent: set = set()
         gap = cfg_int("messaging_min_gap_days")
         if respect_gap and gap:
@@ -170,7 +158,7 @@ def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = N
                 continue
             if channel == EMAIL and not valid_email(c.email):
                 continue
-            out.append(Recipient(c.id, c.name, c.phone if normalize_phone(c.phone) else c.phone2, (c.email or "").strip(), float(c.debt or 0), c.last_visit or "", last_product.get(c.id, "")))
+            out.append(Recipient(c.id, c.name, c.phone if normalize_phone(c.phone) else c.phone2, (c.email or "").strip(), float(c.debt or 0), c.last_visit or ""))
         return out
 
 
@@ -261,13 +249,6 @@ def sent_today(channel: str) -> int:
 def remaining_today(channel: str) -> int:
     cap = cfg_int("messaging_cap_whatsapp" if channel == WHATSAPP else "messaging_cap_email")
     return max(0, cap - sent_today(channel))
-
-
-def set_cap(channel: str, value: int) -> None:
-    value = int(value)
-    if value < 1:
-        raise ValueError("Le plafond doit être d'au moins 1.")
-    settings_service.set_setting("messaging_cap_whatsapp" if channel == WHATSAPP else "messaging_cap_email", str(value))
 
 
 def opt_out(client_id: int) -> None:

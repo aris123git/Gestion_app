@@ -127,15 +127,6 @@ class BulkMessageDialog(QDialog):
         with session_scope() as session:
             for cat in session.scalars(select(Category).order_by(Category.name)):
                 self.category.addItem(cat.name, cat.id)
-        self.template = QComboBox()
-        self.template.addItem(t("— Choisir un modèle —"), None)
-        for name in ms.TEMPLATES:
-            self.template.addItem(t(name), name)
-        self.template.currentIndexChanged.connect(lambda _i: self.template.currentData() and self.text.setPlainText(ms.TEMPLATES[self.template.currentData()]))
-        self.cap = QSpinBox()
-        self.cap.setRange(1, 1000)
-        self.cap.setSuffix(" " + t("par jour"))
-        self.cap.setToolTip(t("Au-delà d'une centaine de messages par jour, le risque de signalement et de blocage augmente."))
         today = QDate.currentDate()
         self.d_from = QDateEdit(today.addDays(-7))
         self.d_to = QDateEdit(today)
@@ -172,9 +163,7 @@ class BulkMessageDialog(QDialog):
         form.addRow(t("Sans achat depuis"), self.days)
         form.addRow(t("Objet"), self.subject)
         form.addRow(t("Modèle"), self.template)
-        form.addRow(t("Modèle"), self.template)
         form.addRow(t("Message"), self.text)
-        form.addRow(t("Plafond d'envois"), self.cap)
         hint = QLabel(t("Variables : {nom}  {prenom}  {entreprise}  {dette}  {dernier_achat}  {suggestion} (produit similaire)"))
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #64748b;")
@@ -234,6 +223,7 @@ class BulkMessageDialog(QDialog):
         seg, email = self.segment.currentData(), self.channel.currentData() == ms.EMAIL
         self.form.setRowVisible(self.dates, seg == ms.SEG_BOUGHT)
         self.form.setRowVisible(self.days, seg == ms.SEG_INACTIVE)
+        self.form.setRowVisible(self.category, seg == ms.SEG_CATEGORY)
         self.form.setRowVisible(self.subject, email)
         self.btn_cfg.setVisible(email)
         self.table.setRowCount(0)
@@ -274,7 +264,6 @@ class BulkMessageDialog(QDialog):
             self.table.setItem(r, 0, name)
             for c, v in enumerate((rc.phone, rc.email, f"{rc.debt:,.0f}".replace(",", " ") if rc.debt else ""), 1):
                 self.table.setItem(r, c, QTableWidgetItem(v))
-        ms.set_cap(self.channel.currentData(), self.cap.value())
         left = ms.remaining_today(self.channel.currentData())
         msg = f"<b>{len(rows)}</b> {t('destinataire(s)')} · {t('plafond restant aujourd’hui')} : <b>{left}</b>"
         if dropped:
@@ -304,8 +293,7 @@ class BulkMessageDialog(QDialog):
         if not self.text.toPlainText().strip():
             warn(self, t("Le message est vide."))
             return
-        ms.set_cap(channel, self.cap.value())
-        if channel == ms.WHATSAPP and self.cap.value() > 100 and not confirm(
+        if channel == ms.WHATSAPP and self.cap_wa.value() > 100 and not confirm(
                 self, t("Plus de 100 messages WhatsApp par jour augmente le risque de blocage de votre numéro. Continuer quand même ?")):
             return
         left = ms.remaining_today(channel)
