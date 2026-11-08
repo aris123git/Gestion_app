@@ -332,16 +332,22 @@ class FieldSalesPage(QWidget):
         self.b_close = QPushButton(t("Retour du soir"))
         self.b_close.setObjectName("Primary")
         self.b_add = QPushButton(t("Ajouter des produits"))
+        self.b_ticket = QPushButton(t("Bon de sortie (A4)"))
+        self.b_roll = QPushButton(t("Ticket 80 mm"))
         self.b_visit = QPushButton(t("+ Boutique visitée"))
         self.b_cancel = QPushButton(t("Annuler la sortie"))
         self.b_cancel.setObjectName("Danger")
         self.b_close.clicked.connect(self._close_run)
         self.b_add.clicked.connect(self._add_products)
         self.b_visit.clicked.connect(self._visit)
+        self.b_ticket.clicked.connect(lambda: self._print_out("a4"))
+        self.b_roll.clicked.connect(lambda: self._print_out("ticket"))
         self.b_cancel.clicked.connect(self._cancel_run)
         for b in (self.b_close, self.b_add, self.b_visit, self.b_cancel):
             b.setEnabled(self.can_manage)
             row.addWidget(b)
+        row.addWidget(self.b_ticket)
+        row.addWidget(self.b_roll)
         row.addStretch()
         lay.addLayout(row)
         return w
@@ -353,6 +359,22 @@ class FieldSalesPage(QWidget):
     def _run_status(self):
         r = self.runs.currentRow()
         return self.runs.item(r, 4).data(Qt.ItemDataRole.UserRole) if r >= 0 else None
+
+    def _print_out(self, fmt: str) -> None:
+        rid = self._run_id()
+        if not rid:
+            warn(self, t("Sélectionnez une sortie."))
+            return
+        self._print_out_for(rid, fmt)
+
+    def _print_out_for(self, rid: int, fmt: str = "a4") -> None:
+        import tempfile
+        from pathlib import Path
+        from app.printers import field_docs
+
+        path = Path(tempfile.gettempdir()) / f"bon_sortie_{rid}_{fmt}.pdf"
+        field_docs.build_out_ticket(rid, path, fmt)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _new_run(self) -> None:
         dlg = OutDialog(self)
@@ -369,6 +391,8 @@ class FieldSalesPage(QWidget):
             return
         audit_service.log_action("Sortie en tournée", "FieldRun", str(rid), *self._user())
         self.refresh()
+        if confirm(self, t("Sortie enregistrée. Imprimer le bon de sortie à remettre au vendeur ?")):
+            self._print_out_for(rid)
 
     def _add_products(self) -> None:
         rid = self._run_id()

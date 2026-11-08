@@ -1,5 +1,6 @@
 """Ventes en tournée : sortie, retour du soir, écart, commissions cumulées, boutiques visitées."""
 import os, shutil, tempfile, unittest
+from pathlib import Path
 from datetime import datetime, timedelta
 
 _D = tempfile.mkdtemp(prefix="gestion_field_")
@@ -233,6 +234,26 @@ class FieldSalesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fs.delete_seller(sid)
 
+    def test_out_ticket_pdfs(self):
+        from app.printers import field_docs
+        from tests.pdf_text import pdf_text
+        with session_scope() as s:
+            cat = Category(name="TK"); s.add(cat); s.flush()
+            p = Product(name="Savon TK", category_id=cat.id, sale_price=500, purchase_price=300, quantity=50)
+            s.add(p); s.flush(); pid = p.id
+        sid = fs.save_seller(name="Ticket Vendeur", phone="+22670111111")
+        sid = getattr(sid, "id", sid)
+        rid = fs.open_run(sid, [fs.LineInput(pid, 4, 500)])
+        rid = getattr(rid, "id", rid)
+        for fmt in ("a4", "ticket"):
+            path = Path(_D) / f"b_{fmt}.pdf"
+            field_docs.build_out_ticket(rid, path, fmt)
+            txt = pdf_text(path)
+            self.assertIn("Savon TK", txt)
+            self.assertIn("Ticket Vendeur", txt)
+            self.assertIn("BON DE SORTIE", txt)
+
 
 if __name__ == "__main__":
     unittest.main()
+
