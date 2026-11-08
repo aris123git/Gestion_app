@@ -54,8 +54,16 @@ def build_nav_items():
         (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
         (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
     ]
+    from app.services import field_sales_service
+
+    field_sales = []
+    if field_sales_service.enabled():
+        from app.ui.pages.field_sales_page import FieldSalesPage
+
+        field_sales = [(t("Tournées"), "🛵", FieldSalesPage, perms.MANAGE_FIELD_SALES)]
     return [
         (t("nav.pos"), "🛒", POSPage, perms.SELL),
+        *field_sales,
         (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
         (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
         (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),

@@ -227,6 +227,16 @@ class SettingsPage(QWidget):
             self._chantiers_rentals_cb = QCheckBox(t("Activer la location de matériel (parc, contrats, dates de retour, cautions)"))
             self._chantiers_rentals_cb.setChecked(chantiers_nav.rentals_enabled())
             form.addRow("", self._chantiers_rentals_cb)
+        self._field_sales_cb = None
+        if not _pp.is_maquis() and not _pp.is_chantiers():
+            from app.services import field_sales_service
+
+            form.addRow(QLabel(f"<b>{t('Ventes en tournée')}</b>"))
+            self._field_sales_cb = QCheckBox(
+                t("Activer les ventes en tournée (vendeurs qui sortent prospecter : sorties, retour du soir, commissions)")
+            )
+            self._field_sales_cb.setChecked(field_sales_service.enabled())
+            form.addRow("", self._field_sales_cb)
         outer.addWidget(make_card(form_widget))
         save = QPushButton(t('Enregistrer les informations'))
         save.setObjectName('Primary')
@@ -332,6 +342,10 @@ class SettingsPage(QWidget):
 
             chantiers_nav.set_sales_enabled(self._chantiers_sales_cb.isChecked())
             chantiers_nav.set_rentals_enabled(self._chantiers_rentals_cb.isChecked())
+        if getattr(self, '_field_sales_cb', None) is not None:
+            from app.services import field_sales_service
+
+            field_sales_service.set_enabled(self._field_sales_cb.isChecked())
         lang_changed = set_language(new_lang) != previous_lang
         audit_service.log_action('Paramètres commerce', 'ShopInfo', '', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         if lang_changed:
@@ -663,7 +677,10 @@ class SettingsPage(QWidget):
         """Réglages qui changent le menu latéral (appliqués seulement au démarrage)."""
         from app.services import chantiers_nav, maquis_settings
 
+        from app.services import field_sales_service
+
         return (
+            field_sales_service.enabled(),
             chantiers_nav.sales_enabled(),
             chantiers_nav.rentals_enabled(),
             maquis_settings.tables_enabled() if product_profile.is_maquis() else None,
