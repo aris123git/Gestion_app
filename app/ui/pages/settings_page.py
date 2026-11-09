@@ -493,7 +493,14 @@ class SettingsPage(QWidget):
         self.shop_bank = QLineEdit()
         self.shop_bank.setPlaceholderText(t('Numéro de compte'))
         self.shop_bank_name = QLineEdit()
-        self.invoice_show_legal = QCheckBox(t('Afficher la TVA incluse et les mentions légales (RCCM, IFU) sur la facture'))
+        self.shop_regime = QLineEdit()
+        self.shop_regime.setPlaceholderText(t('ex. CMD'))
+        self.shop_direction = QLineEdit()
+        self.shop_direction.setPlaceholderText(t('ex. DCI-OUAGA 8'))
+        self.shop_agrement = QLineEdit()
+        self.shop_footer_extra = QLineEdit()
+        self.shop_footer_extra.setPlaceholderText(t('Toute autre mention à imprimer au pied de la facture'))
+        self.invoice_show_legal = QCheckBox(t('Afficher la TVA incluse et les mentions légales (RCCM, IFU, régime fiscal, agrément…) sur la facture'))
         self.invoice_show_bank = QCheckBox(t('Afficher la banque et le compte sur la facture'))
         self.bl_show_bank = QCheckBox(t('Afficher la banque et le compte sur le bon de livraison'))
         self.shop_bank_name.setPlaceholderText(t('Nom de la banque'))
@@ -768,7 +775,9 @@ class SettingsPage(QWidget):
                    (t('Mention du bon de livraison'), self.bl_legal), ('', self.bl_show_bank), (t('Lignes vides'), self.bl_fill_empty), (t('Bas de page'), self.bl_pin_bottom)]
         transport_rows = [(t('Chauffeurs'), self.drivers_editor), (t('Camions'), self.trucks_editor)]
         common = [(t('Commercial (signature du bon)'), self.bon_commercial), (t('N° RCCM (pied du bon)'), self.shop_rccm), (t('N° IFU (pied du bon)'), self.shop_ifu),
-                  (t('Banque (pied du bon)'), self.shop_bank_name), (t('Numéro de compte (pied du bon)'), self.shop_bank)]
+                  (t('Banque (pied du bon)'), self.shop_bank_name), (t('Numéro de compte (pied du bon)'), self.shop_bank),
+                  (t('Régime fiscal (pied de la facture)'), self.shop_regime), (t('Direction des impôts (pied de la facture)'), self.shop_direction),
+                  (t("N° d'agrément (pied de la facture)"), self.shop_agrement), (t('Autres mentions (pied de la facture)'), self.shop_footer_extra)]
         legal = [('', self.invoice_show_legal), ('', self.invoice_show_bank)]
         mirror_labels = [t('Commercial (signature du bon)'), t('N° RCCM (pied du bon)'), t('N° IFU (pied du bon)'), t('Banque (pied du bon)'), t('Numéro de compte (pied du bon)')]
         only_enterprise = [self.bon_legal, self.bon_client_name, self.bon_client_number, self.bon_client_phone, self.bon_client_address,
@@ -1353,6 +1362,8 @@ class SettingsPage(QWidget):
         settings_service.set_setting('shop_ifu', self.shop_ifu.text().strip())
         settings_service.set_setting('shop_bank_account', self.shop_bank.text().strip())
         settings_service.set_setting('shop_bank_name', self.shop_bank_name.text().strip())
+        for key, w in (('shop_regime', self.shop_regime), ('shop_direction', self.shop_direction), ('shop_agrement', self.shop_agrement), ('shop_footer_extra', self.shop_footer_extra)):
+            settings_service.set_setting(key, w.text().strip())
         settings_service.set_setting('invoice_show_legal', '1' if self.invoice_show_legal.isChecked() else '0')
         settings_service.set_setting('invoice_show_bank', '1' if self.invoice_show_bank.isChecked() else '0')
         settings_service.set_setting('bl_show_bank', '1' if self.bl_show_bank.isChecked() else '0')
@@ -2000,6 +2011,8 @@ class SettingsPage(QWidget):
         self.shop_ifu.setText(settings_service.get_setting(_be.SETTING_IFU, ''))
         self.shop_bank.setText(settings_service.get_setting(_be.SETTING_BANK, ''))
         self.shop_bank_name.setText(settings_service.get_setting(_be.SETTING_BANK_NAME, ''))
+        for key, w in (('shop_regime', self.shop_regime), ('shop_direction', self.shop_direction), ('shop_agrement', self.shop_agrement), ('shop_footer_extra', self.shop_footer_extra)):
+            w.setText(settings_service.get_setting(key, ''))
         self.invoice_show_legal.setChecked(settings_service.get_setting('invoice_show_legal', '0') == '1')
         self.invoice_show_bank.setChecked(settings_service.get_setting('invoice_show_bank', '1') == '1')
         self.bl_show_bank.setChecked(settings_service.get_setting('bl_show_bank', '1') == '1')

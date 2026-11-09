@@ -538,7 +538,13 @@ def legal_text() -> str:
         return ""
     rccm = settings_service.get_setting("shop_rccm", "").strip()
     ifu = settings_service.get_setting("shop_ifu", "").strip()
-    return "  ·  ".join(p for p in (f"RCCM : {rccm}" if rccm else "", f"IFU : {ifu}" if ifu else "") if p)
+    get = lambda k: settings_service.get_setting(k, "").strip()  # noqa: E731
+    parts = [f"RCCM : {rccm}" if rccm else "", f"IFU : {ifu}" if ifu else "",
+             f"Régime fiscal : {get('shop_regime')}" if get("shop_regime") else "",
+             f"Direction : {get('shop_direction')}" if get("shop_direction") else "",
+             f"N° d'agrément : {get('shop_agrement')}" if get("shop_agrement") else "",
+             get("shop_footer_extra")]
+    return "  ·  ".join(p for p in parts if p)
 
 
 def footer_with_bank(footer: str) -> str:
