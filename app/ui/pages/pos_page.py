@@ -931,7 +931,7 @@ class POSPage(QWidget):
             if sale:
                 if result.loyalty_credit_remaining is not None:
                     sale.loyalty_credit_remaining = result.loyalty_credit_remaining
-                TicketDialog(sale, self, auto_print=False, message=sale_msg + '\n' + t('Entrée : imprimer · Entrée de nouveau : fermer')).exec()
+                TicketDialog(sale, self, message=sale_msg + '\n' + t('Entrée : imprimer · Entrée de nouveau : fermer')).exec()
         self._clear_cart()
         if isinstance(self._catalog, PosCatalogPanel):
             self._catalog.refresh()

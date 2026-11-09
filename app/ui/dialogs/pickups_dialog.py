@@ -592,7 +592,7 @@ class PickupsDialog(QDialog):
             sale = SaleController.get(dlg.sale_id)
             if sale:
                 from app.ui.dialogs.ticket_dialog import TicketDialog
-                TicketDialog(sale, self, auto_print=False, message=f'Livraison enregistrée : {dlg.ticket_number}\n' + t('Entrée : imprimer · Entrée de nouveau : fermer')).exec()
+                TicketDialog(sale, self, message=f'Livraison enregistrée : {dlg.ticket_number}\n' + t('Entrée : imprimer · Entrée de nouveau : fermer')).exec()
         self._reload()
 
     def _close(self) -> None:

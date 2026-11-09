@@ -96,7 +96,7 @@ class TicketDialog(QDialog):
         self._render()
         if auto_print is None:
             auto_print = settings_service.get_setting('auto_print_ticket', '0') == '1'
-        if auto_print and (not is_half_a4(self._paper_value())):
+        if auto_print:
             from PySide6.QtCore import QTimer
             QTimer.singleShot(50, self._print)
 

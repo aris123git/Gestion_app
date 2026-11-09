@@ -95,6 +95,6 @@ class ClientPurchasesDialog(QDialog):
             return
         from app.ui.dialogs.ticket_dialog import TicketDialog
 
-        TicketDialog(sale, self).exec()
+        TicketDialog(sale, self, auto_print=False).exec()
         user = getattr(self.state, 'current_user', None)
         audit_service.log_action('Réimpression ticket', 'Sale', sale.ticket_number, getattr(self.state, 'user_id', None), getattr(user, 'username', ''))

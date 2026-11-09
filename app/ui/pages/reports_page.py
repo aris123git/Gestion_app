@@ -292,7 +292,7 @@ class ReportsPage(QWidget):
             warn(self, t('Vente introuvable.'))
             return
         from app.ui.dialogs.ticket_dialog import TicketDialog
-        TicketDialog(sale, self).exec()
+        TicketDialog(sale, self, auto_print=False).exec()
         audit_service.log_action('Réimpression ticket', 'Sale', sale.ticket_number, self.state.user_id, getattr(self.state.current_user, 'username', ''))
 
     def _cancel_selected_sale(self) -> None:
