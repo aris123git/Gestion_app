@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 from pathlib import Path
 from dataclasses import dataclass
@@ -52,8 +53,16 @@ def check_for_update(fetch: Optional[Callable[[str], dict]] = None) -> UpdateInf
     repo = settings_service.get_setting("update_repo", DEFAULT_REPO).strip() or DEFAULT_REPO
     try:
         data = (fetch or _fetch)(f"https://api.github.com/repos/{repo}/releases/latest")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise RuntimeError("Aucune mise à jour n'a encore été publiée. Votre connexion internet fonctionne.") from exc
+        if exc.code in (403, 429):
+            raise RuntimeError("GitHub limite temporairement les vérifications. Réessayez dans quelques minutes.") from exc
+        raise RuntimeError(f"Le serveur de mises à jour a répondu une erreur ({exc.code}). Réessayez plus tard.") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError("Impossible de joindre le serveur de mises à jour (connexion internet absente, lente ou bloquée par un pare-feu).") from exc
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("Impossible de vérifier les mises à jour (pas de connexion internet, ou aucune version publiée).") from exc
+        raise RuntimeError("Réponse inattendue du serveur de mises à jour. Réessayez plus tard.") from exc
     assets = [a for a in data.get("assets", []) if str(a.get("name", "")).lower().endswith(".exe")]
     return UpdateInfo(
         current=__version__, latest=str(data.get("tag_name", "") or data.get("name", "")).lstrip("vV"), url=str(data.get("html_url", "")),

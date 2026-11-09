@@ -38,6 +38,15 @@ class UpdateTests(unittest.TestCase):
             us.check_for_update(boom)
         self.assertIn("internet", str(ctx.exception))
 
+    def test_no_release_is_not_reported_as_offline(self):
+        import urllib.error
+        def nope(url):
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        with self.assertRaises(RuntimeError) as ctx:
+            us.check_for_update(nope)
+        self.assertIn("Aucune mise à jour", str(ctx.exception))
+        self.assertIn("fonctionne", str(ctx.exception))
+
 
 class PreferSetupAssetTests(unittest.TestCase):
     def test_installer_is_preferred_over_portable_exe(self):
