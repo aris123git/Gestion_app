@@ -46,6 +46,22 @@ class KeyboardNavTests(unittest.TestCase):
         QTest.keyClick(t, Qt.Key.Key_Return)
         self.assertEqual(opened, [1])
 
+    def test_login_enter_goes_to_password(self):
+        import shutil, tempfile
+        d = tempfile.mkdtemp(prefix="gestion_kb2_")
+        os.environ["GESTION_DATA_DIR"] = d
+        os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
+        from app.database.connection import engine, init_database
+        from app.database.seed import seed_all
+        engine.dispose(); init_database(); seed_all()
+        from app.ui.login_dialog import LoginDialog
+        from app.ui.state import AppState
+        dlg = LoginDialog(AppState()); dlg.show()
+        dlg.username.setText("admin"); dlg.username.setFocus()
+        QTest.keyClick(dlg.username, Qt.Key.Key_Return)
+        self.assertIs(dlg.focusWidget(), dlg.password)
+        engine.dispose(); shutil.rmtree(d, ignore_errors=True)
+
     def test_ctrl_number_shortcuts_on_main_window(self):
         import shutil, tempfile
         d = tempfile.mkdtemp(prefix="gestion_kb_")

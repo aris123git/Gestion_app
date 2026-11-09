@@ -84,7 +84,7 @@ class LoginDialog(QDialog):
         self.username = QLineEdit()
         self.username.setPlaceholderText(t("Nom d'utilisateur"))
         self.username.setMinimumHeight(38)
-        self.username.returnPressed.connect(self._attempt_login)
+        self.username.returnPressed.connect(lambda: self.password.setFocus())
         self.password = QLineEdit()
         self.password.setPlaceholderText(t('Mot de passe'))
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
