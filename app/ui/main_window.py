@@ -234,6 +234,7 @@ class MainWindow(QWidget):
             self._nav_group.addButton(button)
             self._nav_buttons.append(button)
         nav_layout.addStretch()
+        self._install_nav_shortcuts()
         nav_scroll.setWidget(nav_host)
         layout.addWidget(nav_scroll, 1)
         self._search_btn: Optional[QPushButton] = None
@@ -271,6 +272,17 @@ class MainWindow(QWidget):
         layout.addWidget(version)
         self._version_label = version
         return sidebar
+
+    def _install_nav_shortcuts(self) -> None:
+        """Ctrl+1…9 : aller directement à la n-ième rubrique visible du menu."""
+        from PySide6.QtGui import QKeySequence, QShortcut
+
+        self._nav_shortcuts = []
+        visible = [i for i, b in enumerate(self._nav_buttons) if b is not None]
+        for n, index in enumerate(visible[:9], start=1):
+            sc = QShortcut(QKeySequence(f"Ctrl+{n}"), self)
+            sc.activated.connect(lambda i=index: self._nav_buttons[i].click())
+            self._nav_shortcuts.append(sc)
 
     def _on_nav_clicked(self, index: int) -> None:
         self.select_page(index)

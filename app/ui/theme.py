@@ -142,6 +142,13 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     QDateEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
         border: 1px solid {primary};
     }}
+    QPushButton:focus, QCheckBox:focus, QRadioButton:focus {{
+        outline: none;
+        border: 2px solid {primary};
+    }}
+    QTableView:focus, QListView:focus, QTreeView:focus {{
+        border: 1px solid {primary};
+    }}
     QLineEdit {{ min-height: 24px; }}
     QPlainTextEdit, QTextEdit {{ min-height: 80px; }}
     QTableView QLineEdit {{ padding: 1px 4px; min-height: 18px; }}
@@ -250,6 +257,9 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
 
 def apply_theme(app, dark: bool = False) -> None:
     """Applique le thème à l'application Qt (accent Maquis si produit Maquis)."""
+    from app.ui import keyboard
+
+    keyboard.install(app)
     maquis = False
     try:
         from app.services import product_profile
