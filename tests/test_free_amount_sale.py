@@ -143,6 +143,19 @@ class FreeAmountSaleTestCase(unittest.TestCase):
         after = ProductController.get(product.id)
         self.assertAlmostEqual(float(after.quantity), 10.0, places=5)
 
+    def test_pack_content_not_required_without_stock(self):
+        from PySide6.QtWidgets import QApplication
+        from app.ui.dialogs.product_dialog import ProductDialog
+        app = QApplication.instance() or QApplication([])
+        dlg = ProductDialog()
+        dlg.name.setText("Poisson")
+        dlg.free_amount_sale.setChecked(True)
+        dlg.sale_price.setValue(1500)
+        dlg.sell_without_stock.setChecked(True)
+        dlg._save()
+        self.assertEqual(dlg.data["name"], "Poisson")
+        self.assertTrue(dlg.data["sell_without_stock"])
+
 
 if __name__ == "__main__":
     unittest.main()

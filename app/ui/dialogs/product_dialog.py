@@ -149,6 +149,7 @@ class ProductDialog(QDialog):
         """Vente sans stock : les champs de stock ne s'appliquent plus."""
         self.quantity.setEnabled(not checked)
         self.min_stock.setEnabled(not checked)
+        self._toggle_free_mode(self.free_amount_sale.isChecked())
 
     def _money_spin(self) -> QDoubleSpinBox:
         spin = MoneySpinBox()
@@ -167,6 +168,7 @@ class ProductDialog(QDialog):
 
     def _toggle_free_mode(self, enabled: bool) -> None:
         self.free_hint.setVisible(bool(enabled))
+        # Sans stock, rien à convertir : le contenu estimatif reste facultatif (coût estimé seulement s'il est renseigné).
         self.pack_content.setEnabled(bool(enabled) or self.pack_content.value() > 0)
 
     def _apply_catalog_feature_ui(self) -> None:
@@ -277,7 +279,7 @@ class ProductDialog(QDialog):
             if self.sale_price.value() <= 0:
                 warn(self, t('En montant libre, le prix de vente (référence / kg) est obligatoire pour estimer la marge.'))
                 return
-            if self.pack_content.value() <= 0:
+            if self.pack_content.value() <= 0 and not self.sell_without_stock.isChecked():
                 warn(self, t('Indiquez le contenu estimatif (ex. 10 kg par carton) pour convertir le stock et estimer le coût.'))
                 return
         self.data = {'name': self.name.text().strip(), 'barcode': self.barcode.text().strip(), 'reference': self.reference.text().strip(), 'category_id': self.category.currentData(), 'unit_id': self.unit.currentData(), 'purchase_price': self.purchase_price.value(), 'sale_price': self.sale_price.value(), 'min_price': self.min_price.value(), 'tax_rate': self.tax_rate.value(), 'pack_content': self.pack_content.value(), 'quantity': self.quantity.value(), 'min_stock': self.min_stock.value(), 'free_amount_sale': self.free_amount_sale.isChecked(), 'sell_without_stock': self.sell_without_stock.isChecked(), 'image_path': self._image_path, 'is_active': self.is_active.isChecked()}
