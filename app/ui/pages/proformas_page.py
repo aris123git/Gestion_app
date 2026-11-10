@@ -21,7 +21,7 @@ from app.ui.dialogs.chantier_dialog import _money
 from app.ui.pages.rentals_page import _cell, _table
 from app.ui.state import AppState
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import confirm, make_card, page_title, warn
+from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.utils.helpers import format_money
 
 
@@ -173,6 +173,52 @@ class ProformaDialog(QDialog):
         return self._inputs(), datetime(d.year(), d.month(), d.day(), datetime.now().hour, datetime.now().minute), fields
 
 
+class ConvertDialog(QDialog):
+    """Associe chaque ligne de la proforma à un produit du stock et choisit le mode de paiement."""
+
+    def __init__(self, parent, proforma_id: int):
+        super().__init__(parent)
+        self.setWindowTitle(t("Transformer en vente"))
+        self.setModal(True)
+        fit_dialog_to_screen(self, min_width=560, min_height=360, preferred_width=680, preferred_height=460)
+        from sqlalchemy import select
+        from app.database.connection import session_scope
+        from app.models.product import Product
+        d = ps.get(proforma_id)
+        self.has_client = bool(d["client_id"])
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel(t("Associez chaque ligne à un produit du stock. Le stock sera diminué et la vente enregistrée dans la caisse.")))
+        with session_scope() as s:
+            products = [(p.id, p.name) for p in s.scalars(select(Product).order_by(Product.name))]
+        self.combos = []
+        form = QFormLayout()
+        for line, sug in zip(d["lines"], ps.suggest_products(proforma_id)):
+            c = QComboBox()
+            c.addItem(t("— choisir —"), None)
+            for pid, name in products:
+                c.addItem(name, pid)
+            if sug:
+                c.setCurrentIndex(c.findData(sug))
+            form.addRow(f"{line['label']} ({line['quantity']:g} × {line['unit_price']:,.0f})".replace(",", " "), c)
+            self.combos.append(c)
+        root.addLayout(form)
+        self.mode = QComboBox()
+        self.mode.addItem(t("Payée en espèces"), False)
+        self.mode.addItem(t("À crédit (dette du client)"), True)
+        root.addWidget(self.mode)
+        if d["totals"].tax > 0:
+            note = QLabel(t("La taxe ajoutée sur la proforma n'est pas incluse dans la vente."))
+            note.setStyleSheet("color: #b45309;")
+            root.addWidget(note)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        root.addWidget(bb)
+
+    def values(self):
+        return [c.currentData() for c in self.combos], bool(self.mode.currentData())
+
+
 class ProformasPage(QWidget):
     def __init__(self, state: AppState):
         super().__init__()
@@ -198,7 +244,7 @@ class ProformasPage(QWidget):
         self.buttons = {}
         for key, label, slot, primary in (("new", "+ Nouvelle proforma", self._new, True), ("edit", "Modifier", self._edit, False),
                                           ("print", "Imprimer / PDF", self._print, True), ("dup", "Dupliquer", self._dup, False),
-                                          ("ok", "Marquer acceptée", lambda: self._status("Acceptée"), False),
+                                          ("sale", "Transformer en vente", self._convert, False), ("ok", "Marquer acceptée", lambda: self._status("Acceptée"), False),
                                           ("ko", "Marquer refusée", lambda: self._status("Refusée"), False), ("del", "Supprimer", self._delete, False)):
             b = QPushButton(t(label))
             if primary:
@@ -252,6 +298,27 @@ class ProformasPage(QWidget):
         if pid:
             ps.duplicate(pid)
             self.refresh()
+
+    def _convert(self) -> None:
+        pid = self._id()
+        if not pid:
+            warn(self, t("Sélectionnez une proforma."))
+            return
+        dlg = ConvertDialog(self, pid)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        ids, credit = dlg.values()
+        try:
+            sale_id = ps.convert_to_sale(pid, ids, on_credit=credit, user_id=self.state.user_id)
+        except Exception as exc:  # noqa: BLE001 - stock insuffisant, prix minimum… : on explique, rien n'est enregistré
+            warn(self, str(exc))
+            return
+        audit_service.log_action("Proforma transformée en vente", "Proforma", str(pid), *self._user())
+        notify = getattr(self.state, "notify_data_changed", None)
+        if notify:
+            notify()
+        self.refresh()
+        info(self, t("Vente enregistrée. La proforma est marquée « Facturée »."))
 
     def _status(self, status: str) -> None:
         pid = self._id()

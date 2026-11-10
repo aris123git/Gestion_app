@@ -78,7 +78,7 @@ def init_database() -> None:
 
 
 # Version du schéma : à incrémenter à chaque ajout de colonne dans ``_migrate_schema``.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _PRE_MIGRATION_KEEP = 3
 
 
@@ -146,6 +146,7 @@ def _existing_columns(conn, table: str) -> set[str]:
 def _migrate_schema() -> None:
     """Ajoute les colonnes manquantes (idempotent, sans perte de données)."""
     alterations = {
+        "proformas": {"sale_id": "INTEGER"},
         "stock_movements": {
             "comment": "TEXT DEFAULT ''",
             "invoice_number": "VARCHAR(80) DEFAULT ''",

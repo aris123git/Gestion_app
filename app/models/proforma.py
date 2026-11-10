@@ -14,7 +14,8 @@ from app.models.mixins import TimestampMixin
 STATUS_OPEN = "Ouverte"
 STATUS_ACCEPTED = "Acceptée"
 STATUS_REFUSED = "Refusée"
-STATUSES = (STATUS_OPEN, STATUS_ACCEPTED, STATUS_REFUSED)
+STATUS_INVOICED = "Facturée"
+STATUSES = (STATUS_OPEN, STATUS_ACCEPTED, STATUS_REFUSED, STATUS_INVOICED)
 
 
 class Proforma(Base, TimestampMixin):
@@ -41,6 +42,7 @@ class Proforma(Base, TimestampMixin):
     responsible: Mapped[str] = mapped_column(String(150), default="")
     responsible_phone: Mapped[str] = mapped_column(String(120), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+    sale_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)     # vente créée à partir de cette proforma
 
     lines: Mapped[List["ProformaLine"]] = relationship(
         back_populates="proforma", cascade="all, delete-orphan", order_by="ProformaLine.position", lazy="selectin"

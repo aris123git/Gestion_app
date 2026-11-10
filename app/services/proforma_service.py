@@ -148,6 +148,46 @@ def delete(proforma_id: int) -> None:
             session.delete(p)
 
 
+def suggest_products(proforma_id: int) -> list[Optional[int]]:
+    """Produit probable de chaque ligne (même nom, sans tenir compte de la casse) ; None si aucun."""
+    from app.models.product import Product
+
+    d = get(proforma_id)
+    with session_scope() as session:
+        by_name = {p.name.strip().lower(): p.id for p in session.scalars(select(Product))}
+    return [by_name.get(l["label"].strip().lower()) for l in d["lines"]]
+
+
+def convert_to_sale(proforma_id: int, product_ids: list[Optional[int]], *, on_credit: bool = False, user_id: Optional[int] = None) -> int:
+    """Transforme la proforma en vente : stock sorti, paiement en espèces ou dette du client (fiche client requise)."""
+    from app.controllers.sale_controller import CartLine, PaymentLine, SaleController
+    from app.models.product import Product
+
+    d = get(proforma_id)
+    if d["status"] == "Facturée":
+        raise ValueError("Cette proforma est déjà transformée en vente.")
+    if len(product_ids) != len(d["lines"]) or any(not pid for pid in product_ids):
+        raise ValueError("Associez chaque ligne à un produit du stock.")
+    if on_credit and not d["client_id"]:
+        raise ValueError("Pour vendre à crédit, choisissez un client existant dans la proforma.")
+    cart = []
+    with session_scope() as session:
+        for line, pid in zip(d["lines"], product_ids):
+            product = session.get(Product, pid)
+            if product is None:
+                raise ValueError(f"Produit introuvable pour « {line['label']} ».")
+            cart.append(CartLine(product_id=pid, name=product.name, unit_price=line["unit_price"], quantity=line["quantity"],
+                                 purchase_price=float(product.purchase_price or 0)))
+    total = round(sum(c.unit_price * c.quantity for c in cart), 2)
+    payments = [] if on_credit else [PaymentLine("Espèces", total)]
+    result = SaleController.create_sale(cart, payments, amount_received=0 if on_credit else total, client_id=d["client_id"],
+                                        user_id=user_id, allow_credit=on_credit)
+    with session_scope() as session:
+        p = session.get(Proforma, proforma_id)
+        p.status, p.sale_id = "Facturée", result.sale_id
+    return result.sale_id
+
+
 def client_defaults(client_id: int) -> dict:
     """Pré-remplissage depuis la fiche client existante (les champs fiscaux se saisissent sur la proforma)."""
     from app.models.client import Client

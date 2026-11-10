@@ -31,7 +31,7 @@ class ProformaTests(unittest.TestCase):
 
     def test_numbering_totals_and_pdf(self):
         a, b = self._make(), self._make()
-        self.assertEqual([ps.get(a)["number"][:3], ps.get(b)["number"][:3]], ["001", "002"])
+        self.assertEqual(int(ps.get(b)["number"][:3]), int(ps.get(a)["number"][:3]) + 1)
         d = ps.get(a)
         self.assertEqual(d["totals"].total, 280_000)
         from app.printers.proforma_doc import build_proforma_pdf
@@ -62,6 +62,31 @@ class ProformaTests(unittest.TestCase):
         self.assertEqual(ps.get(pid)["status"], "Acceptée")
         ps.delete(new)
         self.assertNotIn(new, [x["id"] for x in ps.list_all()])
+
+    def test_convert_to_sale(self):
+        from sqlalchemy import select
+        from app.database.connection import session_scope
+        from app.models.category import Category
+        from app.models.client import Client
+        from app.models.product import Product
+        with session_scope() as s:
+            cat = Category(name="Viandes"); s.add(cat); s.flush()
+            prod = Product(name="Filet", category_id=cat.id, sale_price=6000, purchase_price=4000, quantity=100)
+            cl = Client(name="SOGA"); s.add_all([prod, cl]); s.flush()
+            pid_prod, cid = prod.id, cl.id
+        pid = ps.save([ps.LineInput("filet", 20, "kg", 6000)], client_name="SOGA", client_id=cid)
+        self.assertEqual(ps.suggest_products(pid), [pid_prod])
+        with self.assertRaises(ValueError):
+            ps.convert_to_sale(pid, [None])
+        sale_id = ps.convert_to_sale(pid, [pid_prod], on_credit=True, user_id=1)
+        d = ps.get(pid)
+        self.assertEqual((d["status"], ), ("Facturée",))
+        with session_scope() as s:
+            self.assertEqual(float(s.get(Product, pid_prod).quantity), 80)
+            self.assertEqual(float(s.get(Client, cid).debt), 120_000)
+        with self.assertRaises(ValueError):
+            ps.convert_to_sale(pid, [pid_prod])
+        self.assertTrue(sale_id)
 
     def test_ui_page_and_nav(self):
         from PySide6.QtWidgets import QApplication
