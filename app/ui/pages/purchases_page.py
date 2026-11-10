@@ -24,11 +24,6 @@ class PurchasesPage(QWidget):
         title_row = QHBoxLayout()
         title_row.addWidget(page_title(t('Achats / Réceptions')))
         title_row.addStretch()
-        self.order_button = QPushButton(t("Commande client (bon d'enlèvement)"))
-        self.order_button.setObjectName('Primary')
-        self.order_button.setToolTip(t("Une seule saisie : bon d'enlèvement signé du fournisseur, achat et vente au client. « Tout imprimer » inclut le bon."))
-        self.order_button.clicked.connect(self._new_order)
-        title_row.addWidget(self.order_button)
         self.pickups_button = QPushButton(t("Historique des enlèvements et pertes"))
         self.pickups_button.setToolTip(t("Consulter, réimprimer et clôturer les enlèvements (pertes) déjà enregistrés."))
         self.pickups_button.clicked.connect(self._open_pickups)
@@ -96,26 +91,6 @@ class PurchasesPage(QWidget):
         layout.addLayout(history_actions)
         self._apply_permissions()
 
-    def _new_order(self) -> None:
-        from app.controllers.sale_controller import SaleController
-        from app.ui.dialogs.order_dialog import OrderDialog
-        from app.ui.dialogs.ticket_dialog import TicketDialog
-
-        driver = truck = ""
-        while True:
-            dlg = OrderDialog(self.state, self, driver, truck)
-            if dlg.exec() != OrderDialog.DialogCode.Accepted or not dlg.result_sale_id:
-                return
-            notify = getattr(self.state, "notify_data_changed", None)
-            if notify:
-                notify()
-            self.refresh()
-            TicketDialog(SaleController.get(dlg.result_sale_id), self, auto_print=False,
-                         message=t("Commande enregistrée. « Tout imprimer » inclut le bon d'enlèvement.")).exec()
-            if not dlg.another:
-                return
-            driver, truck = dlg.driver.currentText().strip(), dlg.truck.currentText().strip()
-
     def _open_pickups(self) -> None:
         from app.ui.dialogs.pickups_dialog import PickupsDialog
         PickupsDialog(self.state, self).exec()
@@ -131,7 +106,6 @@ class PurchasesPage(QWidget):
     def _apply_permissions(self) -> None:
         from app.services.business_mode import is_enterprise
         self.pickups_button.setVisible(is_enterprise() and self.state.can(perms.MANAGE_PURCHASES))
-        self.order_button.setVisible(is_enterprise() and self.state.can(perms.MANAGE_PURCHASES))
         self.cancel_purchase_button.setVisible(self.state.can(perms.MANAGE_PURCHASES))
 
     def refresh(self) -> None:

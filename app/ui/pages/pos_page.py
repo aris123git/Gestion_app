@@ -202,6 +202,11 @@ class POSPage(QWidget):
         self._pending_row = QWidget()
         self._pending_row.setLayout(pending_row)
         layout.addWidget(self._pending_row)
+        self.order_button = QPushButton(t("Commande client (bon d'enlèvement)"))
+        self.order_button.setToolTip(t("Une seule saisie : bon d'enlèvement signé du fournisseur, achat et vente au client."))
+        self.order_button.clicked.connect(self._new_order)
+        layout.addWidget(self.order_button)
+        self._update_order_button()
         pay_button = QPushButton(t('pos.checkout'))
         pay_button.setObjectName('Success')
         pay_button.setMinimumHeight(52)
@@ -219,6 +224,16 @@ class POSPage(QWidget):
             pay_button.setObjectName("MaquisEncaisser")
             pay_button.setMinimumHeight(56)
         return panel
+
+    def _update_order_button(self) -> None:
+        from app.services.business_mode import is_enterprise
+
+        self.order_button.setVisible(bool(is_enterprise() and self.state.can(perms.MANAGE_PURCHASES) and not product_profile.is_maquis()))
+
+    def _new_order(self) -> None:
+        from app.ui.dialogs.order_dialog import run_order_flow
+
+        run_order_flow(self.state, self, getattr(self, "refresh", None))
 
     def _apply_maquis_caisse_ui(self) -> None:
         """Alignement écran Caisse sur l'app tablette (serveuse, table, pas de ticket auto)."""
@@ -392,6 +407,7 @@ class POSPage(QWidget):
             warn(self, str(exc))
 
     def refresh(self) -> None:
+        self._update_order_button()
         if isinstance(self._catalog, PosCatalogPanel):
             self._catalog.refresh()
         self._reload_clients()

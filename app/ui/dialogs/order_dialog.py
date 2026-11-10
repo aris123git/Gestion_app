@@ -144,3 +144,25 @@ class OrderDialog(QDialog):
         self._accept()
         if self.result_sale_id:
             self.another = True
+
+
+def run_order_flow(state, parent=None, on_done=None) -> None:
+    """Saisit une commande client (autant que voulu, même camion), puis ouvre le ticket : facture + bons réimprimables."""
+    from app.controllers.sale_controller import SaleController
+    from app.ui.dialogs.ticket_dialog import TicketDialog
+
+    driver = truck = ""
+    while True:
+        dlg = OrderDialog(state, parent, driver, truck)
+        if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.result_sale_id:
+            return
+        notify = getattr(state, "notify_data_changed", None)
+        if notify:
+            notify()
+        if on_done:
+            on_done()
+        TicketDialog(SaleController.get(dlg.result_sale_id), parent, auto_print=False,
+                     message=t("Commande enregistrée. « Tout imprimer » inclut le bon d'enlèvement.")).exec()
+        if not dlg.another:
+            return
+        driver, truck = dlg.driver.currentText().strip(), dlg.truck.currentText().strip()

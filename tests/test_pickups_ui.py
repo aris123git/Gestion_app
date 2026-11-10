@@ -104,11 +104,18 @@ class PickupUiTests(unittest.TestCase):
         settings_service.save_shop_info(shop_type="Boutique")
         page.refresh()
         self.assertTrue(page.pickups_button.isHidden())
-        self.assertTrue(page.order_button.isHidden())
         settings_service.save_shop_info(shop_type="Entreprise")
         page.refresh()
         self.assertFalse(page.pickups_button.isHidden())
-        self.assertFalse(page.order_button.isHidden())
+        self.assertFalse(hasattr(page, "order_button"))
+        from app.ui.pages.pos_page import POSPage
+        pos = POSPage(self.state)
+        pos.refresh()
+        self.assertFalse(pos.order_button.isHidden())
+        settings_service.save_shop_info(shop_type="Boutique")
+        pos.refresh()
+        self.assertTrue(pos.order_button.isHidden())
+        settings_service.save_shop_info(shop_type="Entreprise")
 
 
 if __name__ == "__main__":
