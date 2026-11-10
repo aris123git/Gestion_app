@@ -4,6 +4,6 @@ Point d'entrée UI : choix produit (Gestion App | Maquis Caisse) sur nouveau
 poste, puis activation, configuration, connexion.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 __app_name__ = "NexaGes"
 __vendor__ = "NexaDigit"
