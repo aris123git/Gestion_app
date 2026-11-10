@@ -92,6 +92,12 @@ class PickupUiTests(unittest.TestCase):
             self.assertTrue(w.called)
         self.assertIsNone(d.sale_id)
 
+    def test_order_dialog_keeps_truck_for_next_order(self):
+        from app.ui.dialogs.order_dialog import OrderDialog
+        d = OrderDialog(self.state, None, "Moussa", "11 AB 22")
+        self.assertEqual((d.driver.currentText(), d.truck.currentText()), ("Moussa", "11 AB 22"))
+        self.assertFalse(d.another)
+
     def test_button_only_for_enterprise(self):
         from app.ui.pages.purchases_page import PurchasesPage
         page = PurchasesPage(self.state)

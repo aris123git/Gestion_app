@@ -101,15 +101,20 @@ class PurchasesPage(QWidget):
         from app.ui.dialogs.order_dialog import OrderDialog
         from app.ui.dialogs.ticket_dialog import TicketDialog
 
-        dlg = OrderDialog(self.state, self)
-        if dlg.exec() != OrderDialog.DialogCode.Accepted or not dlg.result_sale_id:
-            return
-        notify = getattr(self.state, "notify_data_changed", None)
-        if notify:
-            notify()
-        self.refresh()
-        TicketDialog(SaleController.get(dlg.result_sale_id), self, auto_print=False,
-                     message=t("Commande enregistrée. « Tout imprimer » inclut le bon d'enlèvement.")).exec()
+        driver = truck = ""
+        while True:
+            dlg = OrderDialog(self.state, self, driver, truck)
+            if dlg.exec() != OrderDialog.DialogCode.Accepted or not dlg.result_sale_id:
+                return
+            notify = getattr(self.state, "notify_data_changed", None)
+            if notify:
+                notify()
+            self.refresh()
+            TicketDialog(SaleController.get(dlg.result_sale_id), self, auto_print=False,
+                         message=t("Commande enregistrée. « Tout imprimer » inclut le bon d'enlèvement.")).exec()
+            if not dlg.another:
+                return
+            driver, truck = dlg.driver.currentText().strip(), dlg.truck.currentText().strip()
 
     def _open_pickups(self) -> None:
         from app.ui.dialogs.pickups_dialog import PickupsDialog

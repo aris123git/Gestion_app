@@ -12,8 +12,9 @@ from app.controllers.product_controller import ProductController
 from app.controllers.sale_controller import BelowMinPriceError, InsufficientStockError
 from app.controllers.supplier_controller import SupplierController
 from app.i18n import t
-from app.services import audit_service, pickup_service as ps, settings_service
+from app.services import audit_service, pickup_service as ps, settings_service, transport_service
 from app.ui.widgets.client_search import ClientSearchField
+from app.ui.dialogs.pickups_dialog import _name_combo
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.ui.widgets.helpers import warn
 from app.ui.widgets.money_spin import MoneySpinBox
@@ -23,10 +24,11 @@ from app.utils.helpers import format_money
 class OrderDialog(QDialog):
     COLS = ("Produit", "Quantité", "Prix d'achat", "Prix de vente", "Total")
 
-    def __init__(self, state, parent=None):
+    def __init__(self, state, parent=None, driver: str = "", truck: str = ""):
         super().__init__(parent)
         self.state = state
         self.result_sale_id: int | None = None
+        self.another = False
         self.setWindowTitle(t("Commande client"))
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=760, min_height=560, preferred_width=900, preferred_height=660)
@@ -37,11 +39,11 @@ class OrderDialog(QDialog):
         self.supplier = QComboBox()
         for s in SupplierController.list():
             self.supplier.addItem(s.name, s.id)
-        self.driver, self.truck, self.reference = QLineEdit(), QLineEdit(), QLineEdit()
+        self.driver, self.truck, self.reference = _name_combo("driver", driver), _name_combo("truck", truck), QLineEdit()
         form.addRow(t("Client"), self.client)
         form.addRow(t("Fournisseur (signe le bon d'enlèvement)"), self.supplier)
         form.addRow(t("Chauffeur"), self.driver)
-        form.addRow(t("N° du camion"), self.truck)
+        form.addRow(t("N° du camion (plusieurs commandes peuvent partir dans le même camion)"), self.truck)
         form.addRow(t("Référence"), self.reference)
         root.addLayout(form)
         self.table = QTableWidget(0, len(self.COLS))
@@ -67,6 +69,8 @@ class OrderDialog(QDialog):
         bb.button(QDialogButtonBox.StandardButton.Ok).setText(t("Enregistrer la commande"))
         bb.accepted.connect(self._accept)
         bb.rejected.connect(self.reject)
+        more = bb.addButton(t("Enregistrer et ajouter une commande (même camion)"), QDialogButtonBox.ButtonRole.ActionRole)
+        more.clicked.connect(self._accept_and_more)
         root.addWidget(bb)
         self._add_row()
 
@@ -123,7 +127,7 @@ class OrderDialog(QDialog):
         username = getattr(self.state.current_user, "username", "")
         try:
             result = ps.place_order(self.client.client_id, self.supplier.currentData(), self._lines(), on_credit=self.credit.isChecked(),
-                                    driver=self.driver.text().strip(), truck=self.truck.text().strip(), reference=self.reference.text().strip(),
+                                    driver=self.driver.currentText().strip(), truck=self.truck.currentText().strip(), reference=self.reference.text().strip(),
                                     user_id=user_id, username=username)
         except (ValueError, BelowMinPriceError) as exc:
             warn(self, str(exc), t("Commande impossible"))
@@ -132,5 +136,11 @@ class OrderDialog(QDialog):
             warn(self, str(exc), t("Stock insuffisant"))
             return
         audit_service.log_action("Commande client", "Sale", f"{result.ticket_number} bon={result.pickup_number}", user_id, username)
+        transport_service.set_sale_transport(result.sale_id, self.driver.currentText().strip(), self.truck.currentText().strip())
         self.result_sale_id = result.sale_id
         self.accept()
+
+    def _accept_and_more(self) -> None:
+        self._accept()
+        if self.result_sale_id:
+            self.another = True
