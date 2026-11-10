@@ -238,6 +238,16 @@ def remaining(pickup_id: int) -> List[Remaining]:
         return [Remaining(i.id, i.product_id, i.product_name, _f(i.quantity), done.get(i.id, 0.0), _f(i.loss_quantity), _f(i.unit_cost)) for i in pickup.items]
 
 
+def pickups_for_sale(sale_id: int) -> list[tuple[int, str]]:
+    """Enlèvements (id, numéro) auxquels cette vente est rattachée : chaque commande imprime son bon d'enlèvement."""
+    with session_scope() as session:
+        rows = session.execute(
+            select(Pickup.id, Pickup.number).join(PickupItem, PickupItem.pickup_id == Pickup.id)
+            .join(PickupDelivery, PickupDelivery.pickup_item_id == PickupItem.id)
+            .where(PickupDelivery.sale_id == sale_id).distinct().order_by(Pickup.id)).all()
+        return [(r[0], r[1]) for r in rows]
+
+
 def link_sale(session, sale_id: int, links: list[tuple[int, float]]) -> None:
     """Rattache une vente (dans la transaction de la vente) à des lignes d'enlèvement.
 

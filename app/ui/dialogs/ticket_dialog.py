@@ -141,10 +141,14 @@ class TicketDialog(QDialog):
         self.bon_list = None
         self.print_bon_button = None
         self.print_bl_button = None
+        self.print_pickup_button = None
+        self._pickups = []
         # Le bon d'enlèvement se fait désormais dans Achats → Enlèvements (avant les ventes) : ici, seulement le bon de livraison.
         self._bon_on = False
         self._bl_on = delivery_note.is_enabled()
-        if not (self._bon_on or self._bl_on) or not list(getattr(self.sale, 'items', []) or []):
+        # Une commande rattachée à un enlèvement imprime aussi son bon d'enlèvement (dans « Tout imprimer » et par bouton).
+        self._pickups = self._linked_pickups()
+        if not (self._bon_on or self._bl_on or self._pickups) or not list(getattr(self.sale, 'items', []) or []):
             return
         layout.addWidget(QLabel(f"<b>{t('Facture et bons')}</b> — {t('cochez les produits à faire figurer sur les bons :')}"))
         self.bon_list = QListWidget()
@@ -168,12 +172,39 @@ class TicketDialog(QDialog):
             self.print_bl_button = QPushButton(t('Bon de livraison'))
             self.print_bl_button.clicked.connect(self._print_bl)
             row.addWidget(self.print_bl_button)
+        if self._pickups:
+            self.print_pickup_button = QPushButton(t("Bon d'enlèvement"))
+            self.print_pickup_button.clicked.connect(self._print_pickup_bons)
+            row.addWidget(self.print_pickup_button)
         self.print_all_button = QPushButton(t('Tout imprimer'))
         self.print_all_button.setObjectName('Primary')
         self.print_all_button.setToolTip(t("Imprime la facture puis les bons activés pour « Tout imprimer » (produits cochés)."))
         self.print_all_button.clicked.connect(self._print_all)
         row.addWidget(self.print_all_button)
         layout.addLayout(row)
+
+    def _linked_pickups(self) -> list:
+        sale_id = getattr(self.sale, 'id', None)
+        if not sale_id:
+            return []
+        try:
+            from app.services import pickup_service
+            return pickup_service.pickups_for_sale(sale_id)
+        except Exception:  # noqa: BLE001 - jamais bloquer l'affichage du ticket
+            return []
+
+    def _pickup_jobs(self) -> list:
+        from app.printers import bon_enlevement
+        from app.printers.half_a4_invoice import print_half_a4_invoice
+
+        def make(pickup_id):
+            def job():
+                return print_half_a4_invoice(self.sale, pdf_path=bon_enlevement.build_pickup_bon(pickup_id))
+            return job
+        return [(t("Bon d'enlèvement") + f" {number}", make(pid)) for pid, number in self._pickups]
+
+    def _print_pickup_bons(self) -> None:
+        self._run_print(self._pickup_jobs())
 
     def _selected_bon_lines(self) -> list[int]:
         if not getattr(self, 'bon_list', None):
@@ -256,7 +287,9 @@ class TicketDialog(QDialog):
             jobs.append((t("Bon d'enlèvement"), self._bon_job()))
         if self._bl_on and delivery_note.in_print_all():
             jobs.append((t('Bon de livraison'), self._bl_job()))
-        if len(jobs) > 1 and not self._need_selection(t('Tout imprimer')):
+        needs_selection = len(jobs) > 1
+        jobs += self._pickup_jobs()
+        if needs_selection and not self._need_selection(t('Tout imprimer')):
             return
         self._run_print(jobs)
 

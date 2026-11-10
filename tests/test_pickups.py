@@ -62,6 +62,14 @@ class PickupTests(unittest.TestCase):
         self._deliver(row.item_id, 390, self.client2)
         self.assertEqual(ps.remaining(pid)[0].left, 10)
         self.assertEqual(len(ps.delivered_sales(pid)), 2)
+        # Chaque commande livrée à partir d'un enlèvement retrouve son bon d'enlèvement (impression « Tout imprimer »).
+        from app.models.sale import Sale
+        with session_scope() as s:
+            sale_ids = [r[0] for r in s.query(Sale.id).filter(Sale.ticket_number.in_([x[0] for x in ps.delivered_sales(pid)])).all()]
+        self.assertEqual(len(sale_ids), 2)
+        for sid in sale_ids:
+            self.assertEqual([p[0] for p in ps.pickups_for_sale(sid)], [pid])
+        self.assertEqual(ps.pickups_for_sale(10**9), [])
         lost = ps.close(pid, "Évaporation", bearer="company")
         self.assertEqual(lost, 7000)
         r = ps.remaining(pid)[0]
