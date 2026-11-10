@@ -237,6 +237,37 @@ class SettingsPage(QWidget):
             )
             self._field_sales_cb.setChecked(field_sales_service.enabled())
             form.addRow("", self._field_sales_cb)
+        self._proforma_cb = None
+        if not _pp.is_maquis() and not _pp.is_chantiers():
+            from PySide6.QtWidgets import QFileDialog
+            from app.services import proforma_service as _ps
+
+            form.addRow(QLabel(f"<b>{t('Factures proforma')}</b>"))
+            self._proforma_cb = QCheckBox(t("Activer les factures proforma (menu « Proformas »)"))
+            self._proforma_cb.setChecked(_ps.enabled())
+            form.addRow("", self._proforma_cb)
+            g = settings_service.get_setting
+            self._pf_banner = QLineEdit(g(_ps.SETTING_BANNER, ''))
+            self._pf_banner.setPlaceholderText(t("Image d'en-tête (logo + nom + coordonnées), imprimée en haut"))
+            browse = QPushButton(t("Choisir…"))
+            browse.clicked.connect(lambda: self._pf_banner.setText(QFileDialog.getOpenFileName(self, t("Image d'en-tête"), "", "Images (*.png *.jpg *.jpeg)")[0] or self._pf_banner.text()))
+            brow = QWidget()
+            bl = QHBoxLayout(brow)
+            bl.setContentsMargins(0, 0, 0, 0)
+            bl.addWidget(self._pf_banner)
+            bl.addWidget(browse)
+            form.addRow(t("En-tête image de la proforma"), brow)
+            self._pf_tagline = QLineEdit(g(_ps.SETTING_TAGLINE, ''))
+            self._pf_tagline.setPlaceholderText(t("ex. Vente de la viande – Poisson – Poulet (sans image d'en-tête)"))
+            self._pf_extra = QLineEdit(g(_ps.SETTING_HEADER_EXTRA, ''))
+            self._pf_extra.setPlaceholderText(t("ex. Secteur 42 Bendogo (sans image d'en-tête)"))
+            self._pf_city = QLineEdit(g(_ps.SETTING_CITY, ''))
+            self._pf_city.setPlaceholderText(t("ex. Ouagadougou (« Ouagadougou le 26/10/2026 »)"))
+            self._pf_resp = QLineEdit(g(_ps.SETTING_RESPONSIBLE, ''))
+            self._pf_resp_phone = QLineEdit(g(_ps.SETTING_RESPONSIBLE_PHONE, ''))
+            for label, w in (("Slogan / activités", self._pf_tagline), ("Ligne d'en-tête supplémentaire", self._pf_extra), ("Ville de la proforma", self._pf_city),
+                             ("Le Responsable (nom)", self._pf_resp), ("Le Responsable (téléphone)", self._pf_resp_phone)):
+                form.addRow(t(label), w)
         outer.addWidget(make_card(form_widget))
         save = QPushButton(t('Enregistrer les informations'))
         save.setObjectName('Primary')
@@ -346,6 +377,13 @@ class SettingsPage(QWidget):
             from app.services import field_sales_service
 
             field_sales_service.set_enabled(self._field_sales_cb.isChecked())
+        if getattr(self, '_proforma_cb', None) is not None:
+            from app.services import proforma_service as _ps
+
+            _ps.set_enabled(self._proforma_cb.isChecked())
+            for key, w in ((_ps.SETTING_BANNER, self._pf_banner), (_ps.SETTING_RESPONSIBLE, self._pf_resp), (_ps.SETTING_RESPONSIBLE_PHONE, self._pf_resp_phone),
+                           (_ps.SETTING_CITY, self._pf_city), (_ps.SETTING_TAGLINE, self._pf_tagline), (_ps.SETTING_HEADER_EXTRA, self._pf_extra)):
+                settings_service.set_setting(key, w.text().strip())
         lang_changed = set_language(new_lang) != previous_lang
         audit_service.log_action('Paramètres commerce', 'ShopInfo', '', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         if lang_changed:
@@ -686,7 +724,10 @@ class SettingsPage(QWidget):
 
         from app.services import field_sales_service
 
+        from app.services import proforma_service as _pfs
+
         return (
+            _pfs.enabled(),
             field_sales_service.enabled(),
             chantiers_nav.sales_enabled(),
             chantiers_nav.rentals_enabled(),

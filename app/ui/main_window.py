@@ -61,9 +61,17 @@ def build_nav_items():
         from app.ui.pages.field_sales_page import FieldSalesPage
 
         field_sales = [(t("Tournées"), "🛵", FieldSalesPage, perms.MANAGE_FIELD_SALES)]
+    from app.services import proforma_service
+
+    proformas = []
+    if proforma_service.enabled():
+        from app.ui.pages.proformas_page import ProformasPage
+
+        proformas = [(t("Proformas"), "📄", ProformasPage, perms.MANAGE_PROFORMAS)]
     return [
         (t("nav.pos"), "🛒", POSPage, perms.SELL),
         *field_sales,
+        *proformas,
         (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
         (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
         (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
