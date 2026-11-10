@@ -89,6 +89,17 @@ class PickupTests(unittest.TestCase):
         rep = ps.loss_report(date(2020, 1, 1), date(2099, 1, 1))
         self.assertTrue(any(r[1] >= 1000 and r[2] >= 10 for r in rep))
 
+    def test_place_order_one_input(self):
+        r = ps.place_order(self.client, self.supplier, [ps.OrderLine(self.product, 50, 700, 900)], driver="Moussa", truck="11 AB 22", reference="BL-9")
+        self.assertEqual(ps.pickups_for_sale(r.sale_id), [(r.pickup_id, r.pickup_number)])
+        rem = ps.remaining(r.pickup_id)[0]
+        self.assertEqual((rem.picked, rem.delivered, rem.left), (50, 50, 0))
+        for bad in ([], [ps.OrderLine(self.product, 1, 700, 900)]):
+            with self.assertRaises(ValueError):
+                ps.place_order(self.client, None, bad)
+        from app.printers import bon_enlevement
+        self.assertTrue(bon_enlevement.build_pickup_bon(r.pickup_id).exists())
+
     def test_loss_billed_to_clients(self):
         from app.models.client import Client
         pid = ps.create([ps.PickupLine(self.product, 1000)], supplier_id=self.supplier)

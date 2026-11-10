@@ -98,9 +98,11 @@ class PickupUiTests(unittest.TestCase):
         settings_service.save_shop_info(shop_type="Boutique")
         page.refresh()
         self.assertTrue(page.pickups_button.isHidden())
+        self.assertTrue(page.order_button.isHidden())
         settings_service.save_shop_info(shop_type="Entreprise")
         page.refresh()
         self.assertFalse(page.pickups_button.isHidden())
+        self.assertFalse(page.order_button.isHidden())
 
 
 if __name__ == "__main__":

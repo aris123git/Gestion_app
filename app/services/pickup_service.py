@@ -358,7 +358,6 @@ def close(pickup_id: int, reason: str, *, bearer: Optional[str] = None, user_id:
     livraison (vente à crédit) ; ``"company"`` : elle reste à la charge de l'entreprise (charge comptable).
     Retourne la valeur (au coût d'achat) de la perte supportée par l'entreprise.
     """
-    from app import config
     from app.controllers.sale_controller import CartLine, PaymentLine, SaleController
     from app.services import price_layers
 
@@ -495,3 +494,64 @@ def delivered_sales(pickup_id: int) -> list[tuple]:
             .where(PickupItem.pickup_id == pickup_id).order_by(Sale.date)
         ).all()
         return [(t, d, c or "", n, _f(q), s) for t, d, c, n, q, s in rows]
+
+
+@dataclass
+class OrderLine:
+    product_id: int
+    quantity: float
+    unit_cost: float          # prix d'achat au fournisseur
+    unit_price: float         # prix de vente au client
+
+
+@dataclass
+class OrderResult:
+    sale_id: int
+    pickup_id: int
+    purchase_id: int
+    ticket_number: str
+    pickup_number: str
+
+
+def place_order(client_id: int, supplier_id: int, lines: List[OrderLine], *, on_credit: bool = False, driver: str = "", truck: str = "",
+                reference: str = "", user_id: Optional[int] = None, username: str = "") -> OrderResult:
+    """Commande client = bon d'enlèvement (signé du fournisseur) + bon d'achat (dette fournisseur) + vente au client.
+
+    Une seule saisie : l'enlèvement est créé et validé (le stock entre), puis livré en totalité au client (le stock sort).
+    Les contrôles sont faits avant de rien écrire, pour ne jamais laisser un enlèvement orphelin.
+    """
+    from app.controllers.sale_controller import CartLine, PaymentLine, SaleController
+    from app.models.client import Client
+    from app.models.product import Product
+
+    lines = [l for l in lines if to_float(l.quantity) > 0]
+    if not lines:
+        raise ValueError("Ajoutez au moins un produit.")
+    if not client_id:
+        raise ValueError("Choisissez le client de la commande.")
+    if not supplier_id:
+        raise ValueError("Choisissez le fournisseur (il signe le bon d'enlèvement).")
+    with session_scope() as session:
+        if session.get(Client, client_id) is None:
+            raise ValueError("Client introuvable.")
+        for l in lines:
+            product = session.get(Product, l.product_id)
+            if product is None:
+                raise ValueError("Produit introuvable.")
+            if to_float(l.unit_price) < _f(product.min_price):
+                raise ValueError(f"Prix de vente trop bas pour « {product.name} » (minimum {_f(product.min_price):g}).")
+            if to_float(l.unit_cost) < 0 or to_float(l.unit_price) < 0:
+                raise ValueError("Les prix ne peuvent pas être négatifs.")
+    pickup_id = create([PickupLine(l.product_id, l.quantity, l.unit_cost) for l in lines], supplier_id=supplier_id, user_id=user_id,
+                       driver=driver, truck=truck, reference=reference, note="Commande client")
+    mark_sent(pickup_id)
+    purchase_id = validate(pickup_id, amount_paid=0, user_id=user_id, username=username)
+    rows = {r.product_id: r for r in remaining(pickup_id)}
+    cart = [CartLine(l.product_id, rows[l.product_id].name, to_float(l.unit_price), to_float(l.quantity)) for l in lines]
+    total = round(sum(c.unit_price * c.quantity for c in cart), 2)
+    result = SaleController.create_sale(
+        cart, [PaymentLine(config.PAYMENT_METHOD_CREDIT if on_credit else "Espèces", total)], amount_received=0 if on_credit else total,
+        client_id=client_id, user_id=user_id, allow_credit=on_credit, pickup_links=[(rows[l.product_id].item_id, to_float(l.quantity)) for l in lines])
+    with session_scope() as session:
+        number = session.get(Pickup, pickup_id).number
+    return OrderResult(result.sale_id, pickup_id, purchase_id, result.ticket_number, number)
