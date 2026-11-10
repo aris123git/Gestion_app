@@ -38,7 +38,7 @@ _TENS = (
 )
 
 
-def _under_hundred(n: int) -> str:
+def _under_hundred(n: int, final: bool = True) -> str:
     if n < 20:
         return _UNITS[n]
     tens, unit = divmod(n, 10)
@@ -50,7 +50,7 @@ def _under_hundred(n: int) -> str:
         )
     if tens == 8:
         if unit == 0:
-            return "quatre-vingts"
+            return "quatre-vingts" if final else "quatre-vingt"
         return f"quatre-vingt-{_UNITS[unit]}"
     if unit == 0:
         return _TENS[tens]
@@ -59,19 +59,20 @@ def _under_hundred(n: int) -> str:
     return f"{_TENS[tens]}-{_UNITS[unit]}"
 
 
-def _under_thousand(n: int) -> str:
+def _under_thousand(n: int, final: bool = True) -> str:
+    """``final`` : vrai si rien ne suit (le « s » de cents / vingts disparaît devant « mille »)."""
     if n < 100:
-        return _under_hundred(n)
+        return _under_hundred(n, final)
     hundreds, rest = divmod(n, 100)
     if hundreds == 1:
         head = "cent"
     else:
         head = f"{_UNITS[hundreds]} cent"
-        if rest == 0:
+        if rest == 0 and final:
             head += "s"
     if rest == 0:
         return head
-    return f"{head} {_under_hundred(rest)}"
+    return f"{head} {_under_hundred(rest, final)}"
 
 
 def int_to_french_words(n: int) -> str:
@@ -101,7 +102,7 @@ def int_to_french_words(n: int) -> str:
         if thousands == 1:
             parts.append("mille")
         else:
-            parts.append(f"{_under_thousand(thousands)} mille")
+            parts.append(f"{_under_thousand(thousands, False)} mille")
     if n:
         parts.append(_under_thousand(n))
     return " ".join(parts) if parts else "zéro"

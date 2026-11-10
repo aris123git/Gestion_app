@@ -144,7 +144,7 @@ _UNITS = [
 _TENS = ["", "", "vingt", "trente", "quarante", "cinquante", "soixante"]
 
 
-def _below_100(n: int) -> str:
+def _below_100(n: int, final: bool = True) -> str:
     if n < 20:
         return _UNITS[n]
     if n < 70:
@@ -156,7 +156,7 @@ def _below_100(n: int) -> str:
         rest = n - 60
         return "soixante-et-onze" if rest == 11 else f"soixante-{_UNITS[rest]}"
     rest = n - 80
-    return "quatre-vingts" if rest == 0 else f"quatre-vingt-{_UNITS[rest]}"
+    return ("quatre-vingts" if final else "quatre-vingt") if rest == 0 else f"quatre-vingt-{_UNITS[rest]}"
 
 
 def _below_1000(n: int, final: bool) -> str:
@@ -168,7 +168,7 @@ def _below_1000(n: int, final: bool) -> str:
         else:
             parts.append(f"{_UNITS[hundreds]} cent" + ("s" if rest == 0 and final else ""))
     if rest:
-        parts.append(_below_100(rest))
+        parts.append(_below_100(rest, final))
     return " ".join(parts)
 
 

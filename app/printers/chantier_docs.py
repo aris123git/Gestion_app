@@ -18,6 +18,7 @@ from app.database.connection import session_scope
 from app.models.chantier import STATUS_LABELS, Chantier, ChantierPayment
 from app.services import chantier_service as cs, settings_service
 from app.utils.helpers import format_money
+from app.utils.amount_words import amount_in_words
 
 INK = colors.HexColor("#111827")
 ACCENT = colors.HexColor("#1e3a8a")
@@ -78,6 +79,8 @@ def build_quote(chantier_id: int, path: Path | None = None) -> Path:
     if c.addenda:
         summary.append(["TOTAL", format_money(amount + sum(float(a.amount) for a in c.addenda), cur)])
     story += [_grid(summary, [130 * mm, 46 * mm], header=False)]
+    story += [Spacer(1, 3 * mm), Paragraph(f"<b>Arrêté {'le présent devis' if is_quote else 'le présent marché'} à la somme de :</b> "
+                                           f"{amount_in_words(amount + sum(float(a.amount) for a in c.addenda), cur)}", base)]
     if c.milestones:
         story += [Paragraph("Échéancier de paiement", h2), _grid([["Échéance", "%", "Montant"]] + [[m.label, f"{float(m.pct):g} %", format_money(amount * float(m.pct) / 100, cur)] for m in c.milestones], [100 * mm, 26 * mm, 50 * mm])]
     story += [Spacer(1, 18 * mm), Table([["Le client (lu et approuvé)", "L'entreprise"], ["", ""]], colWidths=[88 * mm, 88 * mm], rowHeights=[6 * mm, 22 * mm],
@@ -117,6 +120,7 @@ def build_invoice(chantier_id: int, path: Path | None = None) -> Path:
         sums.append([f"Acompte reçu le {p.date:%d/%m/%Y} ({p.kind}, {p.method})", "− " + format_money(float(p.amount), cur)])
     sums.append(["RESTE À PAYER", format_money(max(0.0, total - received), cur)])
     story += [_grid(sums, [130 * mm, 46 * mm], header=False)]
+    story += [Spacer(1, 3 * mm), Paragraph(f"<b>Arrêtée la présente facture à la somme de :</b> {amount_in_words(total, cur)}", base)]
     extra = "  ·  ".join(x for x in (ia.legal_text(), ia.bank_text()) if x)
     if extra:
         story += [Spacer(1, 6 * mm), Paragraph(extra, base)]

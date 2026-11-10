@@ -266,6 +266,10 @@ def _build_invoice_pdf_demi_a4(
     ]
     totals_table.setStyle(TableStyle(style_cmds))
     story.append(totals_table)
+    from app.printers.invoice_a4 import amount_in_words
+
+    story.append(Spacer(1, 2 * mm))
+    story.append(Paragraph(f"<b>Arrêtée la présente facture à la somme de :</b> {amount_in_words(float(sale.total or 0), currency)}", small))
     story.append(Spacer(1, 4 * mm))
 
     footer = shop.ticket_footer or "Merci pour votre visite."
