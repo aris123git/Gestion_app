@@ -103,11 +103,10 @@ class PickupUiTests(unittest.TestCase):
         page = PurchasesPage(self.state)
         settings_service.save_shop_info(shop_type="Boutique")
         page.refresh()
-        self.assertTrue(page.pickups_button.isHidden())
+        self.assertFalse(page.manual.isHidden())
         settings_service.save_shop_info(shop_type="Entreprise")
         page.refresh()
-        self.assertFalse(page.pickups_button.isHidden())
-        self.assertFalse(hasattr(page, "order_button"))
+        self.assertTrue(page.manual.isHidden())
         from app.ui.pages.pos_page import POSPage
         pos = POSPage(self.state)
         pos.refresh()

@@ -24,10 +24,6 @@ class PurchasesPage(QWidget):
         title_row = QHBoxLayout()
         title_row.addWidget(page_title(t('Achats / Réceptions')))
         title_row.addStretch()
-        self.pickups_button = QPushButton(t("Historique des enlèvements et pertes"))
-        self.pickups_button.setToolTip(t("Consulter, réimprimer et clôturer les enlèvements (pertes) déjà enregistrés."))
-        self.pickups_button.clicked.connect(self._open_pickups)
-        title_row.addWidget(self.pickups_button)
         layout.addLayout(title_row)
         form_w = QWidget()
         form = QFormLayout(form_w)
@@ -60,7 +56,11 @@ class PurchasesPage(QWidget):
         form.addRow(t('Nouveau prix de vente (après ancien stock)'), self.new_sale_price)
         form.addRow(t('Montant payé'), self.paid)
         form.addRow(t('Note'), self.note)
-        layout.addWidget(make_card(form_w))
+        self.manual = QWidget()           # saisie manuelle d'achat (masquée en mode Entreprise : tout passe par la commande client)
+        manual_layout = QVBoxLayout(self.manual)
+        manual_layout.setContentsMargins(0, 0, 0, 0)
+        manual_layout.setSpacing(12)
+        manual_layout.addWidget(make_card(form_w))
         btns = QHBoxLayout()
         add_line = QPushButton(t('Ajouter la ligne'))
         add_line.clicked.connect(self._add_line)
@@ -70,12 +70,13 @@ class PurchasesPage(QWidget):
         btns.addWidget(add_line)
         btns.addStretch()
         btns.addWidget(save)
-        layout.addLayout(btns)
+        manual_layout.addLayout(btns)
         self.lines_table = QTableWidget(0, 4)
         self.lines_table.setHorizontalHeaderLabels([t('Produit'), t('Qté'), t('Coût U.'), t('Total')])
         self.lines_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.lines_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.lines_table)
+        manual_layout.addWidget(self.lines_table)
+        layout.addWidget(self.manual)
         self.history = QTableWidget(0, 6)
         self.history.setHorizontalHeaderLabels([t('Date'), t('Fournisseur'), t('Facture'), t('Total'), t('Payé'), t('Statut')])
         self.history.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -91,11 +92,6 @@ class PurchasesPage(QWidget):
         layout.addLayout(history_actions)
         self._apply_permissions()
 
-    def _open_pickups(self) -> None:
-        from app.ui.dialogs.pickups_dialog import PickupsDialog
-        PickupsDialog(self.state, self).exec()
-        self.refresh()
-
     def _on_product_changed(self, *_args) -> None:
         """Prix d'achat prérempli (modifiable si la case est décochée)."""
         use = self.use_catalog_cost.isChecked()
@@ -105,7 +101,7 @@ class PurchasesPage(QWidget):
 
     def _apply_permissions(self) -> None:
         from app.services.business_mode import is_enterprise
-        self.pickups_button.setVisible(is_enterprise() and self.state.can(perms.MANAGE_PURCHASES))
+        self.manual.setVisible(not is_enterprise())
         self.cancel_purchase_button.setVisible(self.state.can(perms.MANAGE_PURCHASES))
 
     def refresh(self) -> None:
