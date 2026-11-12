@@ -250,7 +250,18 @@ class SettingsPage(QWidget):
             self._pf_banner = QLineEdit(g(_ps.SETTING_BANNER, ''))
             self._pf_banner.setPlaceholderText(t("Image d'en-tête (logo + nom + coordonnées), imprimée en haut"))
             browse = QPushButton(t("Choisir…"))
-            browse.clicked.connect(lambda: self._pf_banner.setText(QFileDialog.getOpenFileName(self, t("Image d'en-tête"), "", "Images (*.png *.jpg *.jpeg)")[0] or self._pf_banner.text()))
+            def _choose_banner() -> None:
+                from PySide6.QtWidgets import QDialog as _QD
+                from app.ui.dialogs.image_crop_dialog import ImageCropDialog
+
+                path = QFileDialog.getOpenFileName(self, t("Image d'en-tête"), "", "Images (*.png *.jpg *.jpeg)")[0]
+                if not path:
+                    return
+                dlg = ImageCropDialog(path, self)
+                if dlg.exec() == _QD.DialogCode.Accepted and dlg.result_path:
+                    self._pf_banner.setText(str(dlg.result_path))
+
+            browse.clicked.connect(_choose_banner)
             brow = QWidget()
             bl = QHBoxLayout(brow)
             bl.setContentsMargins(0, 0, 0, 0)
