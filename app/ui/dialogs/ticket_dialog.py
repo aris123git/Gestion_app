@@ -87,6 +87,11 @@ class TicketDialog(QDialog):
         buttons.addWidget(self.print_kitchen_button)
         buttons.addWidget(self.print_button)
         buttons.addWidget(self.save_button)
+        # Facture en PDF quel que soit le réglage par défaut, sans imprimante.
+        self.invoice_pdf_button = QPushButton(t('Facture PDF'))
+        self.invoice_pdf_button.setToolTip(t("Crée la facture en PDF, sans imprimante : à enregistrer, envoyer ou imprimer plus tard."))
+        self.invoice_pdf_button.clicked.connect(self._save_invoice_pdf)
+        buttons.addWidget(self.invoice_pdf_button)
         layout.addLayout(buttons)
         for _b in self.findChildren(QPushButton):
             _b.setAutoDefault(False)
@@ -405,6 +410,39 @@ class TicketDialog(QDialog):
         box.exec()
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(saved.parent)))
+
+    def _save_invoice_pdf(self, target: Path | None = None) -> None:
+        """Enregistre la facture au format PDF, indépendamment de l'imprimante ou du format par défaut."""
+        if target is None or isinstance(target, bool):
+            from app import config
+            config.ensure_directories()
+            path_str, _ = QFileDialog.getSaveFileName(self, 'Enregistrer la facture', str(config.TICKET_DIR / f'{self.sale.ticket_number}_facture.pdf'), 'PDF (*.pdf)')
+            if not path_str:
+                self.status.setText('Enregistrement annulé.')
+                return
+            target = Path(path_str)
+        if target.suffix.lower() != '.pdf':
+            target = target.with_suffix('.pdf')
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            saved = build_invoice_pdf(self.sale, path=target)
+        except Exception as exc:
+            self.status.setText(str(exc))
+            warn(self, f"Impossible de créer la facture PDF.\n\n{exc}", t('Enregistrement'))
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._saved_path = saved
+        self.status.setText(f'Facture enregistrée : {saved}')
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(t('Facture PDF'))
+        box.setText(f'Facture enregistrée :\n{saved}')
+        open_btn = box.addButton('Ouvrir la facture', QMessageBox.ButtonRole.ActionRole)
+        box.addButton('OK', QMessageBox.ButtonRole.AcceptRole)
+        box.exec()
+        if box.clickedButton() is open_btn:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(saved)))
 
     def keyPressEvent(self, event) -> None:
         """Entrée : imprime ; Entrée de nouveau (après impression) : ferme et revient à la caisse."""

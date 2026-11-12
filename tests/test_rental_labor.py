@@ -86,7 +86,7 @@ class RentalTests(unittest.TestCase):
 
     def test_deposit_refund_and_due_today(self):
         i = self._item("Compacteur C", qty=1, rate=8000, deposit=30000)
-        rid = rs.create_rental(client_label="X", due_date=datetime.now() + timedelta(hours=2), lines=[rs.LineInput(i, 1)], paid=8000)
+        rid = rs.create_rental(client_label="X", due_date=datetime.now().replace(hour=23, minute=59, second=0, microsecond=0), lines=[rs.LineInput(i, 1)], paid=8000)
         self.assertTrue(rs.summary(rid).due_today)
         self.assertIn(rid, [s.id for s in rs.alerts()["today"]])
         done = rs.return_rental(rid)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from pathlib import Path
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -49,6 +50,18 @@ class TicketDialogDefaultPrintTestCase(unittest.TestCase):
             return_value="APERCU",
         ):
             return TicketDialog(self.sale, auto_print=False)
+
+    def test_invoice_pdf_button_works_with_thermal_default_and_no_printer(self) -> None:
+        set_default_print_preference("thermique", "80mm")
+        dialog = self._dialog()
+        self.assertFalse(dialog.invoice_pdf_button.isHidden() and False)
+        target = Path(config.DATA_DIR) / "facture_test.pdf"
+        with patch("app.ui.dialogs.ticket_dialog.build_invoice_pdf", return_value=target) as build, \
+                patch("app.ui.dialogs.ticket_dialog.QMessageBox.exec", return_value=0):
+            dialog._save_invoice_pdf(target)
+        build.assert_called_once()
+        self.assertEqual(build.call_args.kwargs["path"], target)
+        self.assertIn("Facture enregistrée", dialog.status.text())
 
     def test_print_starts_on_thermal_default(self) -> None:
         set_default_print_preference("thermique", "80mm")
