@@ -6,6 +6,8 @@ Idéal pour une imprimante bureau classique avec du papier A4 pré-coupé.
 
 from __future__ import annotations
 
+from xml.sax.saxutils import escape
+
 import logging
 import subprocess
 import sys
@@ -272,8 +274,10 @@ def _build_invoice_pdf_demi_a4(
     story.append(Paragraph(f"<b>Arrêtée la présente facture à la somme de :</b> {amount_in_words(float(sale.total or 0), currency)}", small))
     story.append(Spacer(1, 4 * mm))
 
-    footer = shop.ticket_footer or "Merci pour votre visite."
-    story.append(Paragraph(footer, small))
+    from app.printers.invoice_a4 import footer_with_bank
+
+    footer = footer_with_bank(str(shop.ticket_footer or "Merci pour votre visite."))   # + IFU, RCCM, banque… (le paragraphe passe à la ligne)
+    story.append(Paragraph(escape(footer), small))
     story.append(
         Paragraph(
             "Format demi-A4 (210 × 148,5 mm) — papier A4 coupé en deux",

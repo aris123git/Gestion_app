@@ -266,9 +266,11 @@ def _services_page(pen: _Pen, ctx, pal, rows, page, pages):
     for line in pen.wrap(ctx["words"] + f" ({ctx['total']})", "TplLato", 12, 262, 3):
         pen.text(70.4, y, line, "TplLato", 12, ink)
         y += 14.4 * max(1.0, pen.scale)
-    if ctx["footer"] and y < 770:
-        for line in pen.wrap(ctx["footer"], "TplLato", 12, 262, 1):
-            pen.text(70.4, y + 4, line, "TplLato", 12, ink)
+    if ctx["footer"] and y < 820:
+        # Pied de page complet (IFU, RCCM, banque…) : plusieurs lignes plus petites au lieu d'une seule coupée.
+        for line in pen.wrap(ctx["footer"], "TplLato", 9, 262, 7):
+            pen.text(70.4, y + 4, line, "TplLato", 9, ink)
+            y += 10.8 * max(1.0, pen.scale)
     # Informations de paiement
     pen.text(362.9, 706.9, "Paiement :", "TplLato-Bold", 14, ink)
     pay = ctx["payments"][:4]
@@ -357,8 +359,10 @@ def _medical_page(pen: _Pen, ctx, pal, rows, page, pages):
     for line in pen.wrap(ctx["words"] + f" ({ctx['total']})", "TplMont-Medium", 10, 400, 2):
         pen.text(306.0, y, line, "TplMont-Medium", 10, ink, align="c")
         y += 12.0
-    if ctx["footer"] and y <= 710.1:
-        pen.text(306.0, y, ctx["footer"], "TplMont-Medium", 10, ink, align="c", max_w=400, min_size=7)
+    if ctx["footer"] and y <= 770:
+        for line in pen.wrap(ctx["footer"], "TplMont-Medium", 8, 460, 5):
+            pen.text(306.0, y, line, "TplMont-Medium", 8, ink, align="c")
+            y += 10.0 * max(1.0, pen.scale)
     # Pied de page : téléphone / e-mail / adresse (à côté des pictogrammes du modèle)
     pen.text(106.7, 780.4, str(shop.phone or ""), "TplMont-Medium", 9.4, foot, max_w=110, scaled=False)
     pen.text(241.9, 779.2, str(shop.email or ""), "TplMont-Medium", 9.4, foot, max_w=140, scaled=False)

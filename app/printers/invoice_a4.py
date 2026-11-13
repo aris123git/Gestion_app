@@ -310,6 +310,57 @@ def _fit(canvas, text, font, size, max_width):
     return size
 
 
+FOOTER_FONT, FOOTER_SIZE, FOOTER_LH = "Helvetica", 8, 3.8 * mm
+
+
+def wrap_footer(text: str, max_w: float, font: str = FOOTER_FONT, size: float = FOOTER_SIZE) -> list[str]:
+    """Découpe le pied de page en lignes qui tiennent dans la largeur, sans couper une information en deux
+    (les informations sont séparées par « · » ; une information trop longue est coupée par mots)."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    items = [p.strip() for p in str(text or "").split("·") if p.strip()]
+    lines, cur = [], ""
+    for item in items:
+        trial = f"{cur}  ·  {item}" if cur else item
+        if stringWidth(trial, font, size) <= max_w:
+            cur = trial
+            continue
+        if cur:
+            lines.append(cur)
+            cur = ""
+        if stringWidth(item, font, size) <= max_w:
+            cur = item
+            continue
+        for word in item.split():          # information plus large que la page : coupure par mots
+            t = f"{cur} {word}".strip()
+            if stringWidth(t, font, size) <= max_w or not cur:
+                cur = t
+            else:
+                lines.append(cur)
+                cur = word
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _footer_lines(ctx) -> list[str]:
+    return ctx.get("footer_lines") or wrap_footer(ctx["footer"], PAGE_W - 2 * MARGIN)
+
+
+def draw_footer(canvas, ctx, base_y, color, align="c", font="Helvetica-Oblique", lines=None) -> None:
+    """Écrit le pied de page sur plusieurs lignes, de bas en haut à partir de ``base_y`` (la dernière ligne est en bas)."""
+    lines = lines if lines is not None else _footer_lines(ctx)
+    canvas.setFillColor(color)
+    canvas.setFont(font, FOOTER_SIZE)
+    y = base_y + (len(lines) - 1) * FOOTER_LH
+    for line in lines:
+        if align == "c":
+            canvas.drawCentredString(PAGE_W / 2, y, line)
+        else:
+            canvas.drawString(MARGIN, y, line)
+        y -= FOOTER_LH
+
+
 def _decor_recu(canvas, ctx):
     st, shop = ctx["style"], ctx["shop"]
     primary = HexColor(st.primary)
@@ -337,12 +388,11 @@ def _decor_recu(canvas, ctx):
     canvas.setStrokeColor(primary)
     canvas.setLineWidth(1.6)
     canvas.line(MARGIN, top - 29 * mm, PAGE_W - MARGIN, top - 29 * mm)
-    # Pied
+    # Pied : barre fine + toutes les informations sur autant de lignes que nécessaire
+    lines = _footer_lines(ctx)
     canvas.setLineWidth(0.8)
-    canvas.line(MARGIN, 18 * mm, PAGE_W - MARGIN, 18 * mm)
-    canvas.setFillColor(HexColor("#475569"))
-    canvas.setFont("Helvetica-Oblique", 9)
-    canvas.drawCentredString(PAGE_W / 2, 11 * mm, ctx["footer"])
+    canvas.line(MARGIN, 18 * mm + (len(lines) - 1) * FOOTER_LH, PAGE_W - MARGIN, 18 * mm + (len(lines) - 1) * FOOTER_LH)
+    draw_footer(canvas, ctx, 11 * mm, HexColor("#475569"), lines=lines)
 
 
 def _wave(canvas, y_base, height, up: bool, color):
@@ -391,12 +441,7 @@ def _decor_vagues(canvas, ctx):
     # Pied
     _wave(canvas, 20 * mm, 14 * mm, True, light)
     _wave(canvas, 14 * mm, 12 * mm, True, primary)
-    canvas.setFillColor(text_on(st.primary))
-    canvas.setFont("Helvetica", 9)
-    lines = _contact_lines(shop)
-    canvas.drawString(MARGIN, 8.5 * mm, "  ·  ".join(lines)[:110])
-    canvas.setFont("Helvetica-Oblique", 9)
-    canvas.drawRightString(PAGE_W - MARGIN, 8.5 * mm, ctx["footer"][:110])
+    draw_footer(canvas, ctx, 5 * mm, text_on(st.primary), font="Helvetica")
 
 
 def _decor_moderne(canvas, ctx):
@@ -446,9 +491,7 @@ def _decor_moderne(canvas, ctx):
     p.lineTo(PAGE_W - 18 * mm, 9 * mm)
     p.close()
     canvas.drawPath(p, stroke=0, fill=1)
-    canvas.setFillColor(HexColor("#555555"))
-    canvas.setFont("Helvetica-Oblique", 9)
-    canvas.drawCentredString(PAGE_W / 2, 17 * mm, ctx["footer"])
+    draw_footer(canvas, ctx, 17 * mm, HexColor("#555555"))
 
 
 def _decor_diagonal(canvas, ctx):
@@ -489,9 +532,7 @@ def _decor_diagonal(canvas, ctx):
     # Pied
     canvas.setFillColor(HexColor("#2b2b2b"))
     canvas.rect(0, 0, PAGE_W, 5 * mm, stroke=0, fill=1)
-    canvas.setFillColor(HexColor("#6b7280"))
-    canvas.setFont("Helvetica-Oblique", 9)
-    canvas.drawCentredString(PAGE_W / 2, 10 * mm, ctx["footer"])
+    draw_footer(canvas, ctx, 10 * mm, HexColor("#6b7280"))
 
 
 _DECORS = {
@@ -593,8 +634,14 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     number = invoice_number(sale)
     moment = sale.date or datetime.now()
     footer = footer_with_bank(str(shop.ticket_footer or "Merci pour votre confiance."))
-    ctx = {"style": style, "shop": shop, "number": number, "footer": footer}
+    # Vagues : les coordonnées de la boutique (autrefois à gauche du pied) rejoignent le pied de page.
+    if style.layout == "vagues":
+        footer = "  ·  ".join(p for p in ("  ·  ".join(_contact_lines(shop)), footer) if p)
+    f_lines = wrap_footer(footer, (_REAL_A4[0] / k - 2 * MARGIN))
+    ctx = {"style": style, "shop": shop, "number": number, "footer": footer, "footer_lines": f_lines}
     top_mm, bottom_mm = (z * k for z in _ZONES[style.layout])
+    # Place supplémentaire en bas quand le pied de page occupe plus de lignes que prévu (vagues : 3 lignes tiennent dans la vague).
+    bottom_mm += max(0, len(f_lines) - (3 if style.layout == "vagues" else 1)) * FOOTER_LH / mm * k
     decor = _DECORS[style.layout]
     margin = MARGIN * k
 

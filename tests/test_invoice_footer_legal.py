@@ -19,6 +19,18 @@ class InvoiceFooterLegalTests(unittest.TestCase):
     def tearDownClass(cls):
         engine.dispose(); shutil.rmtree(_D, ignore_errors=True)
 
+    def test_footer_wraps_without_losing_information(self):
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        text = "  ·  ".join(["RCCM : BF OUA 2014 M05025", "IFU : 00013041A", "Régime fiscal : Réel Normal", "Direction : DGE/Centre",
+                             "Compte Coris Bank BF42 0001 2345 6789 0123 4567 89", "Orange Money 70 43 46 43"])
+        lines = invoice_a4.wrap_footer(text, 300)
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(all(stringWidth(l, invoice_a4.FOOTER_FONT, invoice_a4.FOOTER_SIZE) <= 300 for l in lines))
+        joined = " ".join(lines)
+        for part in ("M05025", "00013041A", "Réel Normal", "DGE/Centre", "4567 89", "43 46 43"):
+            self.assertIn(part, joined)
+        self.assertEqual(invoice_a4.wrap_footer("", 300), [])
+
     def test_all_pharmacy_footer_fields(self):
         ss.set_setting("invoice_show_legal", "1")
         for k, v in (("shop_rccm", "BF OUA 01 2025 B13 12684"), ("shop_ifu", "00280675P"), ("shop_regime", "CMD"),
