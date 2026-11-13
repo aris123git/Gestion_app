@@ -75,6 +75,41 @@ class GasTests(unittest.TestCase):
         gs.save_line(12.5, "recharge", 5500, 5038, cost_price=5000, line_id=self.r12.id)
         self.assertEqual(gs.figures(date(2026, 3, 1), date(2026, 3, 1))["profit"], 5000)
 
+    def test_trip_truck_stock_days_and_empties(self):
+        gs = self.gs
+        lines = {l.name: l for l in gs.list_lines()}
+        c6 = lines["6 kg Consigné"]
+        d1, d2 = datetime(2026, 4, 1, 8), datetime(2026, 4, 2, 9)
+        tid = gs.start_trip([(self.r6.id, 700), (self.r12.id, 140), (c6.id, 10)], truck="Camion 1", driver="Ali", when=d1)
+        self.assertEqual(gs.get_trip(tid).loaded, 850)
+        depot = {l.id: l.stock for l in gs.list_lines()}            # le chargement n'entre pas dans le dépôt
+        self.assertEqual(next(l.stock for l in gs.list_lines(trip_id=tid) if l.id == self.r6.id), 700)
+        wid = gs.save_wholesaler("Gros Camion")
+        gs.deliver(wid, [(self.r6.id, 100, None, 98)], d1, paid=50000, trip_id=tid)
+        gs.retail_sale(self.r6.id, 20, when=d2, trip_id=tid)
+        gs.retail_sale(c6.id, 3, 17000, when=d2, trip_id=tid)       # consigné : bouteille laissée au client, pas de vide
+        gs.record_loss(self.r12.id, 1, "fuite", d2, trip_id=tid)
+        with self.assertRaises(gs.GasError):
+            gs.retail_sale(self.r6.id, 700, when=d2, trip_id=tid)   # plus que le camion ne contient
+        days = gs.trip_days(tid)
+        self.assertEqual([d["date"] for d in days], [d1.date(), d2.date()])
+        self.assertAlmostEqual(days[0]["total"], 100 * 1778)
+        self.assertEqual(gs.empties_proposed(tid), {6.0: 98 + 20})
+        s = {r["name"]: r for r in gs.trip_summary(tid)}
+        self.assertEqual(s["6 kg Recharge"]["remaining"], 700 - 100 - 20)
+        sheet = {r["name"]: r for r in gs.day_sheet(d2.date(), trip_id=tid)}
+        self.assertEqual(sheet["6 kg Recharge"]["sold"], 20)
+        self.assertEqual({l.id: l.stock for l in gs.list_lines()}, depot)
+        gs.close_trip(tid, {6.0: 120})                              # remise modifiée : 120 au lieu de 118
+        self.assertEqual(gs.empties_returned(tid), [{"size_kg": 6.0, "proposed": 118, "handed": 120}])
+        self.assertEqual(gs.get_trip(tid).status, "termine")
+        back = {l.id: l.stock for l in gs.list_lines()}
+        self.assertEqual(back[self.r6.id] - depot[self.r6.id], 580)  # le reste du camion retourne au dépôt
+        with self.assertRaises(gs.GasError):
+            gs.retail_sale(self.r6.id, 1, trip_id=tid)
+        with self.assertRaises(gs.GasError):
+            gs.close_trip(tid)
+
     def test_page_and_nav(self):
         from PySide6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
@@ -89,6 +124,17 @@ class GasTests(unittest.TestCase):
             page = GasPage(state)
             page.refresh()
             self.assertGreaterEqual(page.ltable.rowCount(), 6)
+            from datetime import datetime as _dt
+            tid = gs.start_trip([(page_line.id, 5) for page_line in gs.list_lines()[:1]], truck="Cam", when=_dt(2026, 5, 1, 8))
+            page.refresh()
+            self.assertEqual(page.source.count(), 2)          # Dépôt + voyage en cours
+            page.source.setCurrentIndex(1)
+            self.assertEqual(page._trip(), tid)
+            page.ttable.selectRow(0)
+            from app.ui.pages.gas_page import TripDaysDialog, CloseTripDialog
+            TripDaysDialog(page, tid); CloseTripDialog(page, tid).apply(); self.assertEqual(gs.get_trip(tid).status, "termine")
+            page.refresh()
+            self.assertEqual(page.source.count(), 1)
             from app.ui.main_window import build_nav_items
             self.assertTrue(any(i[0] == "Gaz" for i in build_nav_items()))
         finally:

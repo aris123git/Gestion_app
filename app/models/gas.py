@@ -17,6 +17,9 @@ FORMULA_RECHARGE, FORMULA_CONSIGNE, FORMULA_COMPLET = "recharge", "consigne", "c
 FORMULAS = {FORMULA_RECHARGE: "Recharge", FORMULA_CONSIGNE: "Consigné", FORMULA_COMPLET: "Complet"}
 
 MOVE_ENTRY, MOVE_SALE, MOVE_DELIVERY, MOVE_LOSS, MOVE_ADJUST = "entree", "vente", "livraison", "perte", "ajustement"
+MOVE_TRANSFER = "transfert"      # retour du reste du camion au dépôt (+ côté dépôt, − côté camion)
+
+TRIP_OPEN, TRIP_CLOSED = "en_cours", "termine"
 
 
 class GasLine(Base, TimestampMixin):
@@ -90,3 +93,32 @@ class GasMovement(Base):
     reason: Mapped[str] = mapped_column(String(250), default="")      # motif libre (pertes, ajustements)
     wholesaler_id: Mapped[Optional[int]] = mapped_column(ForeignKey("gas_wholesalers.id"), nullable=True)
     delivery_id: Mapped[Optional[int]] = mapped_column(ForeignKey("gas_deliveries.id"), nullable=True)
+    trip_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)   # NULL = stock du dépôt ; sinon stock du camion
+
+
+class GasTrip(Base, TimestampMixin):
+    """Un voyage du camion : chargement à la source (ex. SONABHY), livraisons sur plusieurs jours, retour pour recharger."""
+
+    __tablename__ = "gas_trips"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    number: Mapped[str] = mapped_column(String(30), unique=True)
+    truck: Mapped[str] = mapped_column(String(80), default="")
+    driver: Mapped[str] = mapped_column(String(120), default="")
+    source: Mapped[str] = mapped_column(String(120), default="SONABHY")
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default=TRIP_OPEN, index=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+
+
+class GasEmptiesReturn(Base):
+    """Vides rendues à la source à la fin d'un voyage, par taille de bouteille (échange, aucun argent)."""
+
+    __tablename__ = "gas_empties_returns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trip_id: Mapped[int] = mapped_column(ForeignKey("gas_trips.id"), index=True)
+    size_kg: Mapped[float] = mapped_column(Numeric(6, 2))
+    proposed: Mapped[int] = mapped_column(Integer, default=0)     # calculé d'après les livraisons et ventes
+    handed: Mapped[int] = mapped_column(Integer, default=0)       # réellement remis (modifiable)
