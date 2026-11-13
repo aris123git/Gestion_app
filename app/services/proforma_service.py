@@ -202,3 +202,26 @@ def client_defaults(client_id: int) -> dict:
 def defaults() -> dict:
     g = settings_service.get_setting
     return dict(responsible=g(SETTING_RESPONSIBLE, ""), responsible_phone=g(SETTING_RESPONSIBLE_PHONE, ""))
+
+
+EXAMPLE_SUBJECT = "Exemple – Boucherie Wend Malgré"
+
+
+def install_example() -> int:
+    """Remplit les réglages proforma au modèle « Boucherie Wend Malgré » et crée une proforma d'exemple (une seule).
+
+    L'image d'en-tête n'est pas touchée : quand elle est choisie (ou changée) dans Paramètres, elle remplace le haut de
+    cette proforma comme de toutes les autres, puisqu'elle est lue à chaque impression."""
+    set_enabled(True)
+    for key, value in ((SETTING_TAGLINE, "Vente de la viande – Poisson – Poulet"), (SETTING_HEADER_EXTRA, "Secteur 42 Bendogo"),
+                       (SETTING_CITY, "Ouagadougou"), (SETTING_RESPONSIBLE, "KABORE John Didier"),
+                       (SETTING_RESPONSIBLE_PHONE, "70 43 46 43")):
+        settings_service.set_setting(key, value)
+    for row in list_all():
+        if row.get("subject") == EXAMPLE_SUBJECT:
+            return row["id"]
+    return save(
+        [LineInput("Viande de bœuf avec os", 50, "kg", 2500), LineInput("Poulet entier", 30, "kg", 2200),
+         LineInput("Poisson (carpe)", 20, "kg", 2000)],
+        client_name="Client exemple", client_phone="", subject=EXAMPLE_SUBJECT,
+        responsible="KABORE John Didier", responsible_phone="70 43 46 43")

@@ -290,6 +290,18 @@ class SettingsPage(QWidget):
             for label, w in (("Slogan / activités", self._pf_tagline), ("Ligne d'en-tête supplémentaire", self._pf_extra), ("Ville de la proforma", self._pf_city),
                              ("Le Responsable (nom)", self._pf_resp), ("Le Responsable (téléphone)", self._pf_resp_phone)):
                 form.addRow(t(label), w)
+            ex = QPushButton(t("Remplir avec l'exemple Boucherie Wend Malgré"))
+
+            def _example() -> None:
+                _ps.install_example()
+                for w, key in ((self._pf_tagline, _ps.SETTING_TAGLINE), (self._pf_extra, _ps.SETTING_HEADER_EXTRA), (self._pf_city, _ps.SETTING_CITY),
+                               (self._pf_resp, _ps.SETTING_RESPONSIBLE), (self._pf_resp_phone, _ps.SETTING_RESPONSIBLE_PHONE)):
+                    w.setText(settings_service.get_setting(key, ''))
+                self._proforma_cb.setChecked(True)
+                info(self, t("Exemple créé : voir le menu « Proformas » (au prochain démarrage). Choisissez l'image d'en-tête ci-dessus pour remplacer le haut."))
+
+            ex.clicked.connect(_example)
+            form.addRow("", ex)
         outer.addWidget(make_card(form_widget))
         save = QPushButton(t('Enregistrer les informations'))
         save.setObjectName('Primary')

@@ -41,6 +41,13 @@ class ProformaTests(unittest.TestCase):
             self.assertIn(part.lower(), txt.lower(), part)
         self.assertEqual(txt.lower().count("francs cfa"), 1)
 
+    def test_install_example_once_and_banner_applies(self):
+        from app.printers.proforma_doc import build_proforma_pdf
+        a = ps.install_example()
+        self.assertEqual(a, ps.install_example())
+        self.assertTrue(build_proforma_pdf(a).exists())
+        self.assertEqual(ss.get_setting(ps.SETTING_RESPONSIBLE_PHONE), "70 43 46 43")
+
     def test_tax_and_cdt(self):
         pid = ps.save([ps.LineInput("Gants latex", 10, "", 2000, "B/100")], client_name="Client", tax_label="BIC", tax_rate=2)
         d = ps.get(pid)
