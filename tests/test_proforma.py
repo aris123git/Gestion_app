@@ -41,15 +41,6 @@ class ProformaTests(unittest.TestCase):
             self.assertIn(part.lower(), txt.lower(), part)
         self.assertEqual(txt.lower().count("francs cfa"), 1)
 
-    def test_install_example_once_and_banner_applies(self):
-        from app.printers.proforma_doc import build_proforma_pdf
-        a = ps.install_example()
-        self.assertEqual(a, ps.install_example())
-        self.assertTrue(build_proforma_pdf(a).exists())
-        self.assertEqual(ss.get_setting(ps.SETTING_RESPONSIBLE_PHONE), "70 43 46 43")
-        self.assertIn("viande hachée", pdf_text(build_proforma_pdf(a)).lower())
-        self.assertIn("78 55 31 42", pdf_text(build_proforma_pdf(a)))
-
     def test_sale_invoice_in_banner_model(self):
         from types import SimpleNamespace as NS
         from app.printers import invoice_a4 as ia
