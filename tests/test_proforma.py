@@ -47,6 +47,20 @@ class ProformaTests(unittest.TestCase):
         self.assertEqual(a, ps.install_example())
         self.assertTrue(build_proforma_pdf(a).exists())
         self.assertEqual(ss.get_setting(ps.SETTING_RESPONSIBLE_PHONE), "70 43 46 43")
+        self.assertIn("viande hachée", pdf_text(build_proforma_pdf(a)).lower())
+        self.assertIn("78 55 31 42", pdf_text(build_proforma_pdf(a)))
+
+    def test_sale_invoice_in_banner_model(self):
+        from types import SimpleNamespace as NS
+        from app.printers import invoice_a4 as ia
+        items = [NS(product_name="Viande hachée", quantity=20, unit_price=4000, line_total=80000, tax_rate=0),
+                 NS(product_name="Filet", quantity=20, unit_price=6000, line_total=120000, tax_rate=0)]
+        sale = NS(items=items, subtotal=200000, discount=10000, total=190000, amount_received=0, change_due=0, ticket_number="T-1",
+                  date=None, client_name="Client X", client_phone="", client_address="", client=None, cashier_name="")
+        p = ia.build_invoice_a4(sale, path=Path(_D) / "b.pdf", style_id="commercial_banniere")
+        txt = pdf_text(p).lower()
+        for part in ("facture n°", "viande hachée", "client x", "sous-total", "remise", "total general", "190 000", "cent quatre-vingt-dix mille", "le responsable"):
+            self.assertIn(part, txt, part)
 
     def test_tax_and_cdt(self):
         pid = ps.save([ps.LineInput("Gants latex", 10, "", 2000, "B/100")], client_name="Client", tax_label="BIC", tax_rate=2)

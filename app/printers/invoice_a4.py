@@ -96,6 +96,7 @@ INVOICE_STYLES: tuple[InvoiceStyle, ...] = (
     InvoiceStyle("diagonal_bleu", "Bandeau diagonal — bleu-gris", "diagonal", "#a9b9cc", "#dfe7f0"),
     InvoiceStyle("diagonal_beige", "Bandeau diagonal — beige", "diagonal", "#b59c85", "#efe5db"),
     # Modèles fidèles aux fichiers d'origine (fond vectoriel + polices du modèle)
+    InvoiceStyle("commercial_banniere", "Commercial avec image d'en-tête (modèle Boucherie)", "tpl_banner", "#1e3a8a", "#ffffff"),
     InvoiceStyle("services_bleu", "Services (vagues, fidèle au modèle) — bleu", "tpl_services", "#7fc5ff", "#ffffff"),
     InvoiceStyle("services_vert", "Services (vagues, fidèle au modèle) — vert", "tpl_services", "#7fffb0", "#ffffff"),
     InvoiceStyle("medical_bleu", "Médical (hexagones, fidèle au modèle) — bleu", "tpl_medical", "#0054ae", "#ffffff"),
@@ -578,6 +579,11 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             path = config.TICKET_DIR / f"{sale.ticket_number}_{tag}_{stamp}.pdf"
     path = Path(path)
+
+    if style.layout == "tpl_banner":
+        from app.printers.proforma_doc import build_sale_invoice_pdf
+
+        return build_sale_invoice_pdf(sale, path, shop)
 
     if style.layout.startswith("tpl_"):
         from app.printers.invoice_template import build_template_invoice

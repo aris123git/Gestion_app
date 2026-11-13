@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -47,7 +48,32 @@ def _banner():
 
 def build_proforma_pdf(proforma_id: int, path: str | Path | None = None) -> Path:
     d = ps.get(proforma_id)
-    shop = settings_service.get_shop_info()
+    out = Path(path) if path else config.TICKET_DIR / f"proforma_{d['number'].replace('/', '-')}.pdf"
+    return _render(d, out, "FACTURE PROFORMA", "facture proforma")
+
+
+def build_sale_invoice_pdf(sale, path: str | Path, shop=None) -> Path:
+    """Facture de vente au même modèle commercial (bandeau image, « Doit », tableau, total en lettres, responsable)."""
+    refs = ia.client_refs(sale)
+    items = list(sale.items)
+    lines = []
+    for it in items:
+        q = float(it.quantity or 0) or 1
+        lines.append(dict(label=str(it.product_name or ""), packaging="", quantity=q, unit="", unit_price=float(it.line_total or 0) / q))
+    discount = float(sale.discount or 0)
+    total = float(sale.total or 0)
+    rate, vat = ia._vat_included(sale, items)
+    d = dict(date=sale.date or datetime.now(), number=ia.invoice_number(sale), client_name=refs["name"], client_phone=refs["contact"],
+             client_email=refs["email"], client_ifu="", client_rccm="", client_regime="", client_division="", client_address=refs["address"],
+             subject="", notes="", lines=lines, totals=ps.Totals(total + discount, "", 0, 0, total), discount=discount,
+             vat_note=(f"dont TVA {rate:g} % : {_num(vat)}" if rate else f"dont TVA : {_num(vat)}") if vat > 0 and ia.show_legal() else "",
+             responsible=settings_service.get_setting(ps.SETTING_RESPONSIBLE, ""),
+             responsible_phone=settings_service.get_setting(ps.SETTING_RESPONSIBLE_PHONE, ""))
+    return _render(d, Path(path), "FACTURE", "facture", shop)
+
+
+def _render(d: dict, out: Path, title: str, noun: str, shop=None) -> Path:
+    shop = shop or settings_service.get_shop_info()
     cur = shop.currency or "FCFA"
     get = settings_service.get_setting
     base = ParagraphStyle("pb", fontName="Helvetica", fontSize=10, leading=13.5, textColor=INK)
@@ -63,7 +89,7 @@ def build_proforma_pdf(proforma_id: int, path: str | Path | None = None) -> Path
     else:
         head = ParagraphStyle("ph", parent=bold, fontSize=20, leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#1e3a8a"))
         story.append(Paragraph(escape(shop.name or ""), head))
-        for line in (get(ps.SETTING_TAGLINE, ""), get(ps.SETTING_HEADER_EXTRA, ""), shop.address or "", f"Tél. {shop.phone}" if shop.phone else ""):
+        for line in (get(ps.SETTING_TAGLINE, ""), *get(ps.SETTING_HEADER_EXTRA, "").split("|"), shop.address or "", f"Tél. {shop.phone}" if shop.phone else ""):
             if (line or "").strip():
                 story.append(Paragraph(escape(line.strip()), ParagraphStyle("pl", parent=bold, fontSize=9.5, alignment=TA_CENTER)))
     story.append(Table([[""]], colWidths=[PAGE_W], rowHeights=[1], style=TableStyle([("LINEABOVE", (0, 0), (-1, 0), 1.2, colors.HexColor("#be123c"))])))
@@ -71,7 +97,7 @@ def build_proforma_pdf(proforma_id: int, path: str | Path | None = None) -> Path
     story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(f"{escape(city) + ' le ' if city else 'Le '}{d['date']:%d/%m/%Y}", ParagraphStyle("pd", parent=base, fontSize=9, alignment=TA_RIGHT)))
     story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph(f"<u>FACTURE PROFORMA N°{escape(d['number'])}</u>", center))
+    story.append(Paragraph(f"<u>{title} N°{escape(d['number'])}</u>", center))
     story.append(Spacer(1, 5 * mm))
 
     who = [f"<u><b>Doit :</b></u> {escape(d['client_name'])}"]
@@ -99,6 +125,8 @@ def build_proforma_pdf(proforma_id: int, path: str | Path | None = None) -> Path
         foot += [["MONTANT HT"] + [""] * (n - 2) + [_num(t.subtotal)], [f"{t.tax_label.upper()} {t.tax_rate:g} %"] + [""] * (n - 2) + [_num(t.tax)],
                  ["MONTANT TTC"] + [""] * (n - 2) + [_num(t.total)]]
     else:
+        if d.get("discount", 0) > 0:
+            foot += [["SOUS-TOTAL"] + [""] * (n - 2) + [_num(t.subtotal)], ["REMISE"] + [""] * (n - 2) + ["- " + _num(d["discount"])]]
         foot += [["TOTAL GENERAL"] + [""] * (n - 2) + [_num(t.total)]]
     table = Table(rows + foot, colWidths=widths, repeatRows=1)
     first_foot = len(rows)
@@ -113,8 +141,10 @@ def build_proforma_pdf(proforma_id: int, path: str | Path | None = None) -> Path
     cmds.append(("LINEBEFORE", (n - 1, first_foot), (n - 1, -1), 1.0, INK))
     table.setStyle(TableStyle(cmds))
     story += [table, Spacer(1, 3 * mm)]
-    story.append(Paragraph(f"Arrêtée la présente facture proforma à la somme de : <u><b>{escape(ia.number_to_words_fr(int(round(t.total))).upper())} "
+    story.append(Paragraph(f"Arrêtée la présente {noun} à la somme de : <u><b>{escape(ia.number_to_words_fr(int(round(t.total))).upper())} "
                            f"({_num(t.total)}) {escape('FRANCS CFA' if cur.upper() in ('FCFA', 'CFA', 'XOF', 'F CFA') else cur)}</b></u>", base))
+    if d.get("vat_note"):
+        story += [Spacer(1, 2 * mm), Paragraph(escape(d["vat_note"]), base)]
     if (d["notes"] or "").strip():
         story += [Spacer(1, 3 * mm), Paragraph(escape(d["notes"].strip()).replace("\n", "<br/>"), base)]
     story += [Spacer(1, 8 * mm), Paragraph("<u><b>Le Responsable</b></u>", right), Spacer(1, 22 * mm)]
@@ -123,5 +153,4 @@ def build_proforma_pdf(proforma_id: int, path: str | Path | None = None) -> Path
     extra = "  ·  ".join(x for x in (ia.legal_text(), ia.bank_text()) if x)
     if extra:
         story += [Spacer(1, 10 * mm), Paragraph(escape(extra), small)]
-    out = Path(path) if path else config.TICKET_DIR / f"proforma_{d['number'].replace('/', '-')}.pdf"
     return _build(out, story)

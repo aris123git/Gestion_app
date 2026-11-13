@@ -204,24 +204,30 @@ def defaults() -> dict:
     return dict(responsible=g(SETTING_RESPONSIBLE, ""), responsible_phone=g(SETTING_RESPONSIBLE_PHONE, ""))
 
 
-EXAMPLE_SUBJECT = "Exemple – Boucherie Wend Malgré"
+EXAMPLE_CLIENT = "SOCIETE DE GASTRONOMIE (SOGA SA)"
 
 
 def install_example() -> int:
-    """Remplit les réglages proforma au modèle « Boucherie Wend Malgré » et crée une proforma d'exemple (une seule).
+    """Remplit les réglages au modèle « Boucherie Malgré » et crée la proforma d'exemple (une seule).
 
     L'image d'en-tête n'est pas touchée : quand elle est choisie (ou changée) dans Paramètres, elle remplace le haut de
-    cette proforma comme de toutes les autres, puisqu'elle est lue à chaque impression."""
+    cette proforma comme de toutes les autres (proformas et factures « modèle Boucherie »), car elle est lue à chaque impression.
+    Dans la ligne supplémentaire, « | » sépare les lignes de l'en-tête texte."""
     set_enabled(True)
-    for key, value in ((SETTING_TAGLINE, "Vente de la viande – Poisson – Poulet"), (SETTING_HEADER_EXTRA, "Secteur 42 Bendogo"),
+    for key, value in ((SETTING_TAGLINE, "VENTE DE LA VIANDE – POISSON – POULET"),
+                       (SETTING_HEADER_EXTRA, "En gros et détails, N°IFU 002234399P | RC-BF-OUA-01-2024-B13-06979 | Secteur N°42 Bendogo | "
+                                              "Tél. 78 55 31 42 / 70 43 46 43 / 76 97 41 64"),
                        (SETTING_CITY, "Ouagadougou"), (SETTING_RESPONSIBLE, "KABORE John Didier"),
                        (SETTING_RESPONSIBLE_PHONE, "70 43 46 43")):
         settings_service.set_setting(key, value)
-    for row in list_all():
-        if row.get("subject") == EXAMPLE_SUBJECT:
-            return row["id"]
-    return save(
-        [LineInput("Viande de bœuf avec os", 50, "kg", 2500), LineInput("Poulet entier", 30, "kg", 2200),
-         LineInput("Poisson (carpe)", 20, "kg", 2000)],
-        client_name="Client exemple", client_phone="", subject=EXAMPLE_SUBJECT,
+    known = settings_service.get_setting("proforma_example_id", "")
+    if known.isdigit() and any(r["id"] == int(known) for r in list_all()):
+        return int(known)
+    pid = save(
+        [LineInput("Viande hachée", 20, "kg", 4000), LineInput("Faux filet", 20, "kg", 4000), LineInput("Filet", 20, "kg", 6000)],
+        client_name=EXAMPLE_CLIENT, client_phone="(00226) 25 39 28 87 / 06 BP 9316 Ouagadougou 06", client_email="contact@soga.com",
+        client_ifu="00013041A", client_rccm="BF OUA 2014 M05025", client_regime="Réel Normal", client_division="DGE/Centre",
+        client_address="Parcelle 12, Section HK, Lot 07, Secteur 04", subject="Livraison de la viande.",
         responsible="KABORE John Didier", responsible_phone="70 43 46 43")
+    settings_service.set_setting("proforma_example_id", str(pid))
+    return pid

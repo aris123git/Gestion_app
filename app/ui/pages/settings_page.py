@@ -282,7 +282,7 @@ class SettingsPage(QWidget):
             self._pf_tagline = QLineEdit(g(_ps.SETTING_TAGLINE, ''))
             self._pf_tagline.setPlaceholderText(t("ex. Vente de la viande – Poisson – Poulet (sans image d'en-tête)"))
             self._pf_extra = QLineEdit(g(_ps.SETTING_HEADER_EXTRA, ''))
-            self._pf_extra.setPlaceholderText(t("ex. Secteur 42 Bendogo (sans image d'en-tête)"))
+            self._pf_extra.setPlaceholderText(t("ex. IFU | RCCM | Secteur 42 Bendogo | Tél. (« | » sépare les lignes ; sans image d'en-tête)"))
             self._pf_city = QLineEdit(g(_ps.SETTING_CITY, ''))
             self._pf_city.setPlaceholderText(t("ex. Ouagadougou (« Ouagadougou le 26/10/2026 »)"))
             self._pf_resp = QLineEdit(g(_ps.SETTING_RESPONSIBLE, ''))
@@ -290,7 +290,7 @@ class SettingsPage(QWidget):
             for label, w in (("Slogan / activités", self._pf_tagline), ("Ligne d'en-tête supplémentaire", self._pf_extra), ("Ville de la proforma", self._pf_city),
                              ("Le Responsable (nom)", self._pf_resp), ("Le Responsable (téléphone)", self._pf_resp_phone)):
                 form.addRow(t(label), w)
-            ex = QPushButton(t("Remplir avec l'exemple Boucherie Wend Malgré"))
+            ex = QPushButton(t("Remplir avec l'exemple Boucherie Malgré"))
 
             def _example() -> None:
                 _ps.install_example()
