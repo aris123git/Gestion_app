@@ -9,7 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QDate, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QComboBox, QDateEdit, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
+    QComboBox, QCompleter, QDateEdit, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
     QPushButton, QTableWidget, QVBoxLayout, QWidget,
 )
 
@@ -68,6 +68,7 @@ class ProformaDialog(QDialog):
         self.table.setColumnWidth(0, 260)
         root.addWidget(self.table, 1)
         self._rows: list = []
+        self._catalog = {c["name"].strip().lower(): c for c in ps.catalog()}
         row = QHBoxLayout()
         add = QPushButton(t("+ Ajouter une ligne"))
         add.clicked.connect(lambda: self._add_row())
@@ -124,6 +125,25 @@ class ProformaDialog(QDialog):
             self.table.setCellWidget(r, c, w)
         qty.valueChanged.connect(self._totals)
         price.valueChanged.connect(self._totals)
+        if self._catalog:
+            comp = QCompleter(list(self._catalog), label)           # proposition des produits au fil de la frappe
+            comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            comp.setFilterMode(Qt.MatchFlag.MatchContains)
+            label.setCompleter(comp)
+            label.setPlaceholderText(t("Produit (tapez pour chercher) ou ligne libre"))
+
+            def _filled(*_a, label=label, unit=unit, price=price, qty=qty) -> None:
+                prod = self._catalog.get(label.text().strip().lower())
+                if prod:                       # produit reconnu : prix de vente par défaut (modifiable), unité si vide
+                    label.setText(prod["name"])
+                    price.setValue(prod["price"])
+                    if not unit.text().strip():
+                        unit.setText(prod["unit"])
+                    qty.setFocus()
+                    qty.selectAll()
+
+            comp.activated.connect(_filled)
+            label.editingFinished.connect(_filled)
         self._rows.append((label, cdt, qty, unit, price, total))
         self._totals()
 

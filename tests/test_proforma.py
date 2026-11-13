@@ -126,6 +126,28 @@ class ProformaTests(unittest.TestCase):
         lines, date, fields = dlg.values()
         self.assertEqual(fields["client_name"], "SOGA SA")
         self.assertEqual(len(lines), 3)
+        # Choix d'un produit du catalogue : prix de vente par défaut, modifiable ; ligne libre inchangée
+        from app.database.connection import session_scope
+        from app.models.category import Category
+        from app.models.product import Product
+        with session_scope() as s:
+            cat = Category(name="Test proforma"); s.add(cat); s.flush()
+            s.add(Product(name="Gigot test", category_id=cat.id, sale_price=7500, purchase_price=5000, quantity=10))
+        dlg = ProformaDialog(page)
+        label, cdt, qty, unit, price, total = dlg._rows[0]
+        label.setText("gigot TEST")
+        label.editingFinished.emit()
+        self.assertEqual(label.text(), "Gigot test")
+        self.assertEqual(price.value(), 7500)
+        qty.setValue(4)
+        self.assertEqual(total.text().replace(" ", ""), "30000")
+        price.setValue(7000)                      # prix modifiable
+        self.assertEqual(dlg.values()[0][0].unit_price, 7000)
+        dlg._add_row()
+        free = dlg._rows[1]
+        free[0].setText("Ligne libre")
+        free[0].editingFinished.emit()
+        self.assertEqual(free[4].value(), 0)
         ps.set_enabled(False)
 
 

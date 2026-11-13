@@ -148,6 +148,18 @@ def delete(proforma_id: int) -> None:
             session.delete(p)
 
 
+def catalog() -> list[dict]:
+    """Produits actifs proposés dans les lignes de proforma : nom, prix de vente, unité (abréviation si elle existe)."""
+    from app.models.product import Product
+
+    out = []
+    with session_scope() as session:
+        for p in session.scalars(select(Product).where(Product.is_active.is_(True)).order_by(Product.name)):
+            unit = getattr(p.unit, "symbol", None) or getattr(p.unit, "name", "") if p.unit else ""
+            out.append(dict(name=p.name, price=float(p.sale_price or 0), unit=unit or ""))
+    return out
+
+
 def suggest_products(proforma_id: int) -> list[Optional[int]]:
     """Produit probable de chaque ligne (même nom, sans tenir compte de la casse) ; None si aucun."""
     from app.models.product import Product
