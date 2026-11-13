@@ -68,9 +68,17 @@ def build_nav_items():
         from app.ui.pages.proformas_page import ProformasPage
 
         proformas = [(t("Proformas"), "📄", ProformasPage, perms.MANAGE_PROFORMAS)]
+    from app.services import gas_service
+
+    gas = []
+    if gas_service.enabled():
+        from app.ui.pages.gas_page import GasPage
+
+        gas = [(t("Gaz"), "🔥", GasPage, perms.MANAGE_GAS)]
     return [
         (t("nav.pos"), "🛒", POSPage, perms.SELL),
         *field_sales,
+        *gas,
         *proformas,
         (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
         (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),

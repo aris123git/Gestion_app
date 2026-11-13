@@ -1,0 +1,99 @@
+import os, shutil, tempfile, unittest
+from datetime import date, datetime
+
+_tmp = tempfile.mkdtemp()
+os.environ["GESTION_DATA_DIR"] = _tmp
+os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+class GasTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from app.database.connection import engine, init_database
+        from app.database.seed import seed_all
+        engine.dispose(); init_database(); seed_all()
+
+    @classmethod
+    def tearDownClass(cls):
+        from app.database.connection import engine
+        engine.dispose()
+        shutil.rmtree(_tmp, ignore_errors=True)
+
+    def setUp(self):
+        from app.services import gas_service as gs
+        gs.create_standard_lines()
+        self.gs = gs
+        lines = {l.name: l for l in gs.list_lines()}
+        self.r6, self.r12 = lines["6 kg Recharge"], lines["12,5 kg Recharge"]
+        gs.save_line(6, "recharge", 2000, 1778, line_id=self.r6.id)
+        gs.save_line(12.5, "recharge", 5500, 5038, line_id=self.r12.id)
+
+    def test_retail_day_sheet_and_stock(self):
+        gs = self.gs
+        d = datetime(2026, 1, 5, 9)
+        gs.add_entry(self.r6.id, 100, d)
+        gs.retail_sale(self.r6.id, 30, when=d)
+        gs.retail_sale(self.r6.id, 10, 1900, when=d)
+        gs.record_loss(self.r6.id, 2, "fuite", d)
+        row = next(r for r in gs.day_sheet(date(2026, 1, 5)) if r["line_id"] == self.r6.id)
+        self.assertEqual((row["si"], row["entry"], row["st"], row["sold"], row["sf"], row["lost"]), (0, 100, 100, 40, 58, 2))
+        self.assertEqual(row["amount"], 30 * 2000 + 10 * 1900)
+        nxt = next(r for r in gs.day_sheet(date(2026, 1, 6)) if r["line_id"] == self.r6.id)
+        self.assertEqual(nxt["si"], 58)
+        with self.assertRaises(gs.GasError):
+            gs.retail_sale(self.r6.id, 1000)
+        with self.assertRaises(gs.GasError):
+            gs.record_loss(self.r6.id, 1, " ")
+
+    def test_wholesaler_account_and_sentence(self):
+        gs = self.gs
+        gs.add_entry(self.r6.id, 200, datetime(2026, 2, 1, 8))
+        wid = gs.save_wholesaler("Grossiste Test")
+        gs.deliver(wid, [(self.r6.id, 98, None, 95)], datetime(2026, 2, 1, 10), paid=100000)
+        a = gs.wholesaler_account(wid)
+        self.assertEqual((a.delivered, a.empties_back, a.bottles_owed), (98, 95, 3))
+        self.assertAlmostEqual(a.amount_due, 98 * 1778)
+        self.assertAlmostEqual(a.balance, 98 * 1778 - 100000)
+        self.assertIn("Il manque 3 vides", a.statement)
+        self.assertIn("à payer", a.statement)
+        gs.set_empties_back(gs.deliveries_of_day(date(2026, 2, 1))[0]["delivery_id"], self.r6.id, 98)
+        gs.pay(wid, 98 * 1778 - 100000)
+        a = gs.wholesaler_account(wid)
+        self.assertTrue(a.statement.startswith("Compte juste : 98 vides reçues, 98 pleines remises"))
+        with self.assertRaises(gs.GasError):
+            gs.deliver(wid, [(self.r6.id, 10000, None, None)])
+        self.assertEqual(gs.deliveries_of_day(date(2026, 2, 1))[0]["total"], 98 * 1778)
+
+    def test_figures_profit_needs_cost(self):
+        gs = self.gs
+        gs.add_entry(self.r12.id, 50, datetime(2026, 3, 1, 8))
+        gs.retail_sale(self.r12.id, 10, when=datetime(2026, 3, 1, 9))
+        f = gs.figures(date(2026, 3, 1), date(2026, 3, 1))
+        self.assertEqual(f["revenue"], 55000)
+        self.assertIsNone(f["profit"])
+        gs.save_line(12.5, "recharge", 5500, 5038, cost_price=5000, line_id=self.r12.id)
+        self.assertEqual(gs.figures(date(2026, 3, 1), date(2026, 3, 1))["profit"], 5000)
+
+    def test_page_and_nav(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        from app.services import gas_service as gs
+        from app.ui.pages.gas_page import GasPage
+        from app.ui.state import AppState
+        self.assertFalse(gs.enabled())
+        gs.set_enabled(True)
+        try:
+            state = AppState()
+            state.can = lambda p: True
+            page = GasPage(state)
+            page.refresh()
+            self.assertGreaterEqual(page.ltable.rowCount(), 6)
+            from app.ui.main_window import build_nav_items
+            self.assertTrue(any(i[0] == "Gaz" for i in build_nav_items()))
+        finally:
+            gs.set_enabled(False)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -237,6 +237,17 @@ class SettingsPage(QWidget):
             )
             self._field_sales_cb.setChecked(field_sales_service.enabled())
             form.addRow("", self._field_sales_cb)
+        self._gas_cb = None
+        if not _pp.is_maquis() and not _pp.is_chantiers():
+            from app.services import gas_service as _gs
+
+            form.addRow(QLabel(f"<b>{t('Gaz')}</b>"))
+            self._gas_cb = QCheckBox(t("Contrôle gaz (menu « Gaz » : détaillants, grossistes, camion — comptabilité à part)"))
+            self._gas_cb.setChecked(_gs.enabled())
+            form.addRow("", self._gas_cb)
+            self._gas_inc_cb = QCheckBox(t("Inclure le gaz dans le chiffre d'affaires, les bénéfices et les dettes générales"))
+            self._gas_inc_cb.setChecked(_gs.include_in_totals())
+            form.addRow("", self._gas_inc_cb)
         self._proforma_cb = None
         if not _pp.is_maquis() and not _pp.is_chantiers():
             from PySide6.QtWidgets import QFileDialog
@@ -388,6 +399,11 @@ class SettingsPage(QWidget):
             from app.services import field_sales_service
 
             field_sales_service.set_enabled(self._field_sales_cb.isChecked())
+        if getattr(self, '_gas_cb', None) is not None:
+            from app.services import gas_service as _gs
+
+            _gs.set_enabled(self._gas_cb.isChecked())
+            _gs.set_include_in_totals(self._gas_inc_cb.isChecked())
         if getattr(self, '_proforma_cb', None) is not None:
             from app.services import proforma_service as _ps
 
@@ -737,7 +753,10 @@ class SettingsPage(QWidget):
 
         from app.services import proforma_service as _pfs
 
+        from app.services import gas_service as _gas
+
         return (
+            _gas.enabled(),
             _pfs.enabled(),
             field_sales_service.enabled(),
             chantiers_nav.sales_enabled(),
