@@ -20,6 +20,14 @@ jobs:
       - name: Checkout du code
         uses: actions/checkout@v4
 
+      - name: Version du programme = nom du tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}".TrimStart('v')
+          (Get-Content app/__init__.py) -replace '__version__ = ".*"', ('__version__ = "' + $v + '"') | Set-Content app/__init__.py
+          Select-String -Path app/__init__.py -Pattern '__version__'
+
       - name: Installer Python 3.12
         uses: actions/setup-python@v5
         with:
