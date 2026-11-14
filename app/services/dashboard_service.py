@@ -157,7 +157,9 @@ class DashboardService:
             cash_revenue - expenses - supplier_debt_payments,
             2,
         )
-        return {
+        from app.services import gas_service
+
+        return gas_service.apply_to_general_figures({
             "revenue_today": cash_revenue,
             "cash_revenue_today": cash_revenue,
             "sales_cash_today": sales_cash,
@@ -186,7 +188,7 @@ class DashboardService:
             "client_debts": client_debts,
             "client_debts_count": client_debts_count,
             "supplier_debts": supplier_debts,
-        }
+        })
 
     @classmethod
     def _period_cash_revenue(cls, start: date, end: date) -> float:

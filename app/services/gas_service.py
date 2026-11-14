@@ -435,7 +435,7 @@ def figures(start: date, end: date) -> dict:
         collected = _f(s.execute(select(func.coalesce(func.sum(GasPayment.amount), 0))
                                  .where(GasPayment.paid_at >= a, GasPayment.paid_at < b)).scalar())
         debts = sum(wholesaler_account(w.id).balance for w in list_wholesalers(active_only=False))
-        return {"revenue": revenue, "payments": collected, "debts": debts,
+        return {"revenue": revenue, "payments": collected, "debts": debts, "cash": cash_in(start, end),
                 "profit": None if (missing and revenue) else revenue - cost}
 
 
@@ -604,3 +604,53 @@ def trip_days(trip_id: int) -> List[dict]:
             if kind == "perte" and m.reason:
                 step["reasons"].append(m.reason)
         return [{"date": d["date"], "steps": list(d["steps"].values()), "total": d["total"]} for _, d in sorted(days.items())]
+
+
+def wholesaler_history(wholesaler_id: int) -> List[dict]:
+    """Relevé d'un grossiste : livraisons (ce qu'il a pris) et paiements dans l'ordre, avec le reste à payer et les vides à rendre."""
+    with session_scope() as s:
+        names = {ln.id: ln.name for ln in s.execute(select(GasLine)).scalars()}
+        events = []
+        for d in s.execute(select(GasDelivery).where(GasDelivery.wholesaler_id == wholesaler_id)).scalars():
+            events.append((d.delivered_at, 0, "livraison", ", ".join(f"{names.get(i.line_id, '?')} × {i.qty}" for i in d.items),
+                           sum(i.qty * _f(i.unit_price) for i in d.items), 0.0, sum(i.qty for i in d.items), sum(i.empties_back for i in d.items)))
+        for p in s.execute(select(GasPayment).where(GasPayment.wholesaler_id == wholesaler_id)).scalars():
+            events.append((p.paid_at, 1, "paiement", p.note or "", 0.0, _f(p.amount), 0, 0))
+        events.sort(key=lambda e: (e[0], e[1]))
+        out, balance, owed = [], 0.0, 0
+        for when, _o, kind, detail, due, paid, qty, back in events:
+            balance += due - paid
+            owed += qty - back
+            out.append({"date": when, "kind": kind, "detail": detail, "due": due, "paid": paid, "balance": balance, "bottles_owed": owed})
+        return out
+
+
+def cash_in(start: date, end: date) -> float:
+    """Argent encaissé par le gaz sur la période : ventes aux détaillants (comptant) + paiements des grossistes."""
+    a, b = _day_bounds(start)[0], _day_bounds(end)[1]
+    with session_scope() as s:
+        retail = _f(s.execute(select(func.coalesce(func.sum(func.abs(GasMovement.qty) * GasMovement.unit_price), 0))
+                              .where(GasMovement.kind == MOVE_SALE, GasMovement.moved_at >= a, GasMovement.moved_at < b)).scalar())
+        paid = _f(s.execute(select(func.coalesce(func.sum(GasPayment.amount), 0)).where(GasPayment.paid_at >= a, GasPayment.paid_at < b)).scalar())
+        return retail + paid
+
+
+def apply_to_general_figures(fin: dict) -> dict:
+    """Option « Inclure le gaz dans les chiffres généraux » : ajoute le gaz au chiffre d'affaires, au bénéfice brut et aux dettes."""
+    if not (enabled() and include_in_totals()):
+        return fin
+    today = date.today()
+    week, month, year = today - timedelta(days=today.weekday()), today.replace(day=1), today.replace(month=1, day=1)
+    fin = dict(fin)
+    day = figures(today, today)
+    for key, start in (("revenue_week", week), ("revenue_month", month), ("revenue_year", year)):
+        fin[key] = round(fin[key] + cash_in(start, today), 2)
+    cash = cash_in(today, today)
+    for key in ("revenue_today", "cash_revenue_today", "sales_cash_today", "treasury"):
+        fin[key] = round(fin.get(key, 0) + cash, 2)
+    fin["total_sales_today"] = fin.get("total_sales_today", 0) + day["revenue"]
+    if day["profit"] is not None:
+        for key in ("profit_gross_today", "profit_net_today"):
+            fin[key] = round(fin.get(key, 0) + day["profit"], 2)
+    fin["client_debts"] = fin.get("client_debts", 0) + max(0.0, day["debts"])
+    return fin

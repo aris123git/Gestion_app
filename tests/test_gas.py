@@ -110,6 +110,38 @@ class GasTests(unittest.TestCase):
         with self.assertRaises(gs.GasError):
             gs.close_trip(tid)
 
+    def test_pdfs_and_general_figures(self):
+        import tempfile
+        from pathlib import Path
+        from tests.pdf_text import pdf_text
+        from app.printers import gas_docs
+        from app.services.dashboard_service import DashboardService
+        gs = self.gs
+        d = datetime.now().replace(hour=9)
+        tid = gs.start_trip([(self.r6.id, 50)], truck="Cam", driver="Ali", when=d)
+        wid = gs.save_wholesaler("Gros PDF")
+        gs.deliver(wid, [(self.r6.id, 10, None, 8)], d, paid=5000, trip_id=tid)
+        gs.retail_sale(self.r6.id, 5, when=d, trip_id=tid)
+        gs.record_loss(self.r6.id, 1, "bouteille percée", d, trip_id=tid)
+        out = Path(tempfile.mkdtemp())
+        t = pdf_text(gas_docs.build_trip_bandeau(tid, out / "a.pdf"))
+        for part in ("Cam", "Ali", "Gros PDF", "bouteille percée", "SONABHY"):
+            self.assertIn(part, t)
+        self.assertIn("Total du jour", pdf_text(gas_docs.build_day_sheet(d.date(), out / "b.pdf", tid)))
+        self.assertIn("Il manque 2 vides", pdf_text(gas_docs.build_wholesaler_statement(wid, out / "c.pdf")))
+        self.assertIn("bouteille percée", pdf_text(gas_docs.build_losses(d.date(), d.date(), out / "d.pdf")))
+        before = DashboardService.financial_summary()
+        gs.set_enabled(True)
+        try:
+            self.assertEqual(DashboardService.financial_summary()["revenue_today"], before["revenue_today"])   # gaz à part
+            gs.set_include_in_totals(True)
+            after = DashboardService.financial_summary()
+            self.assertAlmostEqual(after["revenue_today"] - before["revenue_today"], gs.cash_in(d.date(), d.date()))
+            self.assertGreater(after["client_debts"], before["client_debts"])
+        finally:
+            gs.set_include_in_totals(False)
+            gs.set_enabled(False)
+
     def test_page_and_nav(self):
         from PySide6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])

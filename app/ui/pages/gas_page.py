@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import tempfile
 from datetime import date, datetime
+from pathlib import Path
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSpinBox, QTabWidget, QVBoxLayout, QWidget,
@@ -342,7 +345,7 @@ class GasPage(QWidget):
         self.total_label = QLabel()
         v.addWidget(self.total_label)
         v.addLayout(self._buttons([("sell", "+ Vente détaillant", self._sell, True), ("entry", "+ Entrée en stock", self._entry, False),
-                                   ("loss", "Déclarer une perte", self._loss, False)]))
+                                   ("loss", "Déclarer une perte", self._loss, False), ("psheet", "Imprimer le cahier", self._print_sheet, False)]))
         self.tabs.addTab(tab, t("Détaillants"))
 
         # Grossistes
@@ -355,7 +358,8 @@ class GasPage(QWidget):
         self.dtable = _table(["Grossiste", "Pleines", "Vides rendues", "Total"])
         v.addWidget(self.dtable, 1)
         v.addLayout(self._buttons([("wnew", "+ Nouveau grossiste", self._wnew, False), ("wedit", "Modifier", self._wedit, False),
-                                   ("deliver", "Livrer", self._deliver, True), ("pay", "Encaisser un paiement", self._pay, False)]))
+                                   ("deliver", "Livrer", self._deliver, True), ("pay", "Encaisser un paiement", self._pay, False),
+                                   ("pstate", "Relevé PDF", self._print_statement, False)]))
         self.tabs.addTab(tab, t("Grossistes"))
 
         # Camion : voyages
@@ -365,8 +369,33 @@ class GasPage(QWidget):
         self.ttable.doubleClicked.connect(lambda *_: self._tdays())
         v.addWidget(self.ttable, 1)
         v.addLayout(self._buttons([("tnew", "+ Nouveau voyage", self._tnew, True), ("tload", "Charger", self._tload, False),
-                                   ("tclose", "Retour du camion (vides)", self._tclose, False), ("tdays", "Étapes par jour", self._tdays, False)]))
+                                   ("tclose", "Retour du camion (vides)", self._tclose, False), ("tdays", "Étapes par jour", self._tdays, False),
+                                   ("tprint", "Imprimer le bandeau", self._print_trip, False)]))
         self.tabs.addTab(tab, t("Camion"))
+
+        # États : chiffres gaz (à part) et pertes
+        tab = QWidget()
+        v = QVBoxLayout(tab)
+        pbar = QHBoxLayout()
+        pbar.addWidget(QLabel(t("Du")))
+        self.f_start = _date_edit()
+        self.f_start.setDate(QDate.currentDate().addDays(-QDate.currentDate().day() + 1))
+        pbar.addWidget(self.f_start)
+        pbar.addWidget(QLabel(t("au")))
+        self.f_end = _date_edit()
+        pbar.addWidget(self.f_end)
+        pbar.addStretch()
+        v.addLayout(pbar)
+        self.figures_label = QLabel()
+        self.figures_label.setTextFormat(Qt.TextFormat.RichText)
+        v.addWidget(self.figures_label)
+        v.addWidget(QLabel(t("Pertes de la période")))
+        self.losstable = _table(["Date", "Produit", "Bouteilles", "Motif"])
+        v.addWidget(self.losstable, 1)
+        v.addLayout(self._buttons([("ploss", "Imprimer les pertes", self._print_losses, False)]))
+        self.f_start.dateChanged.connect(self._refresh_states)
+        self.f_end.dateChanged.connect(self._refresh_states)
+        self.tabs.addTab(tab, t("États"))
 
         # Produits & prix
         tab = QWidget()
@@ -478,6 +507,58 @@ class GasPage(QWidget):
         if row:
             self._run(LineDialog(self, row), "Produit gaz")
 
+    def _open(self, path) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _tmp(self, name: str) -> Path:
+        return Path(tempfile.gettempdir()) / name
+
+    def _print_sheet(self):
+        from app.printers import gas_docs
+
+        self._open(gas_docs.build_day_sheet(self._day(), self._tmp("gaz_cahier.pdf"), self._trip()))
+
+    def _print_statement(self):
+        from app.printers import gas_docs
+
+        wid = self._selected(self.wtable)
+        if wid is None:
+            info(self, t("Choisissez un grossiste."))
+        else:
+            self._open(gas_docs.build_wholesaler_statement(wid, self._tmp(f"gaz_releve_{wid}.pdf")))
+
+    def _print_trip(self):
+        from app.printers import gas_docs
+
+        tid = self._selected(self.ttable)
+        if tid is None:
+            info(self, t("Choisissez un voyage."))
+        else:
+            self._open(gas_docs.build_trip_bandeau(tid, self._tmp(f"gaz_voyage_{tid}.pdf")))
+
+    def _print_losses(self):
+        from app.printers import gas_docs
+
+        self._open(gas_docs.build_losses(*self._period(), self._tmp("gaz_pertes.pdf")))
+
+    def _period(self):
+        a, b = self.f_start.date(), self.f_end.date()
+        return date(a.year(), a.month(), a.day()), date(b.year(), b.month(), b.day())
+
+    def _refresh_states(self, *_a) -> None:
+        start, end = self._period()
+        f = gs.figures(start, end)
+        profit = t("bénéfice non calculé (renseignez les prix d'achat)") if f["profit"] is None else f"{_money(f['profit'])} F"
+        inc = t("inclus dans les chiffres généraux") if gs.include_in_totals() else t("à part des chiffres généraux")
+        self.figures_label.setText(
+            f"<b>{t('Chiffre d affaires gaz')} :</b> {_money(f['revenue'])} F &nbsp; <b>{t('Encaissé')} :</b> {_money(f['cash'])} F &nbsp; "
+            f"<b>{t('Dettes des grossistes')} :</b> {_money(f['debts'])} F &nbsp; <b>{t('Bénéfice')} :</b> {profit}<br><i>({inc})</i>")
+        rows = gs.losses(start, end)
+        self.losstable.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            for j, val in enumerate([f"{r['date']:%d/%m/%Y}", r["line"], r["qty"], r["reason"]]):
+                self.losstable.setItem(i, j, _cell(val, right=j == 2))
+
     def _lstd(self):
         n = gs.create_standard_lines()
         info(self, t("{n} produit(s) créé(s). Renseignez les prix.").format(n=n) if n else t("Les produits standard existent déjà."))
@@ -530,6 +611,7 @@ class GasPage(QWidget):
             for j, val in enumerate([tr.number, tr.truck, tr.driver, f"{tr.started_at:%d/%m/%Y}", t("En cours") if tr.status == "en_cours" else t("Terminé"),
                                      tr.loaded, tr.remaining]):
                 self.ttable.setItem(i, j, _cell(val, right=j >= 5, data=tr.id if j == 0 else None))
+        self._refresh_states()
         ls = gs.list_lines(False)
         self.ltable.setRowCount(len(ls))
         for i, ln in enumerate(ls):
