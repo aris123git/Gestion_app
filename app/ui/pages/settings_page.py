@@ -242,7 +242,7 @@ class SettingsPage(QWidget):
             from app.services import gas_service as _gs
 
             form.addRow(QLabel(f"<b>{t('Gaz')}</b>"))
-            self._gas_cb = QCheckBox(t("Contrôle gaz (menu « Gaz » : détaillants, grossistes, camion — comptabilité à part)"))
+            self._gas_cb = QCheckBox(t("Contrôle gaz : menu Gaz avec détaillants, grossistes et camion, comptabilité à part"))
             self._gas_cb.setChecked(_gs.enabled())
             form.addRow("", self._gas_cb)
             self._gas_inc_cb = QCheckBox(t("Inclure le gaz dans le chiffre d'affaires, les bénéfices et les dettes générales"))

@@ -32,10 +32,10 @@ def build_trip_bandeau(trip_id: int, path: str | Path) -> Path:
                     f"Chauffeur : {escape(trip.driver or '—')} · Chargé à : {escape(trip.source)} · Départ : {trip.started_at:%d/%m/%Y}"
                     + (f" · Retour : {trip.ended_at:%d/%m/%Y}" if trip.ended_at else " · en cours"), base, h1)
     story.append(Paragraph("Bilan du camion", h2))
-    rows = [["Produit", "Chargé", "Détaillants", "Grossistes", "Pertes", "Restant"]]
+    rows = [["Produit", "Chargé", "Détaillants", "Grossistes", "Pertes", "Restant", "Reporté"]]
     for r in gs.trip_summary(trip_id):
-        rows.append([r["name"], r["loaded"], r["sold"], r["delivered"], r["lost"], r["remaining"] if not r["transferred"] else f"{r['remaining']} (reste → dépôt: {r['transferred']})"])
-    story.append(_grid(rows, [60 * mm, 20 * mm, 24 * mm, 24 * mm, 18 * mm, W - 146 * mm]))
+        rows.append([r["name"], r["loaded"], r["sold"], r["delivered"], r["lost"], r["remaining"], r["transferred"] or ""])
+    story.append(_grid(rows, [50 * mm, 20 * mm, 24 * mm, 24 * mm, 18 * mm, 20 * mm, W - 156 * mm]))
     story.append(Paragraph("Étapes jour par jour", h2))
     rows = [["Jour", "Étape", "Détail", "Montant"]]
     for d in gs.trip_days(trip_id):
@@ -59,24 +59,20 @@ def build_day_sheet(day: date, path: str | Path, trip_id: int | None = None, par
     from datetime import datetime, timedelta
 
     base, h1, h2 = _styles()
-    sub = f"{day:%d/%m/%Y}" + (f" — camion {gs.get_trip(trip_id).label}" if trip_id else " — dépôt")
+    sub = f"{day:%d/%m/%Y}" + (f" — camion {gs.get_trip(trip_id).label}" if trip_id else "")
     story = []
-    sheet = gs.day_sheet(day, trip_id)
+    sheet = gs.day_sheet(day, trip_id, all_sources=trip_id is None)
     if part in ("both", "detaillants"):
         story += _header(_shop(), "Cahier du jour — Détaillants", escape(sub), base, h1)
         rows = [["Produit", "S.I", "Entrée", "S.T", "Vente", "P.U", "Montant", "S.F"]]
         for r in sheet:
             rows.append([r["name"], r["si"], r["entry"], r["st"], r["sold"], _m(r["unit_price"]), _m(r["amount"]), r["sf"]])
-        rows.append(["TOTAL", "", "", "", sum(r["sold"] for r in sheet), "", _m(gs.day_total(day, trip_id)), ""])
+        rows.append(["TOTAL", "", "", "", sum(r["sold"] for r in sheet), "", _m(gs.day_total(day, trip_id, all_sources=trip_id is None)), ""])
         story.append(_grid(rows, [48 * mm, 16 * mm, 18 * mm, 16 * mm, 18 * mm, 22 * mm, 28 * mm, W - 166 * mm]))
-        extra = [(r["name"], r["delivered"], r["lost"]) for r in sheet if r["delivered"] or r["lost"]]
-        if extra:
-            story.append(Paragraph("Sorties du jour qui ne sont pas des ventes aux détaillants (déjà déduites du S.F)", h2))
-            story.append(_grid([["Produit", "Livré aux grossistes", "Pertes"]] + [list(e) for e in extra], [60 * mm, 40 * mm, 30 * mm]))
     if part == "both":
         story.append(PageBreak())
     if part in ("both", "grossistes"):
-        story += _header(_shop(), "Cahier du jour — Grossistes (feuille « Entrée »)", escape(sub), base, h1)
+        story += _header(_shop(), "Cahier du jour — Grossistes", escape(sub), base, h1)
         lines = [r for r in sheet]
         names = [r["name"] for r in lines]
         ids = [r["line_id"] for r in lines]

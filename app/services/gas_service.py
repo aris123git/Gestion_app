@@ -375,20 +375,26 @@ def deliveries_of_day(day: date, wholesaler_id: Optional[int] = None, trip_id: O
 
 
 # ---------------------------------------------------------------- cahier du jour
-def day_sheet(day: date, trip_id: Optional[int] = None) -> List[dict]:
+def _stock_all(session, line_id: int, before: datetime) -> int:
+    """Stock total d'un produit (dépôt + camions) avant une date."""
+    return int(session.execute(select(func.coalesce(func.sum(GasMovement.qty), 0))
+                               .where(GasMovement.line_id == line_id, GasMovement.moved_at < before)).scalar() or 0)
+
+
+def day_sheet(day: date, trip_id: Optional[int] = None, all_sources: bool = False) -> List[dict]:
     """Une ligne par produit, comme le cahier : S.I (stock initial), Entrée, S.T, Vente, P.U moyen, Montant,
     Livré grossistes, Pertes, S.F (stock final). Les ventes et livraisons sont comptées séparément."""
     a, b = _day_bounds(day)
     with session_scope() as s:
         rows = []
         for ln in s.execute(select(GasLine).where(GasLine.active.is_(True)).order_by(GasLine.size_kg, GasLine.id)).scalars():
-            si = stock_of(s, ln.id, before=a, trip_id=trip_id)
+            si = _stock_all(s, ln.id, a) if all_sources else stock_of(s, ln.id, before=a, trip_id=trip_id)
             sums: Dict[str, Tuple[int, float]] = {}
             for kind, qty, amount in s.execute(
                     select(GasMovement.kind, func.coalesce(func.sum(GasMovement.qty), 0),
                            func.coalesce(func.sum(func.abs(GasMovement.qty) * GasMovement.unit_price), 0))
                     .where(GasMovement.line_id == ln.id, GasMovement.moved_at >= a, GasMovement.moved_at < b,
-                           GasMovement.trip_id.is_(None) if trip_id is None else GasMovement.trip_id == trip_id)
+                           True if all_sources else (GasMovement.trip_id.is_(None) if trip_id is None else GasMovement.trip_id == trip_id))
                     .group_by(GasMovement.kind)):
                 sums[kind] = (int(qty), _f(amount))
             entry = sum(sums.get(k, (0, 0))[0] for k in (MOVE_ENTRY, MOVE_ADJUST, MOVE_TRANSFER))
@@ -401,8 +407,8 @@ def day_sheet(day: date, trip_id: Optional[int] = None) -> List[dict]:
         return rows
 
 
-def day_total(day: date, trip_id: Optional[int] = None) -> float:
-    return sum(r["amount"] for r in day_sheet(day, trip_id))
+def day_total(day: date, trip_id: Optional[int] = None, all_sources: bool = False) -> float:
+    return sum(r["amount"] for r in day_sheet(day, trip_id, all_sources))
 
 
 def losses(start: Optional[date] = None, end: Optional[date] = None) -> List[dict]:
@@ -456,7 +462,7 @@ class TripRow:
 
     @property
     def label(self) -> str:
-        return f"{self.number} — {self.truck or 'camion'}" + (f" ({self.driver})" if self.driver else "")
+        return f"{self.number} — {self.truck or 'camion'}" + (f" — {self.driver}" if self.driver else "")
 
 
 def _next_trip_number(s) -> str:
@@ -466,11 +472,22 @@ def _next_trip_number(s) -> str:
     return f"V{n:03d}"
 
 
+def current_trip_id() -> Optional[int]:
+    """Le voyage en cours (tout le stock gaz se trouve dans le camion)."""
+    with session_scope() as s:
+        return s.execute(select(GasTrip.id).where(GasTrip.status == TRIP_OPEN).order_by(GasTrip.started_at.desc(), GasTrip.id.desc())).scalar()
+
+
 def start_trip(loads: Sequence[Tuple[int, int]], truck: str = "", driver: str = "", source: str = "SONABHY",
-               when: Optional[datetime] = None, note: str = "") -> int:
-    """Nouveau voyage : le chargement (pleines par produit) va dans le stock du camion, pas dans celui du dépôt."""
+               when: Optional[datetime] = None, note: str = "", handed: Optional[Dict[float, int]] = None) -> int:
+    """Nouveau voyage = retour du camion à la source puis nouveau chargement.
+
+    Le voyage en cours est terminé : les vides remises (``handed``, sinon celles proposées d'après les livraisons) sont
+    enregistrées en échange et les pleines restantes passent dans le nouveau voyage, avec le nouveau chargement."""
     loads = [(lid, int(q)) for lid, q in loads if q and q > 0]
-    if not loads:
+    previous = [t.id for t in list_trips(open_only=True)]
+    leftover = sum(max(0, r["remaining"]) for pid in previous for r in trip_summary(pid))
+    if not loads and not leftover:
         raise GasError("Indiquez ce qui est chargé dans le camion.")
     when = when or datetime.now()
     with session_scope() as s:
@@ -482,7 +499,10 @@ def start_trip(loads: Sequence[Tuple[int, int]], truck: str = "", driver: str = 
             if s.get(GasLine, lid) is None:
                 raise GasError("Produit gaz introuvable.")
             _move(s, lid, MOVE_ENTRY, qty, when, reason=f"Chargement {trip.source}", trip_id=trip.id)
-        return trip.id
+        new_id = trip.id
+    for i, pid in enumerate(previous):
+        close_trip(pid, handed if i == 0 else None, when, carry_to=new_id)
+    return new_id
 
 
 def _trip_row(s, t: GasTrip) -> TripRow:
@@ -545,7 +565,8 @@ def empties_proposed(trip_id: int) -> Dict[float, int]:
     return {k: v for k, v in sorted(out.items()) if v}
 
 
-def close_trip(trip_id: int, handed: Optional[Dict[float, int]] = None, when: Optional[datetime] = None, note: str = "") -> None:
+def close_trip(trip_id: int, handed: Optional[Dict[float, int]] = None, when: Optional[datetime] = None, note: str = "",
+               carry_to: Optional[int] = None) -> None:
     """Retour du camion à la source : remise des vides (proposées d'après les livraisons, modifiables) en échange, sans argent.
     Les pleines restantes retournent au stock du dépôt."""
     when = when or datetime.now()
@@ -565,7 +586,7 @@ def close_trip(trip_id: int, handed: Optional[Dict[float, int]] = None, when: Op
             left = stock_of(s, ln.id, trip_id=trip_id)
             if left > 0:
                 _move(s, ln.id, MOVE_TRANSFER, -left, when, reason=f"Reste du voyage {t.number}", trip_id=trip_id)
-                _move(s, ln.id, MOVE_TRANSFER, left, when, reason=f"Reste du voyage {t.number}")
+                _move(s, ln.id, MOVE_TRANSFER, left, when, reason=f"Reste du voyage {t.number}", trip_id=carry_to)
         t.status, t.ended_at = TRIP_CLOSED, when
         if note.strip():
             t.note = (t.note + "\n" + note.strip()).strip()

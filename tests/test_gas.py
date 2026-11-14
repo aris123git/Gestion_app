@@ -23,6 +23,8 @@ class GasTests(unittest.TestCase):
     def setUp(self):
         from app.services import gas_service as gs
         gs.create_standard_lines()
+        for tr in gs.list_trips(open_only=True):               # chaque test part sans voyage en cours
+            gs.close_trip(tr.id)
         self.gs = gs
         lines = {l.name: l for l in gs.list_lines()}
         self.r6, self.r12 = lines["6 kg Recharge"], lines["12,5 kg Recharge"]
@@ -148,6 +150,27 @@ class GasTests(unittest.TestCase):
             gs.set_include_in_totals(False)
             gs.set_enabled(False)
 
+    def test_new_trip_closes_previous_and_carries_stock(self):
+        gs = self.gs
+        a = gs.start_trip([(self.r6.id, 100)], truck="A", when=datetime(2026, 6, 1, 8))
+        gs.retail_sale(self.r6.id, 30, when=datetime(2026, 6, 1, 9), trip_id=a)
+        b = gs.start_trip([(self.r12.id, 20)], truck="B", when=datetime(2026, 6, 5, 8), handed={6.0: 28})
+        self.assertEqual(gs.get_trip(a).status, "termine")
+        self.assertEqual(gs.current_trip_id(), b)
+        self.assertEqual(gs.empties_returned(a), [{"size_kg": 6.0, "proposed": 30, "handed": 28}])
+        stock = {l.id: l.stock for l in gs.list_lines(trip_id=b)}
+        self.assertEqual(stock[self.r6.id], 70)               # le reste du camion est reporté
+        self.assertEqual(stock[self.r12.id], 20)
+        sheet = {r["name"]: r for r in gs.day_sheet(date(2026, 6, 5), all_sources=True)}
+        self.assertEqual(sheet["6 kg Recharge"]["si"], 70)
+        self.assertEqual(sheet["6 kg Recharge"]["entry"], 0)  # le report n'est pas une entrée
+        self.assertEqual(sheet["12,5 kg Recharge"]["entry"], 20)
+        c = gs.start_trip([], when=datetime(2026, 6, 9))       # sans nouveau chargement : le reste du camion continue
+        self.assertEqual(next(l.stock for l in gs.list_lines(trip_id=c) if l.id == self.r6.id), 70)
+        gs.close_trip(c)
+        with self.assertRaises(gs.GasError):
+            gs.start_trip([])                                  # plus rien dans le camion et rien chargé
+
     def test_page_and_nav(self):
         from PySide6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
@@ -165,14 +188,17 @@ class GasTests(unittest.TestCase):
             from datetime import datetime as _dt
             tid = gs.start_trip([(page_line.id, 5) for page_line in gs.list_lines()[:1]], truck="Cam", when=_dt(2026, 5, 1, 8))
             page.refresh()
-            self.assertEqual(page.source.count(), 2)          # Dépôt + voyage en cours
-            page.source.setCurrentIndex(1)
-            self.assertEqual(page._trip(), tid)
+            self.assertEqual(page._trip(), tid)               # tout le stock est dans le camion en cours
             page.ttable.selectRow(0)
-            from app.ui.pages.gas_page import TripDaysDialog, CloseTripDialog
-            TripDaysDialog(page, tid); CloseTripDialog(page, tid).apply(); self.assertEqual(gs.get_trip(tid).status, "termine")
-            page.refresh()
-            self.assertEqual(page.source.count(), 1)
+            from app.ui.pages.gas_page import TripDaysDialog, TripDialog
+            TripDaysDialog(page, tid)
+            dlg = TripDialog(page, _dt(2026, 5, 3).date())    # nouveau voyage = retour du camion précédent
+            self.assertTrue(dlg.return_rows or dlg.previous)
+            dlg.truck.setText("Cam 2")
+            dlg.rows[0][1].setValue(3)
+            dlg._ok()
+            self.assertEqual(gs.get_trip(tid).status, "termine")
+            self.assertNotEqual(gs.current_trip_id(), tid)
             from app.ui.main_window import build_nav_items
             self.assertTrue(any(i[0] == "Gaz" for i in build_nav_items()))
         finally:
