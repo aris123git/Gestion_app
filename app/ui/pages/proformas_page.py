@@ -132,17 +132,22 @@ class ProformaDialog(QDialog):
             label.setCompleter(comp)
             label.setPlaceholderText(t("Produit (tapez pour chercher) ou ligne libre"))
 
-            def _filled(*_a, label=label, unit=unit, price=price, qty=qty) -> None:
+            applied = {"name": (line or {}).get("label", "").strip().lower()}   # produit dont le prix a déjà été proposé sur cette ligne
+
+            def _filled(*_a, label=label, unit=unit, price=price, qty=qty, from_completer=False) -> None:
                 prod = self._catalog.get(label.text().strip().lower())
-                if prod:                       # produit reconnu : prix de vente par défaut (modifiable), unité si vide
-                    label.setText(prod["name"])
-                    price.setValue(prod["price"])
-                    if not unit.text().strip():
-                        unit.setText(prod["unit"])
+                if not prod or applied["name"] == prod["name"].lower():
+                    return                      # ligne libre, ou prix déjà proposé : on ne touche pas à ce que la personne a saisi
+                applied["name"] = prod["name"].lower()
+                label.setText(prod["name"])
+                price.setValue(prod["price"])   # prix de vente par défaut, modifiable
+                if not unit.text().strip():
+                    unit.setText(prod["unit"])
+                if from_completer:              # le curseur passe à la quantité seulement après un choix dans la liste
                     qty.setFocus()
                     qty.selectAll()
 
-            comp.activated.connect(_filled)
+            comp.activated.connect(lambda *_a, f=_filled: f(from_completer=True))
             label.editingFinished.connect(_filled)
         self._rows.append((label, cdt, qty, unit, price, total))
         self._totals()

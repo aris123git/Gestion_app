@@ -199,6 +199,15 @@ class ProformaTests(unittest.TestCase):
         self.assertEqual(total.text().replace(" ", ""), "30000")
         price.setValue(7000)                      # prix modifiable
         self.assertEqual(dlg.values()[0][0].unit_price, 7000)
+        label.editingFinished.emit()              # quitter la désignation ne doit ni écraser le prix saisi ni voler le curseur
+        self.assertEqual(price.value(), 7000)
+        dlg.show()
+        price.setFocus()
+        label.editingFinished.emit()
+        self.assertTrue(price.hasFocus() or price.lineEdit().hasFocus() or dlg.focusWidget() is price)
+        label.setText("Autre produit libre")
+        label.editingFinished.emit()
+        self.assertEqual(price.value(), 7000)
         dlg._add_row()
         free = dlg._rows[1]
         free[0].setText("Ligne libre")
