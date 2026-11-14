@@ -67,32 +67,31 @@ class _Form(QDialog):
 
 
 class SaleDialog(_Form):
-    """Vente anonyme à un détaillant : produit, quantité, prix modifiable."""
+    """Vente anonyme à un détaillant : plusieurs produits d'un coup, prix modifiable (par défaut le prix détaillant)."""
 
     def __init__(self, parent, day: date, trip_id: int | None = None):
         super().__init__(parent, "Vente détaillant")
         self.day, self.trip_id = day, trip_id
-        self.line = _line_combo(trip_id)
-        self.qty = QSpinBox()
-        self.qty.setRange(1, 100000)
-        self.price = _amount_spin()
-        self.line.currentIndexChanged.connect(self._price)
-        self._price()
-        self.form.addRow(t("Produit"), self.line)
-        self.form.addRow(t("Quantité"), self.qty)
-        self.form.addRow(t("Prix unitaire"), self.price)
+        fit_dialog_to_screen(self, min_width=520, min_height=360, preferred_width=640, preferred_height=520)
+        self.rows = []
+        for ln in gs.list_lines(trip_id=trip_id):
+            qty = QSpinBox()
+            qty.setRange(0, 100000)
+            price = _amount_spin()
+            price.setValue(ln.retail_price)
+            h = QHBoxLayout()
+            for lab, w in (("quantité", qty), ("P.U", price)):
+                h.addWidget(QLabel(t(lab)))
+                h.addWidget(w)
+            self.form.addRow(f"{ln.name} — stock {ln.stock}", h)
+            self.rows.append((ln.id, qty, price))
         self.finish()
 
-    def _price(self) -> None:
-        lid = self.line.currentData()
-        for ln in gs.list_lines():
-            if ln.id == lid:
-                self.price.setValue(ln.retail_price)
-
     def apply(self) -> None:
-        if self.line.currentData() is None:
+        items = [(lid, q.value(), p.value()) for lid, q, p in self.rows if q.value() > 0]
+        if not self.rows:
             raise gs.GasError("Créez d'abord les produits gaz.")
-        gs.retail_sale(self.line.currentData(), self.qty.value(), self.price.value(), _at(self.day), self.trip_id)
+        gs.retail_sales(items, _at(self.day), self.trip_id)
 
 
 def _at(day: date) -> datetime:
@@ -148,12 +147,16 @@ class WholesalerDialog(_Form):
         self.phone = QLineEdit(row.phone if row else "")
         self.address = QLineEdit(row.address if row else "")
         self.notes = QLineEdit(row.notes if row else "")
+        self.active = QCheckBox(t("Actif"))
+        self.active.setChecked(row.active if row else True)
         for label, w in (("Nom", self.name), ("Téléphone", self.phone), ("Adresse", self.address), ("Notes", self.notes)):
             self.form.addRow(t(label), w)
+        self.form.addRow("", self.active)
         self.finish()
 
     def apply(self) -> None:
-        gs.save_wholesaler(self.name.text(), self.phone.text(), self.address.text(), self.notes.text(), self.row.id if self.row else None)
+        gs.save_wholesaler(self.name.text(), self.phone.text(), self.address.text(), self.notes.text(), self.row.id if self.row else None,
+                           self.active.isChecked())
 
 
 class DeliveryDialog(_Form):
@@ -214,19 +217,27 @@ class TripDialog(_Form):
         self.day = day
         self.previous = gs.current_trip_id()
         fit_dialog_to_screen(self, min_width=480, min_height=380, preferred_width=580, preferred_height=620)
-        self.return_rows = []
+        self.return_rows, self.count_rows = [], []
+        self.reason = QLineEdit()
         if self.previous:
             prev = gs.get_trip(self.previous)
             self.form.addRow(QLabel(f"<b>{t('Retour du camion')} — {prev.label}</b>"))
-            proposed = gs.empties_proposed(self.previous)
-            for size, qty in proposed.items():
+            self.form.addRow(QLabel(t("Le papier doit correspondre au camion. Comptez ce qui est dans le camion et les vides remises : tout écart doit être justifié.")))
+            names = {ln.id: ln.name for ln in gs.list_lines(False)}
+            for lid, expected in gs.trip_expected(self.previous).items():
+                sp = QSpinBox()
+                sp.setRange(0, 1_000_000)
+                sp.setValue(expected)
+                self.form.addRow(f"{names.get(lid, '?')} — {t('pleines comptées, attendues')} {expected}", sp)
+                self.count_rows.append((lid, expected, sp))
+            for size, qty in gs.empties_on_hand().items():
                 sp = QSpinBox()
                 sp.setRange(0, 1_000_000)
                 sp.setValue(qty)
-                self.form.addRow(f"{size:g} kg".replace(".", ",") + " — " + t("vides remises"), sp)
+                self.form.addRow(f"{size:g} kg".replace(".", ",") + f" — {t('vides remises, attendues')} {qty}", sp)
                 self.return_rows.append((size, sp))
-            left = sum(max(0, r["remaining"]) for r in gs.trip_summary(self.previous))
-            self.form.addRow(QLabel(t("Pleines restant dans le camion, reportées dans le nouveau voyage : {n}").format(n=left)))
+            self.reason.setPlaceholderText(t("Justification en cas d'écart"))
+            self.form.addRow(t("Justification"), self.reason)
             self.form.addRow(QLabel(f"<b>{t('Nouveau chargement')}</b>"))
         self.truck, self.driver, self.source = QLineEdit(), QLineEdit(), QLineEdit("SONABHY")
         self.form.addRow(t("Camion"), self.truck)
@@ -242,8 +253,52 @@ class TripDialog(_Form):
 
     def apply(self) -> None:
         handed = {size: sp.value() for size, sp in self.return_rows} if self.previous else None
+        counted = {lid: sp.value() for lid, _e, sp in self.count_rows} if self.previous else None
         self.trip_id = gs.start_trip([(lid, q.value()) for lid, q in self.rows], self.truck.text(), self.driver.text(), self.source.text(),
-                                     _at(self.day), handed=handed)
+                                     _at(self.day), handed=handed, counted=counted, reason=self.reason.text())
+
+
+class AdjustDialog(_Form):
+    """Ajuster le stock du camion d'après un comptage : la quantité comptée remplace celle du logiciel, avec un motif obligatoire."""
+
+    def __init__(self, parent, day: date, trip_id: int):
+        super().__init__(parent, "Ajuster le stock")
+        self.day, self.trip_id = day, trip_id
+        self.stock = {ln.id: ln.stock for ln in gs.list_lines(trip_id=trip_id)}
+        self.line = _line_combo(trip_id)
+        self.counted = QSpinBox()
+        self.counted.setRange(0, 1_000_000)
+        self.reason = QLineEdit()
+        self.reason.setPlaceholderText(t("Motif obligatoire"))
+        self.line.currentIndexChanged.connect(self._sync)
+        self._sync()
+        self.form.addRow(t("Produit"), self.line)
+        self.form.addRow(t("Quantité comptée dans le camion"), self.counted)
+        self.form.addRow(t("Motif"), self.reason)
+        self.finish()
+
+    def _sync(self) -> None:
+        self.counted.setValue(self.stock.get(self.line.currentData(), 0))
+
+    def apply(self) -> None:
+        lid = self.line.currentData()
+        if lid is None:
+            raise gs.GasError("Créez d'abord les produits gaz.")
+        gs.adjust_stock(lid, self.counted.value() - self.stock.get(lid, 0), self.reason.text(), _at(self.day), self.trip_id)
+
+
+class TripEditDialog(_Form):
+    def __init__(self, parent, trip_id: int):
+        super().__init__(parent, "Modifier le voyage")
+        self.trip_id = trip_id
+        tr = gs.get_trip(trip_id)
+        self.truck, self.driver, self.source, self.note = QLineEdit(tr.truck), QLineEdit(tr.driver), QLineEdit(tr.source), QLineEdit(tr.note)
+        for label, w in (("Camion", self.truck), ("Chauffeur", self.driver), ("Chargé à", self.source), ("Notes", self.note)):
+            self.form.addRow(t(label), w)
+        self.finish()
+
+    def apply(self) -> None:
+        gs.update_trip(self.trip_id, self.truck.text(), self.driver.text(), self.source.text(), self.note.text())
 
 
 class TripDaysDialog(QDialog):
@@ -357,13 +412,24 @@ class GasPage(QWidget):
         # Camion : voyages
         tab = QWidget()
         v = QVBoxLayout(tab)
+        self.empties_label = QLabel()
+        v.addWidget(self.empties_label)
         self.ttable = _table(["N°", "Camion", "Chauffeur", "Départ", "Statut", "Chargé", "Restant"])
         self.ttable.doubleClicked.connect(lambda *_: self._tdays())
         v.addWidget(self.ttable, 1)
         v.addLayout(self._buttons([("tnew", "+ Nouveau voyage", self._tnew, True), ("tload", "Charger", self._tload, False),
                                    ("tdays", "Étapes par jour", self._tdays, False),
-                                   ("tprint", "Imprimer le bandeau", self._print_trip, False)]))
+                                   ("tprint", "Imprimer le bandeau", self._print_trip, False), ("tadj", "Ajuster le stock", self._tadjust, False),
+                                   ("tedit", "Modifier le voyage", self._tedit, False)]))
         self.tabs.addTab(tab, t("Camion"))
+
+        # Journal du jour : annuler une opération saisie par erreur
+        tab = QWidget()
+        v = QVBoxLayout(tab)
+        self.jtable = _table(["Heure", "Opération", "Détail", "Montant", "Voyage"])
+        v.addWidget(self.jtable, 1)
+        v.addLayout(self._buttons([("jcancel", "Annuler l'opération", self._cancel_op, False)]))
+        self.tabs.addTab(tab, t("Journal"))
 
         # États : chiffres gaz (à part) et pertes
         tab = QWidget()
@@ -461,6 +527,38 @@ class GasPage(QWidget):
             info(self, t("Ce voyage est terminé."))
         else:
             self._run(EntryDialog(self, self._day(), tid), "Chargement camion gaz")
+
+    def _tadjust(self):
+        tid = self._need_trip()
+        if tid:
+            self._run(AdjustDialog(self, self._day(), tid), "Ajustement stock gaz")
+
+    def _tedit(self):
+        tid = self._selected(self.ttable) or self._trip()
+        if tid is None:
+            info(self, t("Choisissez un voyage."))
+        else:
+            self._run(TripEditDialog(self, tid), "Voyage gaz modifié")
+
+    def _cancel_op(self):
+        from PySide6.QtWidgets import QInputDialog
+
+        r = self.jtable.currentRow()
+        it = self.jtable.item(r, 0) if r >= 0 else None
+        if it is None:
+            info(self, t("Choisissez une opération."))
+            return
+        kind, ref = it.data(Qt.ItemDataRole.UserRole)
+        reason, ok = QInputDialog.getText(self, t("Annuler l'opération"), t("Motif de l'annulation :"))
+        if not ok:
+            return
+        try:
+            gs.cancel_operation(kind, ref, reason)
+        except gs.GasError as exc:
+            warn(self, str(exc))
+            return
+        self._log("Annulation gaz", f"{kind} {ref} : {reason.strip()}")
+        self.refresh()
 
     def _tdays(self):
         tid = self._selected(self.ttable)
@@ -583,11 +681,14 @@ class GasPage(QWidget):
             for j, val in enumerate(vals):
                 self.sheet.setItem(i, j, _cell(val, right=j > 0))
         self.total_label.setText(f"<b>{t('Total du jour, détaillants')} : {_money(gs.day_total(day, all_sources=True))} F</b>")
-        ws = gs.list_wholesalers(False)
-        self.wtable.setRowCount(len(ws))
-        for i, w in enumerate(ws):
+        shown = []
+        for w in gs.list_wholesalers(False):
             a = gs.wholesaler_account(w.id)
-            vals = [w.name, a.delivered, a.empties_back, _money(a.amount_due), _money(a.paid), _money(a.balance), a.statement]
+            if w.active or abs(a.balance) > 0.5 or a.bottles_owed:      # un grossiste inactif reste visible tant qu'il y a un solde
+                shown.append((w, a))
+        self.wtable.setRowCount(len(shown))
+        for i, (w, a) in enumerate(shown):
+            vals = [w.name + ("" if w.active else " — inactif"), a.delivered, a.empties_back, _money(a.amount_due), _money(a.paid), _money(a.balance), a.statement]
             for j, val in enumerate(vals):
                 self.wtable.setItem(i, j, _cell(val, right=0 < j < 6, data=w.id if j == 0 else None))
         ds = gs.deliveries_of_day(day)
@@ -595,6 +696,14 @@ class GasPage(QWidget):
         for i, d in enumerate(ds):
             for j, val in enumerate([d["wholesaler"], sum(d["lines"].values()), d["empties_back"], _money(d["total"])]):
                 self.dtable.setItem(i, j, _cell(val, right=j > 0))
+        ops = gs.day_operations(day)
+        self.jtable.setRowCount(len(ops))
+        for i, o in enumerate(ops):
+            for j, val in enumerate([f"{o['when']:%H:%M}", o["label"], o["detail"], _money(o["amount"]) if o["amount"] else "", o["trip"]]):
+                self.jtable.setItem(i, j, _cell(val, right=j == 3, data=(o["kind"], o["id"]) if j == 0 else None))
+        hand = gs.empties_on_hand()
+        parts = [f"{format(k, 'g').replace('.', ',')} kg : {v}" for k, v in hand.items()]
+        self.empties_label.setText(f"<b>{t('Vides en possession')} :</b> " + (", ".join(parts) or t("aucune")))
         ts = gs.list_trips()
         self.ttable.setRowCount(len(ts))
         for i, tr in enumerate(ts):

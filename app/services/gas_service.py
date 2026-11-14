@@ -169,8 +169,11 @@ def add_entry(line_id: int, qty: int, when: Optional[datetime] = None, reason: s
 
 
 def adjust_stock(line_id: int, delta: int, reason: str = "", when: Optional[datetime] = None, trip_id: Optional[int] = None) -> None:
+    """Correction de stock (comptage) : le motif est obligatoire."""
     if delta == 0:
         return
+    if not reason.strip():
+        raise GasError("Indiquez le motif de l'ajustement.")
     with session_scope() as s:
         _open_trip(s, trip_id)
         if delta < 0:
@@ -194,6 +197,29 @@ def retail_sale(line_id: int, qty: int, unit_price: Optional[float] = None, when
             raise GasError("Prix invalide.")
         _move(s, line_id, MOVE_SALE, -qty, when, unit_price=price, trip_id=trip_id)
         return qty * price
+
+
+def retail_sales(items: Sequence[Tuple[int, int, Optional[float]]], when: Optional[datetime] = None, trip_id: Optional[int] = None) -> float:
+    """Plusieurs produits vendus d'un coup à un détaillant (tout ou rien). items = (produit, quantité, prix ou None)."""
+    items = [i for i in items if i[1] and i[1] > 0]
+    if not items:
+        raise GasError("Aucune bouteille à vendre.")
+    total = 0.0
+    with session_scope() as s:
+        _open_trip(s, trip_id)
+        need: Dict[int, int] = {}
+        for lid, qty, _p in items:
+            need[lid] = need.get(lid, 0) + int(qty)
+        for lid, qty in need.items():
+            _need_stock(s, lid, qty, trip_id)
+        for lid, qty, price in items:
+            ln = s.get(GasLine, lid)
+            unit = _f(ln.retail_price) if price is None else float(price)
+            if unit < 0:
+                raise GasError("Prix invalide.")
+            _move(s, lid, MOVE_SALE, -int(qty), when, unit_price=unit, trip_id=trip_id)
+            total += int(qty) * unit
+    return total
 
 
 def record_loss(line_id: int, qty: int, reason: str, when: Optional[datetime] = None, trip_id: Optional[int] = None) -> None:
@@ -479,7 +505,8 @@ def current_trip_id() -> Optional[int]:
 
 
 def start_trip(loads: Sequence[Tuple[int, int]], truck: str = "", driver: str = "", source: str = "SONABHY",
-               when: Optional[datetime] = None, note: str = "", handed: Optional[Dict[float, int]] = None) -> int:
+               when: Optional[datetime] = None, note: str = "", handed: Optional[Dict[float, int]] = None,
+               counted: Optional[Dict[int, int]] = None, reason: str = "") -> int:
     """Nouveau voyage = retour du camion à la source puis nouveau chargement.
 
     Le voyage en cours est terminé : les vides remises (``handed``, sinon celles proposées d'après les livraisons) sont
@@ -487,8 +514,10 @@ def start_trip(loads: Sequence[Tuple[int, int]], truck: str = "", driver: str = 
     loads = [(lid, int(q)) for lid, q in loads if q and q > 0]
     previous = [t.id for t in list_trips(open_only=True)]
     leftover = sum(max(0, r["remaining"]) for pid in previous for r in trip_summary(pid))
-    if not loads and not leftover:
+    if not loads and not leftover and not any((counted or {}).values()):
         raise GasError("Indiquez ce qui est chargé dans le camion.")
+    if previous:                       # on vérifie le retour avant de créer quoi que ce soit
+        _check_return(previous[0], handed, counted, reason)
     when = when or datetime.now()
     with session_scope() as s:
         trip = GasTrip(number=_next_trip_number(s), truck=truck.strip(), driver=driver.strip(), source=source.strip() or "SONABHY",
@@ -501,7 +530,7 @@ def start_trip(loads: Sequence[Tuple[int, int]], truck: str = "", driver: str = 
             _move(s, lid, MOVE_ENTRY, qty, when, reason=f"Chargement {trip.source}", trip_id=trip.id)
         new_id = trip.id
     for i, pid in enumerate(previous):
-        close_trip(pid, handed if i == 0 else None, when, carry_to=new_id)
+        close_trip(pid, handed if i == 0 else None, when, carry_to=new_id, counted=counted if i == 0 else None, reason=reason if i == 0 else "")
     return new_id
 
 
@@ -539,8 +568,8 @@ def trip_summary(trip_id: int) -> List[dict]:
                 sums[kind] = int(qty)
             if not sums:
                 continue
-            loaded = sums.get(MOVE_ENTRY, 0) + sums.get(MOVE_ADJUST, 0)
-            out.append({"line_id": ln.id, "name": ln.name, "loaded": loaded, "sold": -sums.get(MOVE_SALE, 0),
+            loaded = sums.get(MOVE_ENTRY, 0)
+            out.append({"line_id": ln.id, "name": ln.name, "loaded": loaded, "adjusted": sums.get(MOVE_ADJUST, 0), "sold": -sums.get(MOVE_SALE, 0),
                         "delivered": -sums.get(MOVE_DELIVERY, 0), "lost": -sums.get(MOVE_LOSS, 0),
                         "transferred": -sums.get(MOVE_TRANSFER, 0), "remaining": sum(sums.values())})
         return out
@@ -565,21 +594,59 @@ def empties_proposed(trip_id: int) -> Dict[float, int]:
     return {k: v for k, v in sorted(out.items()) if v}
 
 
+def _check_return(trip_id: int, handed, counted, reason: str) -> None:
+    """Refuse un retour dont l'écart n'est pas justifié, avant tout enregistrement."""
+    proposed = empties_on_hand()
+    h = proposed if handed is None else {float(k): int(v) for k, v in handed.items()}
+    gap = any(h.get(size, 0) != proposed.get(size, 0) for size in set(proposed) | set(h))
+    expected = trip_expected(trip_id)
+    gap = gap or any(int(q) != expected.get(int(lid), 0) for lid, q in (counted or {}).items())
+    if gap and not reason.strip():
+        raise GasError("Le papier ne correspond pas au camion : justifiez l'écart avant de continuer.")
+
+
+def empties_on_hand() -> Dict[float, int]:
+    """Vides que l'entreprise détient et doit remettre à la source, par taille : celles reçues (détaillants, grossistes)
+    depuis le début, moins celles déjà remises lors des retours précédents."""
+    total: Dict[float, int] = {}
+    for tr in list_trips():
+        for size, qty in empties_proposed(tr.id).items():
+            total[size] = total.get(size, 0) + qty
+    with session_scope() as s:
+        for size, handed in s.execute(select(GasEmptiesReturn.size_kg, func.coalesce(func.sum(GasEmptiesReturn.handed), 0))
+                                      .group_by(GasEmptiesReturn.size_kg)).all():
+            total[_f(size)] = total.get(_f(size), 0) - int(handed)
+    return {k: v for k, v in sorted(total.items()) if v}
+
+
 def close_trip(trip_id: int, handed: Optional[Dict[float, int]] = None, when: Optional[datetime] = None, note: str = "",
-               carry_to: Optional[int] = None) -> None:
-    """Retour du camion à la source : remise des vides (proposées d'après les livraisons, modifiables) en échange, sans argent.
-    Les pleines restantes retournent au stock du dépôt."""
+               carry_to: Optional[int] = None, counted: Optional[Dict[int, int]] = None, reason: str = "") -> None:
+    """Retour du camion à la source.
+
+    Le papier doit correspondre au camion : les vides à remettre sont proposées (celles détenues), les pleines
+    attendues sont celles que le camion devrait contenir. Si ce qui est remis ou compté diffère, ``reason`` est
+    obligatoire. Les pleines comptées en écart sont ajustées dans le voyage. Les pleines restantes passent au voyage
+    suivant (``carry_to``) ou au dépôt."""
     when = when or datetime.now()
-    proposed = empties_proposed(trip_id)
+    proposed = empties_on_hand()
     handed = dict(proposed) if handed is None else {float(k): int(v) for k, v in handed.items()}
     if any(v < 0 for v in handed.values()):
         raise GasError("Nombre de vides invalide.")
+    counted = {int(k): int(v) for k, v in (counted or {}).items()}
+    if any(v < 0 for v in counted.values()):
+        raise GasError("Nombre de pleines invalide.")
+    empties_gap = {size: handed.get(size, 0) - proposed.get(size, 0) for size in set(proposed) | set(handed) if handed.get(size, 0) != proposed.get(size, 0)}
     with session_scope() as s:
         t = s.get(GasTrip, trip_id)
         if t is None:
             raise GasError("Voyage introuvable.")
         if t.status != TRIP_OPEN:
             raise GasError("Ce voyage est déjà terminé.")
+        fulls_gap = {lid: qty - stock_of(s, lid, trip_id=trip_id) for lid, qty in counted.items() if qty != stock_of(s, lid, trip_id=trip_id)}
+        if (empties_gap or fulls_gap) and not reason.strip():
+            raise GasError("Le papier ne correspond pas au camion : justifiez l'écart avant de continuer.")
+        for lid, delta in fulls_gap.items():
+            _move(s, lid, MOVE_ADJUST, delta, when, reason=f"Écart au retour : {reason.strip()}", trip_id=trip_id)
         for size in sorted(set(proposed) | set(handed)):
             s.add(GasEmptiesReturn(trip_id=trip_id, size_kg=size, proposed=proposed.get(size, 0), handed=handed.get(size, 0)))
         for ln in s.execute(select(GasLine)).scalars():
@@ -588,8 +655,16 @@ def close_trip(trip_id: int, handed: Optional[Dict[float, int]] = None, when: Op
                 _move(s, ln.id, MOVE_TRANSFER, -left, when, reason=f"Reste du voyage {t.number}", trip_id=trip_id)
                 _move(s, ln.id, MOVE_TRANSFER, left, when, reason=f"Reste du voyage {t.number}", trip_id=carry_to)
         t.status, t.ended_at = TRIP_CLOSED, when
-        if note.strip():
-            t.note = (t.note + "\n" + note.strip()).strip()
+        extra = note.strip()
+        if empties_gap or fulls_gap:
+            extra = (f"Écart justifié au retour : {reason.strip()}" + (f" — {extra}" if extra else ""))
+        if extra:
+            t.note = (t.note + "\n" + extra).strip()
+
+
+def trip_expected(trip_id: int) -> Dict[int, int]:
+    """Pleines que le camion devrait contenir, par produit."""
+    return {r["line_id"]: r["remaining"] for r in trip_summary(trip_id) if r["remaining"] > 0}
 
 
 def empties_returned(trip_id: int) -> List[dict]:
@@ -675,3 +750,67 @@ def apply_to_general_figures(fin: dict) -> dict:
             fin[key] = round(fin.get(key, 0) + day["profit"], 2)
     fin["client_debts"] = fin.get("client_debts", 0) + max(0.0, day["debts"])
     return fin
+
+
+# ---------------------------------------------------------------- journal et corrections
+def day_operations(day: date) -> List[dict]:
+    """Toutes les opérations saisies un jour (ventes, livraisons, pertes, chargements, ajustements, paiements) pour pouvoir les annuler."""
+    a, b = _day_bounds(day)
+    with session_scope() as s:
+        names = {ln.id: ln.name for ln in s.execute(select(GasLine)).scalars()}
+        wh = {w.id: w.name for w in s.execute(select(GasWholesaler)).scalars()}
+        trips = {t.id: t.number for t in s.execute(select(GasTrip)).scalars()}
+        out = []
+        for m in s.execute(select(GasMovement).where(GasMovement.moved_at >= a, GasMovement.moved_at < b,
+                                                      GasMovement.kind.in_([MOVE_SALE, MOVE_LOSS, MOVE_ENTRY, MOVE_ADJUST]))).scalars():
+            label = {MOVE_SALE: "Vente détaillant", MOVE_LOSS: "Perte", MOVE_ENTRY: "Chargement", MOVE_ADJUST: "Ajustement"}[m.kind]
+            out.append({"kind": m.kind, "id": m.id, "when": m.moved_at, "label": label, "detail": f"{names.get(m.line_id, '?')} × {abs(m.qty)}"
+                        + (f" — {m.reason}" if m.reason else ""), "amount": abs(m.qty) * _f(m.unit_price) if m.kind == MOVE_SALE else 0.0,
+                        "trip": trips.get(m.trip_id, "")})
+        for d in s.execute(select(GasDelivery).where(GasDelivery.delivered_at >= a, GasDelivery.delivered_at < b)).scalars():
+            trip_id = s.execute(select(GasMovement.trip_id).where(GasMovement.delivery_id == d.id).limit(1)).scalar()
+            out.append({"kind": "livraison", "id": d.id, "when": d.delivered_at, "label": f"Livraison {wh.get(d.wholesaler_id, '?')}",
+                        "detail": ", ".join(f"{names.get(i.line_id, '?')} × {i.qty}" for i in d.items),
+                        "amount": sum(i.qty * _f(i.unit_price) for i in d.items), "trip": trips.get(trip_id, "")})
+        for p in s.execute(select(GasPayment).where(GasPayment.paid_at >= a, GasPayment.paid_at < b)).scalars():
+            out.append({"kind": "paiement", "id": p.id, "when": p.paid_at, "label": f"Paiement {wh.get(p.wholesaler_id, '?')}",
+                        "detail": p.note or "", "amount": _f(p.amount), "trip": ""})
+        return sorted(out, key=lambda o: (o["when"], o["id"]))
+
+
+def cancel_operation(kind: str, ref_id: int, reason: str) -> None:
+    """Annule une opération saisie par erreur (le motif est obligatoire). Impossible dans un voyage terminé."""
+    if not reason.strip():
+        raise GasError("Indiquez le motif de l'annulation.")
+    with session_scope() as s:
+        if kind == "paiement":
+            p = s.get(GasPayment, ref_id)
+            if p is None:
+                raise GasError("Paiement introuvable.")
+            s.delete(p)
+            return
+        if kind == "livraison":
+            d = s.get(GasDelivery, ref_id)
+            if d is None:
+                raise GasError("Livraison introuvable.")
+            moves = list(s.execute(select(GasMovement).where(GasMovement.delivery_id == ref_id)).scalars())
+            for m in moves:
+                _open_trip(s, m.trip_id)
+                s.delete(m)
+            s.delete(d)
+            return
+        m = s.get(GasMovement, ref_id)
+        if m is None or m.kind != kind:
+            raise GasError("Opération introuvable.")
+        _open_trip(s, m.trip_id)
+        if m.qty > 0 and stock_of(s, m.line_id, trip_id=m.trip_id) - m.qty < 0:
+            raise GasError("Annulation impossible : ces bouteilles ont déjà été vendues ou livrées.")
+        s.delete(m)
+
+
+def update_trip(trip_id: int, truck: str, driver: str, source: str, note: str = "") -> None:
+    with session_scope() as s:
+        t = s.get(GasTrip, trip_id)
+        if t is None:
+            raise GasError("Voyage introuvable.")
+        t.truck, t.driver, t.source, t.note = truck.strip(), driver.strip(), source.strip() or "SONABHY", note.strip()

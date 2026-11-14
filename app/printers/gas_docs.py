@@ -32,10 +32,10 @@ def build_trip_bandeau(trip_id: int, path: str | Path) -> Path:
                     f"Chauffeur : {escape(trip.driver or '—')} · Chargé à : {escape(trip.source)} · Départ : {trip.started_at:%d/%m/%Y}"
                     + (f" · Retour : {trip.ended_at:%d/%m/%Y}" if trip.ended_at else " · en cours"), base, h1)
     story.append(Paragraph("Bilan du camion", h2))
-    rows = [["Produit", "Chargé", "Détaillants", "Grossistes", "Pertes", "Restant", "Reporté"]]
+    rows = [["Produit", "Chargé", "Détaillants", "Grossistes", "Pertes", "Écart", "Restant", "Reporté"]]
     for r in gs.trip_summary(trip_id):
-        rows.append([r["name"], r["loaded"], r["sold"], r["delivered"], r["lost"], r["remaining"], r["transferred"] or ""])
-    story.append(_grid(rows, [50 * mm, 20 * mm, 24 * mm, 24 * mm, 18 * mm, 20 * mm, W - 156 * mm]))
+        rows.append([r["name"], r["loaded"], r["sold"], r["delivered"], r["lost"], r["adjusted"] or "", r["remaining"], r["transferred"] or ""])
+    story.append(_grid(rows, [44 * mm, 18 * mm, 22 * mm, 22 * mm, 16 * mm, 16 * mm, 18 * mm, W - 156 * mm]))
     story.append(Paragraph("Étapes jour par jour", h2))
     rows = [["Jour", "Étape", "Détail", "Montant"]]
     for d in gs.trip_days(trip_id):
@@ -49,8 +49,11 @@ def build_trip_bandeau(trip_id: int, path: str | Path) -> Path:
     back = gs.empties_returned(trip_id)
     if back:
         story.append(Paragraph("Vides remises à la source", h2))
-        story.append(_grid([["Bouteille", "Proposées", "Remises"]] + [[f"{b['size_kg']:g} kg".replace(".", ","), b["proposed"], b["handed"]] for b in back],
-                           [50 * mm, 30 * mm, 30 * mm]))
+        story.append(_grid([["Bouteille", "Attendues", "Remises", "Écart"]] + [[f"{b['size_kg']:g} kg".replace(".", ","), b["proposed"], b["handed"],
+                                                                              (b["handed"] - b["proposed"]) or ""] for b in back], [50 * mm, 30 * mm, 30 * mm, 30 * mm]))
+    if trip.note.strip():
+        story.append(Paragraph("Notes", h2))
+        story.append(Paragraph(escape(trip.note).replace("\n", "<br/>"), base))
     return _build(Path(path), story)
 
 

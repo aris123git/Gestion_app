@@ -102,8 +102,13 @@ class GasTests(unittest.TestCase):
         sheet = {r["name"]: r for r in gs.day_sheet(d2.date(), trip_id=tid)}
         self.assertEqual(sheet["6 kg Recharge"]["sold"], 20)
         self.assertEqual({l.id: l.stock for l in gs.list_lines()}, depot)
-        gs.close_trip(tid, {6.0: 120})                              # remise modifiée : 120 au lieu de 118
-        self.assertEqual(gs.empties_returned(tid), [{"size_kg": 6.0, "proposed": 118, "handed": 120}])
+        base = gs.empties_on_hand().get(6.0, 0) - 118                # vides déjà détenues avant ce voyage
+        with self.assertRaises(gs.GasError):
+            gs.close_trip(tid, {6.0: 120 + base})                   # remise différente de l'attendu sans justification : refusée
+        self.assertEqual(gs.get_trip(tid).status, "en_cours")
+        gs.close_trip(tid, {6.0: 120 + base}, reason="2 vides reprises d'un autre client")
+        self.assertEqual(gs.empties_returned(tid), [{"size_kg": 6.0, "proposed": 118 + base, "handed": 120 + base}])
+        self.assertIn("2 vides reprises", gs.get_trip(tid).note)
         self.assertEqual(gs.get_trip(tid).status, "termine")
         back = {l.id: l.stock for l in gs.list_lines()}
         self.assertEqual(back[self.r6.id] - depot[self.r6.id], 580)  # le reste du camion retourne au dépôt
@@ -154,10 +159,11 @@ class GasTests(unittest.TestCase):
         gs = self.gs
         a = gs.start_trip([(self.r6.id, 100)], truck="A", when=datetime(2026, 6, 1, 8))
         gs.retail_sale(self.r6.id, 30, when=datetime(2026, 6, 1, 9), trip_id=a)
-        b = gs.start_trip([(self.r12.id, 20)], truck="B", when=datetime(2026, 6, 5, 8), handed={6.0: 28})
+        before = gs.empties_on_hand().get(6.0, 0)
+        b = gs.start_trip([(self.r12.id, 20)], truck="B", when=datetime(2026, 6, 5, 8), handed={6.0: before - 2}, reason="2 vides gardées")
         self.assertEqual(gs.get_trip(a).status, "termine")
         self.assertEqual(gs.current_trip_id(), b)
-        self.assertEqual(gs.empties_returned(a), [{"size_kg": 6.0, "proposed": 30, "handed": 28}])
+        self.assertEqual(gs.empties_returned(a), [{"size_kg": 6.0, "proposed": before, "handed": before - 2}])
         stock = {l.id: l.stock for l in gs.list_lines(trip_id=b)}
         self.assertEqual(stock[self.r6.id], 70)               # le reste du camion est reporté
         self.assertEqual(stock[self.r12.id], 20)
@@ -170,6 +176,60 @@ class GasTests(unittest.TestCase):
         gs.close_trip(c)
         with self.assertRaises(gs.GasError):
             gs.start_trip([])                                  # plus rien dans le camion et rien chargé
+
+    def test_return_needs_justification_for_gaps(self):
+        gs = self.gs
+        a = gs.start_trip([(self.r6.id, 50)], truck="X", when=datetime(2026, 7, 1, 8))
+        gs.retail_sale(self.r6.id, 10, when=datetime(2026, 7, 1, 9), trip_id=a)
+        on_hand = gs.empties_on_hand()
+        handed = dict(on_hand)
+        with self.assertRaises(gs.GasError):                  # 38 comptées au lieu de 40 attendues, sans motif
+            gs.start_trip([(self.r6.id, 5)], when=datetime(2026, 7, 4), handed=handed, counted={self.r6.id: 38})
+        self.assertEqual(gs.current_trip_id(), a)
+        b = gs.start_trip([(self.r6.id, 5)], when=datetime(2026, 7, 4), handed=handed, counted={self.r6.id: 38}, reason="2 bouteilles volées")
+        self.assertEqual(next(l.stock for l in gs.list_lines(trip_id=b) if l.id == self.r6.id), 43)
+        sa = next(r for r in gs.trip_summary(a) if r["line_id"] == self.r6.id)
+        self.assertEqual(sa["adjusted"], -2)
+        self.assertIn("2 bouteilles volées", gs.get_trip(a).note)
+        # retour conforme : aucune justification nécessaire
+        c = gs.start_trip([], when=datetime(2026, 7, 9), counted={self.r6.id: 43}, handed=dict(gs.empties_on_hand()))
+        self.assertEqual(gs.get_trip(b).status, "termine")
+        self.assertEqual(gs.current_trip_id(), c)
+
+    def test_cancel_adjust_multi_sale_and_edit(self):
+        gs = self.gs
+        d = datetime(2026, 8, 3, 9)
+        tid = gs.start_trip([(self.r6.id, 40), (self.r12.id, 10)], truck="T", when=d)
+        total = gs.retail_sales([(self.r6.id, 5, None), (self.r12.id, 2, 5000)], d, tid)
+        self.assertEqual(total, 5 * 2000 + 2 * 5000)
+        with self.assertRaises(gs.GasError):
+            gs.retail_sales([(self.r6.id, 1, None), (self.r12.id, 500, None)], d, tid)    # tout ou rien
+        self.assertEqual(next(l.stock for l in gs.list_lines(trip_id=tid) if l.id == self.r6.id), 35)
+        wid = gs.save_wholesaler("Gros Annul")
+        did = gs.deliver(wid, [(self.r6.id, 10, None, 10)], d, paid=1000, trip_id=tid)
+        ops = {o["kind"]: o for o in gs.day_operations(d.date()) if o["trip"]}
+        self.assertIn("livraison", {o["kind"] for o in gs.day_operations(d.date())})
+        with self.assertRaises(gs.GasError):
+            gs.cancel_operation("livraison", did, "  ")                                  # motif obligatoire
+        gs.cancel_operation("livraison", did, "erreur de saisie")
+        self.assertEqual(next(l.stock for l in gs.list_lines(trip_id=tid) if l.id == self.r6.id), 35)
+        self.assertEqual(gs.wholesaler_account(wid).delivered, 0)
+        sale = next(o for o in gs.day_operations(d.date()) if o["kind"] == "vente" and "6 kg" in o["detail"])
+        gs.cancel_operation("vente", sale["id"], "doublon")
+        self.assertEqual(next(l.stock for l in gs.list_lines(trip_id=tid) if l.id == self.r6.id), 40)
+        load = next(o for o in gs.day_operations(d.date()) if o["kind"] == "entree" and "12,5" in o["detail"])
+        gs.retail_sale(self.r12.id, 8, when=d, trip_id=tid)                              # 10 chargées, 2+8 vendues
+        with self.assertRaises(gs.GasError):
+            gs.cancel_operation("entree", load["id"], "faux")                            # ces bouteilles sont déjà parties
+        with self.assertRaises(gs.GasError):
+            gs.adjust_stock(self.r6.id, -1, "", d, tid)                                  # motif obligatoire
+        gs.adjust_stock(self.r6.id, -3, "comptage", d, tid)
+        self.assertEqual(next(l.stock for l in gs.list_lines(trip_id=tid) if l.id == self.r6.id), 37)
+        gs.update_trip(tid, "Camion 9", "Moussa", "SONABHY Bobo")
+        self.assertEqual((gs.get_trip(tid).truck, gs.get_trip(tid).driver), ("Camion 9", "Moussa"))
+        gs.close_trip(tid, reason="fin de test")
+        with self.assertRaises(gs.GasError):
+            gs.cancel_operation("vente", next(o["id"] for o in gs.day_operations(d.date()) if o["kind"] == "vente"), "trop tard")   # voyage terminé
 
     def test_page_and_nav(self):
         from PySide6.QtWidgets import QApplication
@@ -192,6 +252,18 @@ class GasTests(unittest.TestCase):
             page.ttable.selectRow(0)
             from app.ui.pages.gas_page import TripDaysDialog, TripDialog
             TripDaysDialog(page, tid)
+            from app.ui.pages.gas_page import AdjustDialog, SaleDialog, TripEditDialog
+            day = _dt(2026, 5, 1).date()
+            sd = SaleDialog(page, day, tid)
+            sd.rows[0][1].setValue(1)
+            sd.apply()
+            AdjustDialog(page, day, tid)
+            te = TripEditDialog(page, tid)
+            te.truck.setText("Cam bis")
+            te.apply()
+            self.assertEqual(gs.get_trip(tid).truck, "Cam bis")
+            page.refresh()
+            self.assertGreaterEqual(page.jtable.rowCount(), 0)
             dlg = TripDialog(page, _dt(2026, 5, 3).date())    # nouveau voyage = retour du camion précédent
             self.assertTrue(dlg.return_rows or dlg.previous)
             dlg.truck.setText("Cam 2")
