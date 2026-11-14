@@ -514,9 +514,21 @@ class GasPage(QWidget):
         return Path(tempfile.gettempdir()) / name
 
     def _print_sheet(self):
+        from PySide6.QtWidgets import QMessageBox
+
         from app.printers import gas_docs
 
-        self._open(gas_docs.build_day_sheet(self._day(), self._tmp("gaz_cahier.pdf"), self._trip()))
+        box = QMessageBox(self)
+        box.setWindowTitle(t("Imprimer le cahier"))
+        box.setText(t("Quelle partie imprimer ?"))
+        det = box.addButton(t("Détaillants"), QMessageBox.ButtonRole.AcceptRole)
+        gro = box.addButton(t("Grossistes"), QMessageBox.ButtonRole.AcceptRole)
+        both = box.addButton(t("Les deux"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(t("Annuler"), QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        part = {det: "detaillants", gro: "grossistes", both: "both"}.get(box.clickedButton())
+        if part:
+            self._open(gas_docs.build_day_sheet(self._day(), self._tmp(f"gaz_cahier_{part}.pdf"), self._trip(), part))
 
     def _print_statement(self):
         from app.printers import gas_docs

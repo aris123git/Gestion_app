@@ -48,28 +48,61 @@ def build_trip_bandeau(trip_id: int, path: str | Path) -> Path:
     story.append(_grid(rows, [24 * mm, 40 * mm, W - 24 * mm - 40 * mm - 28 * mm, 28 * mm]))
     back = gs.empties_returned(trip_id)
     if back:
-        story.append(Paragraph("Vides remises à la source (échange, sans argent)", h2))
+        story.append(Paragraph("Vides remises à la source", h2))
         story.append(_grid([["Bouteille", "Proposées", "Remises"]] + [[f"{b['size_kg']:g} kg".replace(".", ","), b["proposed"], b["handed"]] for b in back],
                            [50 * mm, 30 * mm, 30 * mm]))
     return _build(Path(path), story)
 
 
-def build_day_sheet(day: date, path: str | Path, trip_id: int | None = None) -> Path:
-    """Cahier du jour : S.I, Entrée, S.T, Vente, P.U, Montant, Livré grossistes, Pertes, S.F."""
+def build_day_sheet(day: date, path: str | Path, trip_id: int | None = None, part: str = "both") -> Path:
+    """Cahier du jour. ``part`` : « detaillants », « grossistes » ou « both » (les deux, chacun sur sa page)."""
+    from datetime import datetime, timedelta
+
     base, h1, h2 = _styles()
     sub = f"{day:%d/%m/%Y}" + (f" — camion {gs.get_trip(trip_id).label}" if trip_id else " — dépôt")
-    story = _header(_shop(), "Cahier du jour — gaz", escape(sub), base, h1)
-    rows = [["Produit", "S.I", "Entrée", "S.T", "Vente", "P.U", "Montant", "Livré gros.", "Pertes", "S.F"]]
-    for r in gs.day_sheet(day, trip_id):
-        rows.append([r["name"], r["si"], r["entry"], r["st"], r["sold"], _m(r["unit_price"]), _m(r["amount"]), r["delivered"], r["lost"], r["sf"]])
-    story.append(_grid(rows, [38 * mm, 12 * mm, 14 * mm, 12 * mm, 14 * mm, 18 * mm, 24 * mm, 16 * mm, 12 * mm, W - 160 * mm]))
-    story += [Spacer(1, 4 * mm), Paragraph(f"<b>Total du jour (détaillants) : {_m(gs.day_total(day, trip_id))} F</b>", base)]
-    deliveries = gs.deliveries_of_day(day, trip_id=trip_id)
-    if deliveries:
-        story.append(Paragraph("Livraisons aux grossistes (feuille « Entrée »)", h2))
-        story.append(_grid([["Grossiste", "Pleines", "Vides rendues", "Total"]] + [[d["wholesaler"], sum(d["lines"].values()), d["empties_back"], _m(d["total"])] for d in deliveries],
-                           [70 * mm, 24 * mm, 30 * mm, W - 124 * mm]))
-        story += [Spacer(1, 3 * mm), Paragraph(f"<b>Total des livraisons : {_m(sum(d['total'] for d in deliveries))} F</b>", base)]
+    story = []
+    sheet = gs.day_sheet(day, trip_id)
+    if part in ("both", "detaillants"):
+        story += _header(_shop(), "Cahier du jour — Détaillants", escape(sub), base, h1)
+        rows = [["Produit", "S.I", "Entrée", "S.T", "Vente", "P.U", "Montant", "S.F"]]
+        for r in sheet:
+            rows.append([r["name"], r["si"], r["entry"], r["st"], r["sold"], _m(r["unit_price"]), _m(r["amount"]), r["sf"]])
+        rows.append(["TOTAL", "", "", "", sum(r["sold"] for r in sheet), "", _m(gs.day_total(day, trip_id)), ""])
+        story.append(_grid(rows, [48 * mm, 16 * mm, 18 * mm, 16 * mm, 18 * mm, 22 * mm, 28 * mm, W - 166 * mm]))
+        extra = [(r["name"], r["delivered"], r["lost"]) for r in sheet if r["delivered"] or r["lost"]]
+        if extra:
+            story.append(Paragraph("Sorties du jour qui ne sont pas des ventes aux détaillants (déjà déduites du S.F)", h2))
+            story.append(_grid([["Produit", "Livré aux grossistes", "Pertes"]] + [list(e) for e in extra], [60 * mm, 40 * mm, 30 * mm]))
+    if part == "both":
+        story.append(PageBreak())
+    if part in ("both", "grossistes"):
+        story += _header(_shop(), "Cahier du jour — Grossistes (feuille « Entrée »)", escape(sub), base, h1)
+        lines = [r for r in sheet]
+        names = [r["name"] for r in lines]
+        ids = [r["line_id"] for r in lines]
+        deliveries = gs.deliveries_of_day(day, trip_id=trip_id)
+        end = datetime(day.year, day.month, day.day) + timedelta(days=1)
+        from reportlab.lib import colors
+        from reportlab.lib.styles import ParagraphStyle
+
+        hs = ParagraphStyle("gh", parent=base, fontName="Helvetica-Bold", fontSize=6.5, leading=8, textColor=colors.white, alignment=1)
+
+        def _h(txt: str):
+            return Paragraph(escape(txt).replace(" Recharge", "<br/>Rech.").replace(" Consigné", "<br/>Cons.").replace(" Complet", "<br/>Compl."), hs)
+
+        head = ["Grossiste"] + [_h(n) for n in names] + [_h("Vides"), "Total", _h("Reste à payer")]
+        rows = [head]
+        tot_lines = {i: 0 for i in ids}
+        for d in deliveries:
+            acc = gs.wholesaler_account(d["wholesaler_id"], until=end)
+            for i in ids:
+                tot_lines[i] += d["lines"].get(i, 0)
+            rows.append([d["wholesaler"]] + [d["lines"].get(i, "") for i in ids] + [d["empties_back"], _m(d["total"]), _m(acc.balance)])
+        rows.append(["TOTAL"] + [tot_lines[i] or "" for i in ids] + [sum(d["empties_back"] for d in deliveries), _m(sum(d["total"] for d in deliveries)), ""])
+        n = len(ids)
+        story.append(_grid(rows, [36 * mm] + [(W - 36 * mm - 56 * mm) / max(n, 1)] * n + [14 * mm, 20 * mm, 22 * mm]))
+        if not deliveries:
+            story.append(Paragraph("Aucune livraison aux grossistes ce jour.", base))
     return _build(Path(path), story)
 
 

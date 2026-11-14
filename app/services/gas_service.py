@@ -369,7 +369,7 @@ def deliveries_of_day(day: date, wholesaler_id: Optional[int] = None, trip_id: O
             for it in d.items:
                 lines[it.line_id] = lines.get(it.line_id, 0) + it.qty
                 total += it.qty * _f(it.unit_price)
-            out.append({"delivery_id": d.id, "wholesaler": w.name if w else "?", "lines": lines, "total": total,
+            out.append({"delivery_id": d.id, "wholesaler_id": d.wholesaler_id, "wholesaler": w.name if w else "?", "lines": lines, "total": total,
                         "empties_back": sum(i.empties_back for i in d.items), "note": d.note})
         return out
 
