@@ -406,7 +406,8 @@ class GasPage(QWidget):
         v.addWidget(self.dtable, 1)
         v.addLayout(self._buttons([("wnew", "+ Nouveau grossiste", self._wnew, False), ("wedit", "Modifier", self._wedit, False),
                                    ("deliver", "Livrer", self._deliver, True), ("pay", "Encaisser un paiement", self._pay, False),
-                                   ("pstate", "Relevé PDF", self._print_statement, False)]))
+                                   ("pstate", "Relevé PDF", self._print_statement, False),
+                                   ("psend", "Envoyer le relevé", self._send_statement, False)]))
         self.tabs.addTab(tab, t("Grossistes"))
 
         # Camion : voyages
@@ -633,6 +634,20 @@ class GasPage(QWidget):
             info(self, t("Choisissez un grossiste."))
         else:
             self._open(gas_docs.build_wholesaler_statement(wid, self._tmp(f"gaz_releve_{wid}.pdf")))
+
+    def _send_statement(self):
+        from app.printers import gas_docs
+        from app.ui.dialogs.send_document_dialog import SendDocumentDialog
+
+        wid = self._selected(self.wtable)
+        if wid is None:
+            info(self, t("Choisissez un grossiste."))
+            return
+        row = next((w for w in gs.list_wholesalers(False) if w.id == wid), None)
+        acc = gs.wholesaler_account(wid)
+        path = gas_docs.build_wholesaler_statement(wid, self._tmp(f"gaz_releve_{wid}.pdf"))
+        message = f"Bonjour {acc.name}, voici votre situation à ce jour : {acc.statement}. Le relevé détaillé est joint."
+        SendDocumentDialog(self, path, row.phone if row else "", "", f"Relevé {acc.name}", message, "Envoyer le relevé").exec()
 
     def _print_trip(self):
         from app.printers import gas_docs

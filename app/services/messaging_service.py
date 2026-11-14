@@ -271,7 +271,7 @@ def save_email_config(*, host: str, port: int, security: str, user: str, passwor
         settings_service.set_setting(key, value)
 
 
-def smtp_send(to: str, subject: str, body: str) -> None:
+def smtp_send(to: str, subject: str, body: str, attachments: Optional[List] = None) -> None:
     host, port = cfg("messaging_smtp_host").strip(), cfg_int("messaging_smtp_port") or 465
     user, password = cfg("messaging_smtp_user").strip(), cfg("messaging_smtp_password")
     msg = EmailMessage()
@@ -279,6 +279,11 @@ def smtp_send(to: str, subject: str, body: str) -> None:
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+    for path in attachments or []:                       # pièces jointes (PDF de facture, de proforma, relevé…)
+        from pathlib import Path as _P
+
+        f = _P(str(path))
+        msg.add_attachment(f.read_bytes(), maintype="application", subtype="pdf" if f.suffix.lower() == ".pdf" else "octet-stream", filename=f.name)
     context = ssl.create_default_context()
     if cfg("messaging_smtp_security") == "starttls":
         with smtplib.SMTP(host, port, timeout=30) as server:

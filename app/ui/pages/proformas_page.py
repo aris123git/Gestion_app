@@ -263,7 +263,7 @@ class ProformasPage(QWidget):
         row = QHBoxLayout()
         self.buttons = {}
         for key, label, slot, primary in (("new", "+ Nouvelle proforma", self._new, True), ("edit", "Modifier", self._edit, False),
-                                          ("print", "Imprimer / PDF", self._print, True), ("dup", "Dupliquer", self._dup, False),
+                                          ("print", "Imprimer / PDF", self._print, True), ("send", "Envoyer", self._send, False), ("dup", "Dupliquer", self._dup, False),
                                           ("sale", "Transformer en vente", self._convert, False), ("ok", "Marquer acceptée", lambda: self._status("Acceptée"), False),
                                           ("ko", "Marquer refusée", lambda: self._status("Refusée"), False), ("del", "Supprimer", self._delete, False)):
             b = QPushButton(t(label))
@@ -312,6 +312,20 @@ class ProformasPage(QWidget):
             return
         path = build_proforma_pdf(pid, Path(tempfile.gettempdir()) / f"proforma_{pid}.pdf")
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _send(self) -> None:
+        from app.ui.dialogs.send_document_dialog import SendDocumentDialog
+
+        pid = self._id()
+        if not pid:
+            warn(self, t("Sélectionnez une proforma."))
+            return
+        d = ps.get(pid)
+        path = build_proforma_pdf(pid, Path(tempfile.gettempdir()) / f"proforma_{pid}.pdf")
+        shop = settings_service.get_shop_info().name or ""
+        message = (f"Bonjour {d['client_name']}, \nVeuillez trouver ci-joint notre facture proforma N°{d['number']} "
+                   f"d'un montant de {format_money(d['totals'].total)}.\nCordialement, {shop}").strip()
+        SendDocumentDialog(self, path, d["client_phone"], d["client_email"], f"Facture proforma N°{d['number']}", message, "Envoyer la proforma").exec()
 
     def _dup(self) -> None:
         pid = self._id()

@@ -72,6 +72,25 @@ def build_sale_invoice_pdf(sale, path: str | Path, shop=None) -> Path:
     return _render(d, Path(path), "FACTURE", "facture", shop)
 
 
+LOGO_W = 26 * mm
+
+
+def _logo():
+    """Le logo de la boutique (Paramètres), à gauche de l'en-tête texte ; None s'il n'y en a pas."""
+    path = Path(str(getattr(settings_service.get_shop_info(), "logo_path", "") or ""))
+    if not path.is_file():
+        return None
+    try:
+        from reportlab.lib.utils import ImageReader
+        from reportlab.platypus import Image
+
+        w, h = ImageReader(str(path)).getSize()
+        ratio = min(LOGO_W / w, 22 * mm / h)
+        return Image(str(path), width=w * ratio, height=h * ratio)
+    except Exception:
+        return None
+
+
 def _render(d: dict, out: Path, title: str, noun: str, shop=None) -> Path:
     shop = shop or settings_service.get_shop_info()
     cur = shop.currency or "FCFA"
@@ -87,11 +106,20 @@ def _render(d: dict, out: Path, title: str, noun: str, shop=None) -> Path:
     if banner is not None:
         story.append(banner)
     else:
+        # Sans image d'en-tête : le logo de la boutique à gauche (s'il existe), le nom et les informations à côté.
         head = ParagraphStyle("ph", parent=bold, fontSize=20, leading=24, alignment=TA_CENTER, textColor=colors.HexColor("#1e3a8a"))
-        story.append(Paragraph(escape(shop.name or ""), head))
+        lines_style = ParagraphStyle("pl", parent=bold, fontSize=9.5, alignment=TA_CENTER)
+        block = [Paragraph(escape(shop.name or ""), head)]
         for line in (get(ps.SETTING_TAGLINE, ""), *get(ps.SETTING_HEADER_EXTRA, "").split("|"), shop.address or "", f"Tél. {shop.phone}" if shop.phone else ""):
             if (line or "").strip():
-                story.append(Paragraph(escape(line.strip()), ParagraphStyle("pl", parent=bold, fontSize=9.5, alignment=TA_CENTER)))
+                block.append(Paragraph(escape(line.strip()), lines_style))
+        logo = _logo()
+        if logo is not None:
+            story.append(Table([[logo, block]], colWidths=[LOGO_W + 4 * mm, PAGE_W - LOGO_W - 4 * mm],
+                               style=TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                                 ("RIGHTPADDING", (0, 0), (-1, -1), 0)])))
+        else:
+            story.extend(block)
     story.append(Table([[""]], colWidths=[PAGE_W], rowHeights=[1], style=TableStyle([("LINEABOVE", (0, 0), (-1, 0), 1.2, colors.HexColor("#be123c"))])))
     city = get(ps.SETTING_CITY, "").strip()
     story.append(Spacer(1, 3 * mm))

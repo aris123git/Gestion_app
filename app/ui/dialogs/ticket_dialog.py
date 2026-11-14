@@ -92,6 +92,10 @@ class TicketDialog(QDialog):
         self.invoice_pdf_button.setToolTip(t("Crée la facture en PDF, sans imprimante : à enregistrer, envoyer ou imprimer plus tard."))
         self.invoice_pdf_button.clicked.connect(self._save_invoice_pdf)
         buttons.addWidget(self.invoice_pdf_button)
+        self.send_button = QPushButton(t('Envoyer la facture'))
+        self.send_button.setToolTip(t("Envoie la facture en PDF par WhatsApp ou par e-mail."))
+        self.send_button.clicked.connect(self._send_invoice)
+        buttons.addWidget(self.send_button)
         layout.addLayout(buttons)
         for _b in self.findChildren(QPushButton):
             _b.setAutoDefault(False)
@@ -410,6 +414,27 @@ class TicketDialog(QDialog):
         box.exec()
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(saved.parent)))
+
+    def _send_invoice(self) -> None:
+        from app import config
+        from app.printers.invoice_a4 import client_refs
+        from app.services import settings_service
+        from app.ui.dialogs.send_document_dialog import SendDocumentDialog
+        from app.utils.helpers import format_money
+
+        config.ensure_directories()
+        path = config.TICKET_DIR / f'{self.sale.ticket_number}_facture.pdf'
+        try:
+            build_invoice_pdf(self.sale, path=path)
+        except Exception as exc:
+            warn(self, f"Impossible de créer la facture PDF.\n\n{exc}", t('Envoi'))
+            return
+        refs = client_refs(self.sale)
+        phone = str(getattr(getattr(self.sale, 'client', None), 'phone', '') or '')
+        shop = settings_service.get_shop_info().name or ''
+        message = (f"Bonjour {refs['name']}, \nVeuillez trouver ci-joint votre facture N°{self.sale.ticket_number} "
+                   f"d'un montant de {format_money(float(self.sale.total or 0))}.\nMerci de votre confiance, {shop}").strip()
+        SendDocumentDialog(self, path, phone, refs['email'], f'Facture N°{self.sale.ticket_number}', message, 'Envoyer la facture').exec()
 
     def _save_invoice_pdf(self, target: Path | None = None) -> None:
         """Enregistre la facture au format PDF, indépendamment de l'imprimante ou du format par défaut."""

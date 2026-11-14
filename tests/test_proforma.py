@@ -53,6 +53,71 @@ class ProformaTests(unittest.TestCase):
         for part in ("facture n°", "viande hachée", "client x", "sous-total", "remise", "total general", "190 000", "cent quatre-vingt-dix mille", "le responsable"):
             self.assertIn(part, txt, part)
 
+    def test_header_logo_left_when_no_banner(self):
+        from PIL import Image as PILImage
+        from app.database.connection import session_scope
+        from app.models.settings import ShopInfo
+        from app.printers.proforma_doc import build_proforma_pdf
+        a = ps.save([ps.LineInput("Test", 1, "kg", 1000)], client_name="Logo test")
+        logo = Path(_D) / "logo.png"
+        PILImage.new("RGB", (200, 100), "#1e3a8a").save(logo)
+        with session_scope() as s_:
+            shop = s_.get(ShopInfo, 1)
+            old = shop.logo_path
+            shop.logo_path = str(logo)
+        try:
+            with_logo = build_proforma_pdf(a, Path(_D) / "with_logo.pdf").read_bytes()
+            self.assertIn(b"/Subtype /Image", with_logo)
+        finally:
+            with session_scope() as s_:
+                s_.get(ShopInfo, 1).logo_path = old
+        self.assertNotIn(b"/Subtype /Image", build_proforma_pdf(a, Path(_D) / "no_logo.pdf").read_bytes())
+
+    def test_send_document_dialog(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        from app.services import messaging_service as ms
+        from app.ui.dialogs import send_document_dialog as sd
+        pdf = Path(_D) / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.4 test")
+        opened = []
+        with mock.patch.object(sd.QDesktopServices, "openUrl", lambda url: opened.append(url.toString())), \
+                mock.patch.object(sd, "info", lambda *a, **k: None), mock.patch.object(sd, "warn", lambda *a, **k: None):
+            dlg = sd.SendDocumentDialog(None, pdf, "70 43 46 43", "client@example.com", "Objet", "Bonjour é")
+            self.assertFalse(sd.SendDocumentDialog(None, pdf, "abc", "", "", "x").send_whatsapp())     # numéro invalide
+            self.assertTrue(dlg.send_whatsapp())
+            self.assertTrue(opened[0].startswith("https://wa.me/") and "Bonjour" in opened[0])
+            self.assertTrue(any(u.endswith("doc.pdf") for u in opened))                                  # le PDF s'ouvre pour être joint
+            opened.clear()
+            with mock.patch.object(ms, "email_configured", lambda: False):
+                self.assertTrue(dlg.send_email())
+            self.assertTrue(opened[0].startswith("mailto:client@example.com"))
+            sent = []
+            with mock.patch.object(ms, "email_configured", lambda: True), \
+                    mock.patch.object(ms, "smtp_send", lambda to, subject, body, attachments=None: sent.append((to, subject, attachments))):
+                self.assertTrue(dlg.send_email())
+            self.assertEqual(sent, [("client@example.com", "Objet", [pdf])])
+            self.assertFalse(sd.SendDocumentDialog(None, pdf, "", "pas-un-mail", "", "x").send_email())
+
+    def test_smtp_send_attaches_pdf(self):
+        from unittest import mock
+        from app.services import messaging_service as ms
+        pdf = Path(_D) / "att.pdf"
+        pdf.write_bytes(b"%PDF-1.4 test")
+        captured = []
+
+        class FakeSMTP:
+            def __init__(self, *a, **k): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def login(self, *a): pass
+            def send_message(self, msg): captured.append(msg)
+
+        with mock.patch.object(ms.smtplib, "SMTP_SSL", FakeSMTP), mock.patch.object(ms, "cfg", lambda k: "x" if "user" in k else ""):
+            ms.smtp_send("a@b.com", "Sujet", "Corps", attachments=[pdf])
+        self.assertEqual([p.get_filename() for p in captured[0].iter_attachments()], ["att.pdf"])
+
     def test_tax_and_cdt(self):
         pid = ps.save([ps.LineInput("Gants latex", 10, "", 2000, "B/100")], client_name="Client", tax_label="BIC", tax_rate=2)
         d = ps.get(pid)
