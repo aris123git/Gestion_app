@@ -60,7 +60,10 @@ def _sequential(sale, attr: str, counter_key: str) -> str:
 
 
 def invoice_number(sale) -> str:
-    """Numéro de facture de ``sale`` (l'attribue si besoin). Aperçu → 00001."""
+    """Numéro de facture de ``sale`` (l'attribue si besoin). Aperçu → 00001. ``forced_number`` : numéro imposé (proforma)."""
+    forced = getattr(sale, "forced_number", None)
+    if forced:
+        return str(forced)
     return _sequential(sale, "invoice_number", SETTING_COUNTER)
 
 

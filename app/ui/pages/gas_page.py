@@ -147,16 +147,12 @@ class WholesalerDialog(_Form):
         self.phone = QLineEdit(row.phone if row else "")
         self.address = QLineEdit(row.address if row else "")
         self.notes = QLineEdit(row.notes if row else "")
-        self.active = QCheckBox(t("Actif"))
-        self.active.setChecked(row.active if row else True)
         for label, w in (("Nom", self.name), ("Téléphone", self.phone), ("Adresse", self.address), ("Notes", self.notes)):
             self.form.addRow(t(label), w)
-        self.form.addRow("", self.active)
         self.finish()
 
     def apply(self) -> None:
-        gs.save_wholesaler(self.name.text(), self.phone.text(), self.address.text(), self.notes.text(), self.row.id if self.row else None,
-                           self.active.isChecked())
+        gs.save_wholesaler(self.name.text(), self.phone.text(), self.address.text(), self.notes.text(), self.row.id if self.row else None)
 
 
 class DeliveryDialog(_Form):
@@ -696,14 +692,11 @@ class GasPage(QWidget):
             for j, val in enumerate(vals):
                 self.sheet.setItem(i, j, _cell(val, right=j > 0))
         self.total_label.setText(f"<b>{t('Total du jour, détaillants')} : {_money(gs.day_total(day, all_sources=True))} F</b>")
-        shown = []
-        for w in gs.list_wholesalers(False):
+        ws = gs.list_wholesalers(False)
+        self.wtable.setRowCount(len(ws))
+        for i, w in enumerate(ws):
             a = gs.wholesaler_account(w.id)
-            if w.active or abs(a.balance) > 0.5 or a.bottles_owed:      # un grossiste inactif reste visible tant qu'il y a un solde
-                shown.append((w, a))
-        self.wtable.setRowCount(len(shown))
-        for i, (w, a) in enumerate(shown):
-            vals = [w.name + ("" if w.active else " — inactif"), a.delivered, a.empties_back, _money(a.amount_due), _money(a.paid), _money(a.balance), a.statement]
+            vals = [w.name, a.delivered, a.empties_back, _money(a.amount_due), _money(a.paid), _money(a.balance), a.statement]
             for j, val in enumerate(vals):
                 self.wtable.setItem(i, j, _cell(val, right=0 < j < 6, data=w.id if j == 0 else None))
         ds = gs.deliveries_of_day(day)

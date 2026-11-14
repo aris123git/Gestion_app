@@ -203,7 +203,7 @@ def _services_page(pen: _Pen, ctx, pal, rows, page, pages):
     shop = ctx["shop"]
     last = page == pages
     # Titre + références
-    pen.text(72.6, 134.6, "FACTURE", "TplLato-Black", 40, ink, scaled=False)
+    pen.text(72.6, 134.6, _ia.DOC_TITLE, "TplLato-Black", 40, ink, scaled=False)
     ref = f"N° {ctx['number']}"
     pen.text(72.6, 164.7, ref, "TplLato", 14, ink)
     x_date = 72.6 + pdfmetrics.stringWidth(ref, "TplLato", 14 * pen.scale) + 14
@@ -261,7 +261,7 @@ def _services_page(pen: _Pen, ctx, pal, rows, page, pages):
         pen.text(541.0, y, value, "TplLato-Bold" if bold else "TplLato", 14, ink, align="r", max_w=115, min_size=7)
     pen.text(164.5, 668.1, "Le responsable", "TplLato", 14, ink, align="c")
     # Arrêté + message
-    pen.text(70.4, 705.3, "Arrêtée la facture à la somme de :", "TplLato-Bold", 14, ink, max_w=270, min_size=9)
+    pen.text(70.4, 705.3, f"Arrêtée la {'proforma' if _ia.DOC_TITLE != 'FACTURE' else 'facture'} à la somme de :", "TplLato-Bold", 14, ink, max_w=270, min_size=9)
     y = 725.2
     for line in pen.wrap(ctx["words"] + f" ({ctx['total']})", "TplLato", 12, 262, 3):
         pen.text(70.4, y, line, "TplLato", 12, ink)
@@ -304,14 +304,14 @@ def _medical_page(pen: _Pen, ctx, pal, rows, page, pages):
     shop = ctx["shop"]
     last = page == pages
     # Titre + logo
-    pen.text(75.2, 190.4, "FACTURE", "TplMont-ExtraBold", 50, blue, scaled=False)
+    pen.text(75.2, 190.4, _ia.DOC_TITLE, "TplMont-ExtraBold", 50, blue, scaled=False)
     if ctx["logo"]:
         pen.image(ctx["logo"], 357, 72, 50, 50)
         pen.text(415.0, 107.4, str(shop.name or ""), "TplMont-ExtraBold", 14.2, blue, max_w=150, scaled=False)
     else:
         pen.text(357.0, 107.4, str(shop.name or "Commerce").upper(), "TplMont-ExtraBold", 14.2, blue, max_w=190, scaled=False)
     # Références
-    pen.text(358.2, 169.2, f"FACTURE N° {ctx['number']}", "TplMont-SemiBold", 12, ink, max_w=190, min_size=7)
+    pen.text(358.2, 169.2, f"{_ia.DOC_TITLE} N° {ctx['number']}", "TplMont-SemiBold", 12, ink, max_w=190, min_size=7)
     pen.text(358.2, 183.6, f"DATE : {ctx['datetime']}", "TplMont-SemiBold", 12, ink, max_w=190, min_size=7)
     if ctx["cashier"]:
         pen.text(358.2, 198.0, f"CAISSIER : {ctx['cashier'].upper()}", "TplMont-SemiBold", 12, ink, max_w=190, min_size=7)
@@ -354,7 +354,7 @@ def _medical_page(pen: _Pen, ctx, pal, rows, page, pages):
         pen.text(430.0, y, label, "TplMont-ExtraBold", 11, blue, align="r", max_w=100, min_size=7)
         pen.text(458.7, y, value, "TplMont-Bold", 11, blue, max_w=88, min_size=7)
     # Arrêté + message (centrés)
-    pen.text(306.0, 674.1, "ARRÊTÉE LA FACTURE À LA SOMME DE :", "TplMont-Bold", 12, ink, align="c", max_w=420, min_size=8)
+    pen.text(306.0, 674.1, f"ARRÊTÉE LA {_ia.DOC_TITLE} À LA SOMME DE :", "TplMont-Bold", 12, ink, align="c", max_w=420, min_size=8)
     y = 686.1
     for line in pen.wrap(ctx["words"] + f" ({ctx['total']})", "TplMont-Medium", 10, 400, 2):
         pen.text(306.0, y, line, "TplMont-Medium", 10, ink, align="c")
@@ -383,6 +383,7 @@ def _paginate(rows, per_page_fn):
 
 
 from app.services.invoice_numbering import invoice_number  # noqa: E402
+from app.printers import invoice_a4 as _ia  # noqa: E402
 
 
 def _cashier_name(sale) -> str:
@@ -436,7 +437,7 @@ def build_template_invoice(sale, shop, path: Path, style_id: str, font_size: int
         base.cropbox = base.mediabox
         base.scale_to(a4_w, a4_h)
         writer.add_page(base)
-    writer.add_metadata({"/Title": f"Facture {invoice_number(sale)}", "/Author": str(shop.name or "")})
+    writer.add_metadata({"/Title": f"{_ia.DOC_TITLE.capitalize()} {invoice_number(sale)}", "/Author": str(shop.name or "")})
     with open(path, "wb") as fh:
         writer.write(fh)
     return path

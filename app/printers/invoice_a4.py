@@ -86,6 +86,9 @@ class InvoiceStyle:
     dark: str = "#0f172a"
 
 
+DOC_TITLE = "FACTURE"   # « PROFORMA » quand le modèle sert à une facture proforma
+
+
 INVOICE_STYLES: tuple[InvoiceStyle, ...] = (
     InvoiceStyle("recu", "Reçu classique — bleu marine", "recu", "#1e1b8f", "#eef0fb"),
     InvoiceStyle("recu_bordeaux", "Reçu classique — bordeaux", "recu", "#8b1a2b", "#f8e9ec"),
@@ -367,7 +370,7 @@ def _decor_recu(canvas, ctx):
     top = PAGE_H - 12 * mm
     canvas.setFillColor(primary)
     canvas.setFont("Helvetica-Bold", 26)
-    canvas.drawString(MARGIN, top - 11 * mm, "FACTURE")
+    canvas.drawString(MARGIN, top - 11 * mm, DOC_TITLE)
     canvas.setFont("Helvetica-Bold", 15)
     canvas.drawString(MARGIN, top - 21 * mm, f"N° {ctx['number']}")
     sep_x = MARGIN + 58 * mm
@@ -437,7 +440,7 @@ def _decor_vagues(canvas, ctx):
     canvas.setFont("Helvetica-Bold", size)
     canvas.drawString(cx + r + 4 * mm, cy - 1.5 * mm, name)
     canvas.setFont("Helvetica-Bold", 34)
-    canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 27 * mm, "FACTURE")
+    canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 27 * mm, DOC_TITLE)
     # Pied
     _wave(canvas, 20 * mm, 14 * mm, True, light)
     _wave(canvas, 14 * mm, 12 * mm, True, primary)
@@ -472,7 +475,7 @@ def _decor_moderne(canvas, ctx):
     # Titre
     canvas.setFillColor(primary)
     canvas.setFont("Helvetica-Bold", 30)
-    canvas.drawRightString(PAGE_W - MARGIN, top - 38 * mm, "FACTURE")
+    canvas.drawRightString(PAGE_W - MARGIN, top - 38 * mm, DOC_TITLE)
     # Pied : bande sombre + trapèzes de couleur
     canvas.setFillColor(HexColor("#2b2b2b"))
     canvas.rect(0, 0, PAGE_W, 9 * mm, stroke=0, fill=1)
@@ -519,7 +522,7 @@ def _decor_diagonal(canvas, ctx):
     on_band = HexColor("#ffffff") if _is_dark(st.primary) else HexColor("#2b2b2b")
     canvas.setFillColor(on_band)
     canvas.setFont("Helvetica-Bold", 30)
-    canvas.drawString(MARGIN, PAGE_H - 22 * mm, "FACTURE")
+    canvas.drawString(MARGIN, PAGE_H - 22 * mm, DOC_TITLE)
     name = str(shop.name or "Commerce").upper()
     size = _fit(canvas, name, "Helvetica-Bold", 13, 78 * mm)
     canvas.setFont("Helvetica-Bold", size)
@@ -596,8 +599,19 @@ def footer_with_bank(footer: str) -> str:
 
 def build_invoice_a4(sale, shop=None, path: Path | None = None,
                      style_id: str | None = None, font_size: int | None = None,
-                     fmt: str | None = None, fill_empty: bool | None = None, pin_bottom: bool | None = None) -> Path:
-    """Génère la facture (A4 portrait, ou A4 coupé en deux) et retourne le PDF."""
+                     fmt: str | None = None, fill_empty: bool | None = None, pin_bottom: bool | None = None,
+                     title: str = "FACTURE") -> Path:
+    """Génère la facture (A4 portrait, ou A4 coupé en deux) et retourne le PDF. ``title`` : « PROFORMA » pour une proforma."""
+    global PAGE_W, PAGE_H, DOC_TITLE
+    DOC_TITLE = title or "FACTURE"
+    try:
+        return _build_invoice_a4(sale, shop, path, style_id, font_size, fmt, fill_empty, pin_bottom)
+    finally:
+        DOC_TITLE = "FACTURE"
+
+
+def _build_invoice_a4(sale, shop=None, path: Path | None = None, style_id: str | None = None, font_size: int | None = None,
+                      fmt: str | None = None, fill_empty: bool | None = None, pin_bottom: bool | None = None) -> Path:
     global PAGE_W, PAGE_H
     config.ensure_directories()
     shop = shop or settings_service.get_shop_info()
@@ -664,7 +678,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
             canvas.setFont("Helvetica", max(6.5, 8 * k))
             canvas.setFillColor(colors.HexColor("#374151"))
             canvas.drawString(real_w - margin - box_w + 2 * mm, y0 + sign_h - 3 * mm * k - 4.2 * mm * k, "Signature et cachet")
-            canvas.drawString(margin, y0 + 1 * mm, f"Facture {number} — page {doc.page}")
+            canvas.drawString(margin, y0 + 1 * mm, f"{DOC_TITLE.capitalize()} {number} — page {doc.page}")
             canvas.restoreState()
 
     frame_w = real_w - 2 * margin
@@ -674,7 +688,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     doc = BaseDocTemplate(
         str(path), pagesize=(real_w, real_h), leftMargin=margin, rightMargin=margin,
         topMargin=top_mm * mm, bottomMargin=bottom_mm * mm,
-        title=f"Facture {number}", author=str(shop.name or ""),
+        title=f"{DOC_TITLE.capitalize()} {number}", author=str(shop.name or ""),
     )
     doc.addPageTemplates([PageTemplate(id="p", frames=[frame], onPage=on_page)])
 
@@ -812,7 +826,7 @@ def build_invoice_a4(sale, shop=None, path: Path | None = None,
     # Bloc gauche du pied : arrêté + moyens de paiement
     left = []
     words = amount_in_words(float(sale.total or 0), currency)
-    left.append(Paragraph(f"<b>Arrêtée la présente facture à la somme de</b><br/>{words} ({format_money(sale.total, currency)})", body))
+    left.append(Paragraph(f"<b>Arrêtée la présente {"facture proforma" if DOC_TITLE != "FACTURE" else "facture"} à la somme de</b><br/>{words} ({format_money(sale.total, currency)})", body))
     if sale.payments:
         left.append(Spacer(1, (1 if half else 3) * mm))
         left.append(Paragraph("<b>Méthode de paiement</b>", body))

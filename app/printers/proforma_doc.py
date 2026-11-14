@@ -46,10 +46,52 @@ def _banner():
         return None
 
 
-def build_proforma_pdf(proforma_id: int, path: str | Path | None = None) -> Path:
+SETTING_MODEL = "proforma_model"
+BANNER_MODEL = "commercial_banniere"      # le modèle d'origine : image d'en-tête, bloc « Doit », tableau, Le Responsable
+
+
+def proforma_models() -> list[tuple[str, str]]:
+    """Modèles proposés pour une proforma : le modèle Boucherie puis tous les modèles de facture."""
+    rest = [(st.id, st.label) for st in ia.INVOICE_STYLES if st.id != BANNER_MODEL]
+    return [(BANNER_MODEL, "Commercial avec image d'en-tête (modèle Boucherie)")] + rest
+
+
+def get_model() -> str:
+    value = settings_service.get_setting(SETTING_MODEL, BANNER_MODEL)
+    return value if value in {m for m, _ in proforma_models()} else BANNER_MODEL
+
+
+def set_model(model_id: str) -> None:
+    if model_id in {m for m, _ in proforma_models()}:
+        settings_service.set_setting(SETTING_MODEL, model_id)
+
+
+def _pseudo_sale(d: dict):
+    """La proforma présentée comme une vente pour réutiliser les modèles de facture (rien n'est enregistré)."""
+    from types import SimpleNamespace as NS
+
+    items = []
+    for l in d["lines"]:
+        name = l["label"] + (f" — {l['packaging']}" if l.get("packaging") else "") + (f" — {l['unit']}" if l.get("unit") else "")
+        items.append(NS(product_name=name, quantity=l["quantity"], unit_price=l["unit_price"], line_total=l["quantity"] * l["unit_price"], tax_rate=0))
+    t = d["totals"]
+    if t.tax:
+        items.append(NS(product_name=f"{t.tax_label}" + (f" {t.tax_rate:g} %" if t.tax_rate else ""), quantity=1, unit_price=t.tax, line_total=t.tax, tax_rate=0))
+    client = NS(name=d["client_name"], phone=d["client_phone"], phone2="", address=d["client_address"], email=d["client_email"])
+    return NS(items=items, subtotal=t.total, discount=0, total=t.total, amount_received=0, change_due=0, ticket_number=d["number"],
+              forced_number=d["number"], date=d["date"], client=client, client_name=d["client_name"], client_phone=d["client_phone"],
+              client_address=d["client_address"], cashier_name="", payments=[])
+
+
+def build_proforma_pdf(proforma_id: int, path: str | Path | None = None, style_id: str | None = None) -> Path:
+    """PDF de la proforma. ``style_id`` : modèle choisi (sinon celui enregistré). Le modèle Boucherie est le modèle d'origine ;
+    les autres sont les modèles de facture, avec le titre PROFORMA."""
     d = ps.get(proforma_id)
     out = Path(path) if path else config.TICKET_DIR / f"proforma_{d['number'].replace('/', '-')}.pdf"
-    return _render(d, out, "FACTURE PROFORMA", "facture proforma")
+    model = style_id if style_id in {m for m, _ in proforma_models()} else get_model()
+    if model == BANNER_MODEL:
+        return _render(d, out, "FACTURE PROFORMA", "facture proforma")
+    return ia.build_invoice_a4(_pseudo_sale(d), path=out, style_id=model, fmt=ia.FORMAT_A4, title="PROFORMA")
 
 
 def build_sale_invoice_pdf(sale, path: str | Path, shop=None) -> Path:

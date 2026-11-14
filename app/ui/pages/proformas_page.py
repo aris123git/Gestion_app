@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from app.i18n import t
 from app.models.proforma import STATUSES
-from app.printers.proforma_doc import build_proforma_pdf
+from app.printers.proforma_doc import build_proforma_pdf, get_model, proforma_models, set_model
 from app.services import audit_service, permissions as perms, proforma_service as ps, settings_service
 from app.ui.dialogs.chantier_dialog import _money
 from app.ui.pages.rentals_page import _cell, _table
@@ -265,6 +265,15 @@ class ProformasPage(QWidget):
         self.table = _table(["N°", "Date", "Client", "Objet", "Total", "Statut"])
         self.table.doubleClicked.connect(lambda *_: self._edit())
         layout.addWidget(self.table, 1)
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel(t("Modèle d'impression")))
+        self.model = QComboBox()
+        for mid, label in proforma_models():
+            self.model.addItem(label, mid)
+        self.model.setCurrentIndex(max(0, self.model.findData(get_model())))
+        self.model.currentIndexChanged.connect(lambda *_: set_model(self.model.currentData()))    # le choix est retenu
+        model_row.addWidget(self.model, 1)
+        layout.addLayout(model_row)
         row = QHBoxLayout()
         self.buttons = {}
         for key, label, slot, primary in (("new", "+ Nouvelle proforma", self._new, True), ("edit", "Modifier", self._edit, False),
@@ -315,7 +324,7 @@ class ProformasPage(QWidget):
         if not pid:
             warn(self, t("Sélectionnez une proforma."))
             return
-        path = build_proforma_pdf(pid, Path(tempfile.gettempdir()) / f"proforma_{pid}.pdf")
+        path = build_proforma_pdf(pid, Path(tempfile.gettempdir()) / f"proforma_{pid}.pdf", self.model.currentData())
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _send(self) -> None:
@@ -326,7 +335,7 @@ class ProformasPage(QWidget):
             warn(self, t("Sélectionnez une proforma."))
             return
         d = ps.get(pid)
-        path = build_proforma_pdf(pid, Path(tempfile.gettempdir()) / f"proforma_{pid}.pdf")
+        path = build_proforma_pdf(pid, Path(tempfile.gettempdir()) / f"proforma_{pid}.pdf", self.model.currentData())
         shop = settings_service.get_shop_info().name or ""
         message = (f"Bonjour {d['client_name']}, \nVeuillez trouver ci-joint notre facture proforma N°{d['number']} "
                    f"d'un montant de {format_money(d['totals'].total)}.\nCordialement, {shop}").strip()

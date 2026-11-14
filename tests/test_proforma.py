@@ -118,6 +118,25 @@ class ProformaTests(unittest.TestCase):
             ms.smtp_send("a@b.com", "Sujet", "Corps", attachments=[pdf])
         self.assertEqual([p.get_filename() for p in captured[0].iter_attachments()], ["att.pdf"])
 
+    def test_every_invoice_model_works_for_proforma(self):
+        from app.printers import proforma_doc as pd
+        a = ps.save([ps.LineInput("Viande hachée", 20, "kg", 4000, "")], client_name="SOGA SA", tax_label="BIC", tax_rate=5)
+        models = [m for m, _ in pd.proforma_models()]
+        self.assertIn("moderne_bleu", models)
+        self.assertEqual(models[0], pd.BANNER_MODEL)
+        for m in models:
+            txt = pdf_text(pd.build_proforma_pdf(a, Path(_D) / f"m_{m}.pdf", m))
+            self.assertIn("PROFORMA", txt.upper(), m)
+            self.assertIn("SOGA", txt.upper(), m)
+            self.assertIn("84 000", txt, m)                      # 80 000 + BIC 5 % = 84 000
+            self.assertNotIn("N°00001", txt.replace(" ", ""), m)  # le numéro de la proforma, pas un numéro de facture
+        pd.set_model("moderne_bleu")
+        self.assertEqual(pd.get_model(), "moderne_bleu")
+        pd.set_model("n_importe_quoi")
+        self.assertEqual(pd.get_model(), "moderne_bleu")
+        self.assertIn("MODERNE", "".join(l for l in [pd.get_model().upper()]))
+        pd.set_model(pd.BANNER_MODEL)
+
     def test_tax_and_cdt(self):
         pid = ps.save([ps.LineInput("Gants latex", 10, "", 2000, "B/100")], client_name="Client", tax_label="BIC", tax_rate=2)
         d = ps.get(pid)
