@@ -76,12 +76,26 @@ class SettingsPage(QWidget):
             return scroll
 
         add(self._build_shop_tab(), t('Commerce'))
-        add(self._build_appearance_tab(), t('Apparence du ticket'))
+        # Onglet « Documents » : ticket, designs, facture/proforma et bons, chacun dans un bloc repliable.
+        docs = QWidget()
+        docs_layout = QVBoxLayout(docs)
+        docs_layout.setSpacing(12)
+
+        def doc_section(title: str, widget: QWidget, expanded: bool = False) -> CollapsibleSection:
+            sec = CollapsibleSection(title, expanded)
+            sec.body.addWidget(widget)
+            docs_layout.addWidget(sec)
+            return sec
+
+        doc_section(t('Ticket de caisse'), self._build_appearance_tab(), True)
         self._tab_designs = self._build_designs_tab()
-        add(self._tab_designs, t('Designs des tickets'))
-        add(self._build_invoice_tab(), t('Facture'))
-        self._tab_bon = add(self._build_bon_tab(), t("Bon d'enlèvement"))
-        self._tab_bl = add(self._build_bl_tab(), t('Bon de livraison'))
+        designs_sec = doc_section(t('Designs des tickets'), self._tab_designs)
+        designs_sec.toggle.toggled.connect(lambda opened: opened and self._load_designs_ui())
+        doc_section(t('Facture et proforma'), self._build_invoice_tab())
+        self._tab_bon = doc_section(t("Bon d'enlèvement"), self._build_bon_tab())
+        self._tab_bl = doc_section(t('Bon de livraison'), self._build_bl_tab())
+        docs_layout.addStretch()
+        add(docs, t('Documents'))
         add(self._build_controls_tab(), t('Contrôles caisse'))
         if product_profile.supports_profit_loyalty():
             add(self._build_loyalty_tab(), t('Fidélité bénéfices'))
@@ -434,7 +448,7 @@ class SettingsPage(QWidget):
                 relaunch_application()
 
     def _build_proforma_section(self):
-        """Réglages des factures proforma (placés dans l'onglet Facture) ; None pour Maquis / Chantier."""
+        """Réglages des factures proforma (placés dans le bloc Facture et proforma) ; None pour Maquis / Chantier."""
         from app.services import product_profile as _pp
         self._proforma_cb = None
         if _pp.is_maquis() or _pp.is_chantiers():
@@ -651,7 +665,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Après vente'), self.auto_print)
         form.addRow(t('Message du ticket'), self.footer)
         outer.addWidget(make_card(form_widget))
-        designs_hint = QLabel(t("Les designs visuels (Classique, Moderne, Bon serveur…) se choisissent dans l'onglet <b>Designs des tickets</b>. Le <b>profil imprimante</b> fixe le codepage ESC/POS (accents français) et la largeur en caractères. Sur <b>Xprinter</b>, utilisez le profil « Xprinter … CP850 » : annule le mode chinois et garde les filets de tableau continus (─ │)."))
+        designs_hint = QLabel(t("Les designs visuels (Classique, Moderne, Bon serveur…) se choisissent dans le bloc <b>Designs des tickets</b>. Le <b>profil imprimante</b> fixe le codepage ESC/POS (accents français) et la largeur en caractères. Sur <b>Xprinter</b>, utilisez le profil « Xprinter … CP850 » : annule le mode chinois et garde les filets de tableau continus (─ │)."))
         designs_hint.setWordWrap(True)
         designs_hint.setStyleSheet('color: #64748b;')
         outer.addWidget(designs_hint)
@@ -834,8 +848,8 @@ class SettingsPage(QWidget):
         show = is_enterprise_type(self.shop_type.currentText()) and not _pp.is_chantiers()
         if hasattr(self, '_tab_bon'):
             self._layout_bon_rows(show)
-            for tab in (self._tab_bon, self._tab_bl):
-                self._tabs.setTabVisible(self._tabs.indexOf(tab), show)
+            for section in (self._tab_bon, self._tab_bl):
+                section.setVisible(show)
         for button in getattr(self, '_enterprise_buttons', []):
             button.setVisible(show)
 

@@ -81,13 +81,12 @@ class BonTabsTests(unittest.TestCase):
         _KEEP.append(page)
         page.show()
         tabs = page._tabs
-        def visible(tab): return tabs.isTabVisible(tabs.indexOf(tab))
+        def visible(section): return not section.isHidden()               # blocs repliables de l'onglet Documents
         page.shop_type.setCurrentText("Boutique")
         self.assertFalse(visible(page._tab_bon)); self.assertFalse(visible(page._tab_bl))
         self.assertFalse(page.bl_enabled.isHidden())                      # bon de livraison reste dans Facture
         page.shop_type.setCurrentText("Entreprise")
         self.assertTrue(visible(page._tab_bon)); self.assertTrue(visible(page._tab_bl))
-        self.assertTrue(hasattr(page._tab_bon, "verticalScrollBar"))      # onglet défilant
         # champ partagé synchronisé entre onglets
         page._mirrors_bl[1].setText("BF-RCCM-1")
         self.assertEqual(page.shop_rccm.text(), "BF-RCCM-1")
