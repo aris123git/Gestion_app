@@ -54,10 +54,27 @@ class ProformaDialog(QDialog):
         self.pick.currentIndexChanged.connect(self._pick_client)
         form.addRow(t("Client existant"), self.pick)
         self.f = {}
-        for key, label in (("client_name", "Client (Doit)"), ("client_phone", "Téléphone"), ("client_email", "Email"), ("client_ifu", "IFU"), ("client_rccm", "RCCM"),
-                           ("client_regime", "Régime fiscal"), ("client_division", "Division fiscale"), ("client_address", "Adresse"), ("subject", "Objet")):
+
+        def field(key: str, label: str) -> QLineEdit:
             self.f[key] = QLineEdit(data[key] if data else "")
-            form.addRow(t(label), self.f[key])
+            return self.f[key]
+
+        def pair(key_a: str, label_a: str, key_b: str, label_b: str) -> None:
+            """Deux champs sur la même ligne pour garder tout le formulaire visible."""
+            box = QWidget()
+            h = QHBoxLayout(box)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.addWidget(field(key_a, label_a), 1)
+            h.addWidget(QLabel(t(label_b)))
+            h.addWidget(field(key_b, label_b), 1)
+            form.addRow(t(label_a), box)
+
+        form.addRow(t("Client (Doit)"), field("client_name", "Client (Doit)"))
+        pair("client_phone", "Téléphone", "client_email", "Email")
+        pair("client_ifu", "IFU", "client_rccm", "RCCM")
+        pair("client_regime", "Régime fiscal", "client_division", "Division fiscale")
+        form.addRow(t("Adresse"), field("client_address", "Adresse"))
+        form.addRow(t("Objet"), field("subject", "Objet"))
         self.date = QDateEdit(QDate.currentDate() if not data else QDate(data["date"].year, data["date"].month, data["date"].day))
         self.date.setCalendarPopup(True)
         self.date.setDisplayFormat("dd/MM/yyyy")
@@ -65,7 +82,14 @@ class ProformaDialog(QDialog):
         root.addLayout(form)
         self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels([t(c) for c in self.COLS])
-        self.table.setColumnWidth(0, 260)
+        from PySide6.QtWidgets import QHeaderView
+        head = self.table.horizontalHeader()
+        head.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for col, width in ((1, 70), (2, 100), (3, 70), (4, 130), (5, 110)):
+            head.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(col, width)
+        self.table.verticalHeader().setDefaultSectionSize(32)
+        self.table.setMinimumHeight(190)
         root.addWidget(self.table, 1)
         self._rows: list = []
         self._catalog = {c["name"].strip().lower(): c for c in ps.catalog()}
