@@ -46,14 +46,6 @@ def build_nav_items():
         from app.services.chantiers_nav import build_chantiers_nav_items
 
         return build_chantiers_nav_items()
-    common_tail = [
-        (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
-        (t("nav.accounting"), "🧮", AccountingPage, perms.VIEW_PROFITS),
-        (t("nav.audit"), "📝", AuditPage, perms.VIEW_AUDIT),
-        (t("nav.assistant"), "💡", AssistantPage, perms.VIEW_ASSISTANT),
-        (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
-        (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
-    ]
     from app.services import field_sales_service
 
     field_sales = []
@@ -80,9 +72,7 @@ def build_nav_items():
         *field_sales,
         *gas,
         *proformas,
-        (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
         (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
-        (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
         (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
         (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
         (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
@@ -90,8 +80,29 @@ def build_nav_items():
         (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
         (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
-        *common_tail,
+        (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
+        (t("nav.accounting"), "🧮", AccountingPage, perms.VIEW_PROFITS),
+        (t("nav.users"), "🔐", UsersPage, perms.MANAGE_USERS),
+        (t("nav.audit"), "📝", AuditPage, perms.VIEW_AUDIT),
+        (t("nav.assistant"), "💡", AssistantPage, perms.VIEW_ASSISTANT),
+        (t("nav.dashboard"), "📊", DashboardPage, perms.VIEW_DASHBOARD),
+        (t("nav.settings"), "⚙️", SettingsPage, perms.MANAGE_SETTINGS),
     ]
+
+
+def nav_group_of(page_class) -> Optional[str]:
+    """Groupe repliable du menu (produit « Gestion App » seulement) ; None : entrée toujours visible."""
+    if product_profile.is_maquis() or product_profile.is_chantiers():
+        return None
+    groups = {
+        ProductsPage: "Catalogue et stock", StockPage: "Catalogue et stock", PurchasesPage: "Catalogue et stock",
+        ClientsPage: "Tiers", DebtsPage: "Tiers", AvoirsPage: "Tiers", SuppliersPage: "Tiers",
+        ExpensesPage: "Finances", ReportsPage: "Finances", AccountingPage: "Finances",
+        UsersPage: "Administration", AuditPage: "Administration", AssistantPage: "Administration",
+    }
+    return groups.get(page_class)
+
+
 NAV_ITEMS: list = []  # calculé au bon moment dans MainWindow.__init__, une fois la base initialisée
 
 class MainWindow(QWidget):
@@ -234,11 +245,20 @@ class MainWindow(QWidget):
         self._nav_layout = nav_layout
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
+        self._groups: dict[str, dict] = {}
         for index, (label, icon, _page, permission) in enumerate(NAV_ITEMS):
             self._nav_meta.append((label, icon))
             if not self._allowed(permission, nav_index=index):
                 self._nav_buttons.append(None)
                 continue
+            group = nav_group_of(_page)
+            if group is not None and group not in self._groups:
+                header = QPushButton()
+                header.setObjectName('NavGroup')
+                header.setCursor(Qt.CursorShape.PointingHandCursor)
+                header.clicked.connect(lambda _=False, g=group: self._toggle_group(g))
+                nav_layout.addWidget(header)
+                self._groups[group] = {'header': header, 'buttons': [], 'open': False}
             button = QPushButton(f'{icon}  {label}')
             button.setObjectName('NavButton')
             button.setToolTip(label)
@@ -247,10 +267,15 @@ class MainWindow(QWidget):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _=False, i=index: self._on_nav_clicked(i))
             nav_layout.addWidget(button)
+            if group is not None:
+                self._groups[group]['buttons'].append(button)
+                button.setProperty('navGroup', group)
             self._nav_group.addButton(button)
             self._nav_buttons.append(button)
         nav_layout.addStretch()
         self._install_nav_shortcuts()
+        self._groups_full = True
+        self._refresh_groups()
         nav_scroll.setWidget(nav_host)
         layout.addWidget(nav_scroll, 1)
         self._search_btn: Optional[QPushButton] = None
@@ -288,6 +313,25 @@ class MainWindow(QWidget):
         layout.addWidget(version)
         self._version_label = version
         return sidebar
+
+    def _toggle_group(self, group: str) -> None:
+        self._groups[group]['open'] = not self._groups[group]['open']
+        self._refresh_groups()
+
+    def _refresh_groups(self) -> None:
+        """Titres de groupe : visibles en menu complet (pages visibles si le groupe est ouvert) ; en menu à icônes, tout est visible."""
+        for title, info in self._groups.items():
+            header = info['header']
+            header.setVisible(self._groups_full)
+            header.setText(f"{'▾' if info['open'] else '▸'}  {t(title)}")
+            for button in info['buttons']:
+                button.setVisible(info['open'] or not self._groups_full)
+
+    def _open_group_of(self, button) -> None:
+        group = button.property('navGroup') if button is not None else None
+        if group and group in self._groups and not self._groups[group]['open']:
+            self._groups[group]['open'] = True
+            self._refresh_groups()
 
     def _install_nav_shortcuts(self) -> None:
         """Ctrl+1…9 : aller directement à la n-ième rubrique visible du menu."""
@@ -390,6 +434,8 @@ class MainWindow(QWidget):
             self._applying_layout = False
 
     def _set_nav_labels(self, *, full: bool) -> None:
+        self._groups_full = full
+        self._refresh_groups()
         self._title_label.setVisible(full)
         self._subtitle_label.setVisible(full)
         self._user_label.setVisible(full)
@@ -454,6 +500,7 @@ class MainWindow(QWidget):
         button = self._nav_buttons[index]
         if button is not None:
             button.setChecked(True)
+            self._open_group_of(button)
         label = NAV_ITEMS[index][0]
         self._topbar_title.setText(label)
         if hasattr(page, 'refresh'):

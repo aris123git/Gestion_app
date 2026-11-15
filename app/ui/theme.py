@@ -78,6 +78,16 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
         font-size: 15px;
     }}
     QPushButton#NavButton:hover {{ background-color: rgba(255,255,255,0.08); }}
+    QPushButton#NavGroup {{
+        color: #94a3b8;
+        background: transparent;
+        border: none;
+        text-align: left;
+        padding: 10px 16px 6px 16px;
+        font-size: 12px;
+        font-weight: 700;
+    }}
+    QPushButton#NavGroup:hover {{ color: #ffffff; }}
     QPushButton#NavButton:checked {{
         background-color: {c['sidebar_active']};
         color: #ffffff;

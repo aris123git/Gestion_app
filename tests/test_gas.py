@@ -279,3 +279,34 @@ class GasTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MenuGroupsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from app.database.connection import engine, init_database
+        from app.database.seed import seed_all
+        engine.dispose(); init_database(); seed_all()
+
+    def test_menu_groups_and_categories_moved(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        from app.ui import main_window as mw
+        from app.ui.state import AppState
+        state = AppState()
+        state.can = lambda p: True
+        win = mw.MainWindow(state)
+        labels = [i[0] for i in mw.NAV_ITEMS]
+        self.assertNotIn("Catégories", labels)
+        self.assertEqual(set(win._groups), {"Catalogue et stock", "Tiers", "Finances", "Administration"})
+        self.assertFalse(any(g["open"] for g in win._groups.values()))
+        win._sidebar_mode = "full"
+        win._set_nav_labels(full=True)
+        hidden = [b for g in win._groups.values() for b in g["buttons"] if b.isHidden()]
+        self.assertTrue(hidden)
+        win._toggle_group("Tiers")
+        self.assertTrue(all(not b.isHidden() for b in win._groups["Tiers"]["buttons"]))
+        # aller à une page range ouvre son groupe
+        idx = next(i for i, b in enumerate(win._nav_buttons) if b is not None and b.property("navGroup") == "Finances")
+        win.select_page(idx)
+        self.assertTrue(win._groups["Finances"]["open"])

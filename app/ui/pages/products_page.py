@@ -29,6 +29,9 @@ class ProductsPage(QWidget):
         header = QHBoxLayout()
         header.addWidget(page_title(t('Produits')))
         header.addStretch()
+        self.categories_button = QPushButton(t('Catégories et unités'))
+        self.categories_button.clicked.connect(self._open_categories)
+        header.addWidget(self.categories_button)
         self.export_button = QPushButton(t('Exporter Excel'))
         self.export_button.clicked.connect(self._export)
         self.add_button = QPushButton(t('+ Nouveau produit'))
@@ -100,6 +103,7 @@ class ProductsPage(QWidget):
         self.edit_button.setVisible(can_manage)
         self.delete_button.setVisible(can_delete)
         self.export_button.setVisible(self.state.can(perms.VIEW_PROFITS) or can_manage)
+        self.categories_button.setVisible(self.state.can(perms.MANAGE_CATEGORIES) and not product_profile.is_maquis())
 
     def _refresh_catalog_hint(self) -> None:
         from app.services import catalog_features
@@ -249,6 +253,25 @@ class ProductsPage(QWidget):
             self.state.notify_data_changed()
             if result == 'deactivated':
                 info(self, t("Produit désactivé : il n'apparaît plus en caisse."))
+
+    def _open_categories(self) -> None:
+        """Catégories et unités : ouvertes ici (plus d'entrée dans le menu)."""
+        from PySide6.QtWidgets import QDialog
+        from app.ui.pages.categories_page import CategoriesPage
+        from app.ui.widgets.dialog_fit import fit_dialog_to_screen
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t('Catégories et unités'))
+        box = QVBoxLayout(dialog)
+        page = CategoriesPage(self.state)
+        box.addWidget(page)
+        page.refresh()
+        try:
+            fit_dialog_to_screen(dialog, 900, 640)
+        except Exception:
+            dialog.resize(900, 640)
+        dialog.exec()
+        self.refresh()
 
     def _export(self) -> None:
         products = ProductController.list(only_active=False, limit=100000)
