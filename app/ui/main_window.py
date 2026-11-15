@@ -4,7 +4,8 @@ from app.i18n import t
 import logging
 import time
 from typing import Optional
-from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
+from app.ui.icons import nav_icon
 from PySide6.QtWidgets import QApplication, QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 from app import __version__
 from app.services import permissions as perms
@@ -246,6 +247,7 @@ class MainWindow(QWidget):
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
         self._groups: dict[str, dict] = {}
+        self._nav_icons: dict[int, object] = {}
         for index, (label, icon, _page, permission) in enumerate(NAV_ITEMS):
             self._nav_meta.append((label, icon))
             if not self._allowed(permission, nav_index=index):
@@ -259,7 +261,12 @@ class MainWindow(QWidget):
                 header.clicked.connect(lambda _=False, g=group: self._toggle_group(g))
                 nav_layout.addWidget(header)
                 self._groups[group] = {'header': header, 'buttons': [], 'open': False}
-            button = QPushButton(f'{icon}  {label}')
+            nav_ic = nav_icon(icon)
+            self._nav_icons[index] = nav_ic
+            button = QPushButton(label if nav_ic is not None else f'{icon}  {label}')
+            if nav_ic is not None:
+                button.setIcon(nav_ic)
+                button.setIconSize(QSize(20, 20))
             button.setObjectName('NavButton')
             button.setToolTip(label)
             button.setAccessibleName(label)
@@ -444,12 +451,12 @@ class MainWindow(QWidget):
             if button is None:
                 continue
             label, icon = self._nav_meta[index]
+            has_icon = self._nav_icons.get(index) is not None
             if full:
-                button.setText(f'{icon}  {label}')
-                button.setToolTip(label)
+                button.setText(label if has_icon else f'{icon}  {label}')
             else:
-                button.setText(icon)
-                button.setToolTip(label)
+                button.setText('' if has_icon else icon)
+            button.setToolTip(label)
         if self._search_btn is not None:
             if full:
                 self._search_btn.setText('🔎  Recherche')
