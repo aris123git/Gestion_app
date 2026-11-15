@@ -7,7 +7,7 @@ os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ.pop("NEXAGES_PRODUCT", None)
 
-from app.database.connection import engine, init_database  # noqa: E402
+from app.database.connection import engine, init_database, session_scope  # noqa: E402
 from app.database.seed import seed_all  # noqa: E402
 from app.services import proforma_service as ps, settings_service as ss  # noqa: E402
 from tests.pdf_text import pdf_text  # noqa: E402
@@ -237,3 +237,24 @@ class ProformaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProformaClientMemoryTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        engine.dispose(); init_database(); seed_all()
+
+    def test_new_client_is_remembered_and_prefilled(self):
+        from app.models.client import Client
+        pid = ps.save([ps.LineInput("Viande", 2, "kg", 4000)], client_name="SOGA MEMO", client_ifu="0012345A", client_rccm="BF-OUA-1",
+                      client_regime="RSI", client_division="DGE", client_phone="70000000")
+        d = ps.get(pid)
+        self.assertTrue(d["client_id"])
+        info = ps.client_defaults(d["client_id"])
+        self.assertEqual((info["client_ifu"], info["client_rccm"], info["client_regime"], info["client_division"]), ("0012345A", "BF-OUA-1", "RSI", "DGE"))
+        # même nom retapé sans id : pas de doublon, champs vides conservés
+        ps.save([ps.LineInput("Viande", 1, "kg", 4000)], client_name="soga memo")
+        with session_scope() as s:
+            rows = s.query(Client).filter(Client.name.ilike("soga memo")).all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].ifu, "0012345A")

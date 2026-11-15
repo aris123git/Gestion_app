@@ -10,12 +10,14 @@ from app.ui.widgets.money_spin import MoneySpinBox
 class ContactDialog(QDialog):
     """Formulaire nom/téléphone/adresse/email (+ dette pour les clients)."""
 
-    def __init__(self, title: str, contact=None, with_debt: bool=False, parent=None, with_marketing: bool=False):
+    def __init__(self, title: str, contact=None, with_debt: bool=False, parent=None, with_marketing: bool=False, with_fiscal: bool=False):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(440)
         self.with_debt = with_debt
+        self.with_fiscal = with_fiscal
+        self.fiscal = {}
         self.data: Optional[dict] = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -33,6 +35,10 @@ class ContactDialog(QDialog):
         form.addRow(t('Téléphone 2'), self.phone2)
         form.addRow(t('Adresse'), self.address)
         form.addRow(t('Email'), self.email)
+        if with_fiscal:
+            for key, label in (('ifu', 'IFU'), ('rccm', 'RCCM'), ('regime', 'Régime fiscal'), ('division', 'Division fiscale')):
+                self.fiscal[key] = QLineEdit()
+                form.addRow(t(label), self.fiscal[key])
         if with_debt:
             self.debt = MoneySpinBox()
             self.debt.setRange(0, 1000000000)
@@ -79,6 +85,8 @@ class ContactDialog(QDialog):
         self.address.setText(contact.address)
         self.email.setText(contact.email)
         self.notes.setPlainText(contact.notes)
+        for key, w in self.fiscal.items():
+            w.setText(getattr(contact, key, '') or '')
         if self.with_debt:
             self.debt.setValue(float(contact.debt))
 
@@ -91,6 +99,8 @@ class ContactDialog(QDialog):
         if not name:
             name = f'Client {phone}'
         self.data = {'name': name, 'phone': phone, 'phone2': self.phone2.text().strip(), 'address': self.address.text().strip(), 'email': self.email.text().strip(), 'notes': self.notes.toPlainText().strip()}
+        for key, w in self.fiscal.items():
+            self.data[key] = w.text().strip()
         if self.no_marketing is not None:
             self.data['no_marketing'] = self.no_marketing.isChecked()
         if self.with_debt and self.debt.isEnabled():

@@ -155,7 +155,7 @@ class ClientsPage(QWidget):
 
     def _add(self) -> None:
         can_open_debt = self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT)
-        dialog = ContactDialog('Nouveau client', with_debt=can_open_debt, parent=self, with_marketing=True)
+        dialog = ContactDialog('Nouveau client', with_debt=can_open_debt, parent=self, with_marketing=True, with_fiscal=True)
         if dialog.exec() and dialog.data:
             ClientController.create(dialog.data, user_id=self.state.user_id, username=getattr(self.state.current_user, 'username', ''))
             self.refresh()
@@ -172,7 +172,7 @@ class ClientsPage(QWidget):
             return
         client = ClientController.get(client_id)
         can_see_debt = self.state.can(perms.MANAGE_CLIENT_DEBTS)
-        dialog = ContactDialog('Modifier le client', client, with_debt=can_see_debt, parent=self, with_marketing=True)
+        dialog = ContactDialog('Modifier le client', client, with_debt=can_see_debt, parent=self, with_marketing=True, with_fiscal=True)
         if dialog.exec() and dialog.data:
             ClientController.update(client_id, dialog.data)
             self.refresh()

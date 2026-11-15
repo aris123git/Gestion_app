@@ -95,6 +95,8 @@ class ClientController:
                 phone2=str(data.get("phone2", "")).strip(),
                 address=str(data.get("address", "")).strip(),
                 email=str(data.get("email", "")).strip(),
+                ifu=str(data.get("ifu", "")).strip(), rccm=str(data.get("rccm", "")).strip(),
+                regime=str(data.get("regime", "")).strip(), division=str(data.get("division", "")).strip(),
                 debt=0,
                 notes=str(data.get("notes", "")).strip(),
                 no_marketing=bool(data.get("no_marketing", False)),
@@ -130,6 +132,9 @@ class ClientController:
             client.address = str(data.get("address", client.address)).strip()
             client.email = str(data.get("email", client.email)).strip()
             client.notes = str(data.get("notes", client.notes)).strip()
+            for k in ("ifu", "rccm", "regime", "division"):
+                if k in data:
+                    setattr(client, k, str(data[k]).strip())
             if "no_marketing" in data:
                 client.no_marketing = bool(data["no_marketing"])
 

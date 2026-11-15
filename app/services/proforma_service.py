@@ -97,7 +97,30 @@ def save(lines: list[LineInput], *, proforma_id: Optional[int] = None, date: Opt
             p.lines.append(ProformaLine(position=i, label=l.label.strip(), packaging=(l.packaging or "").strip(),
                                         quantity=l.quantity, unit=(l.unit or "").strip(), unit_price=l.unit_price))
         session.flush()
+        _remember_client(session, p)
         return p.id
+
+
+def _remember_client(session, p) -> None:
+    """Mémorise les informations du client saisies sur la proforma : fiche créée si le client est nouveau, champs vides complétés,
+    champs renseignés mis à jour avec la dernière saisie."""
+    from sqlalchemy import select
+    from app.models.client import Client
+
+    name = (p.client_name or "").strip()
+    c = session.get(Client, p.client_id) if p.client_id else None
+    if c is None:
+        c = session.scalar(select(Client).where(func.lower(Client.name) == name.lower()))
+    if c is None:
+        c = Client(name=name, debt=0)
+        session.add(c)
+    for src, dst in (("client_phone", "phone"), ("client_email", "email"), ("client_address", "address"), ("client_ifu", "ifu"),
+                     ("client_rccm", "rccm"), ("client_regime", "regime"), ("client_division", "division")):
+        v = (getattr(p, src) or "").strip()
+        if v:
+            setattr(c, dst, v)
+    session.flush()
+    p.client_id = c.id
 
 
 def duplicate(proforma_id: int) -> int:
@@ -208,7 +231,8 @@ def client_defaults(client_id: int) -> dict:
         c = session.get(Client, client_id)
         if c is None:
             return {}
-        return dict(client_id=c.id, client_name=c.name, client_phone=c.phone or "", client_email=c.email or "", client_address=c.address or "")
+        return dict(client_id=c.id, client_name=c.name, client_phone=c.phone or "", client_email=c.email or "", client_address=c.address or "",
+                    client_ifu=c.ifu or "", client_rccm=c.rccm or "", client_regime=c.regime or "", client_division=c.division or "")
 
 
 def defaults() -> dict:
