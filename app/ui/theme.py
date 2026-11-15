@@ -151,7 +151,7 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     }}
     QLineEdit {{ min-height: 24px; }}
     QPlainTextEdit, QTextEdit {{ min-height: 80px; }}
-    QTableView QLineEdit {{ padding: 1px 4px; min-height: 18px; }}
+    QTableView QLineEdit, QTableView QDoubleSpinBox, QTableView QSpinBox {{ padding: 1px 4px; min-height: 18px; }}
     QComboBox::drop-down {{
         subcontrol-origin: padding;
         subcontrol-position: center right;
