@@ -13,6 +13,39 @@ from app.ui.widgets.helpers import confirm, error, info, make_card, page_title, 
 from app.utils.helpers import format_datetime, format_money
 DEFAULT_PRINTER_LABEL = '(Imprimante par défaut)'
 
+class CollapsibleSection(QWidget):
+    """Bloc dont le contenu s'ouvre et se referme d'un clic sur le titre."""
+
+    def __init__(self, title: str, expanded: bool = False):
+        super().__init__()
+        from PySide6.QtWidgets import QToolButton
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(8)
+        self.toggle = QToolButton()
+        self.toggle.setText(title)
+        self.toggle.setCheckable(True)
+        self.toggle.setStyleSheet('QToolButton { border: none; font-weight: 700; font-size: 14px; text-align: left; padding: 2px 0; }')
+        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.toggle.setSizePolicy(self.toggle.sizePolicy().horizontalPolicy(), self.toggle.sizePolicy().verticalPolicy())
+        self.content = QWidget()
+        self.body = QVBoxLayout(self.content)
+        self.body.setContentsMargins(0, 4, 0, 0)
+        root.addWidget(self.toggle)
+        root.addWidget(self.content)
+        self.form = None
+        self.toggle.toggled.connect(self._apply)
+        self.toggle.setChecked(expanded)
+        self._apply(expanded)
+
+    def _apply(self, open_: bool) -> None:
+        self.toggle.setArrowType(Qt.ArrowType.DownArrow if open_ else Qt.ArrowType.RightArrow)
+        self.content.setVisible(open_)
+
+    def has_content(self) -> bool:
+        return self.form is None or self.form.rowCount() > 0
+
+
 class SettingsPage(QWidget):
 
     def __init__(self, state: AppState):
@@ -106,6 +139,17 @@ class SettingsPage(QWidget):
         form_widget = QWidget()
         form = QFormLayout(form_widget)
         form.setSpacing(10)
+        sections: list = []
+
+        def new_section(title: str):
+            sec = CollapsibleSection(title, False)
+            f = QFormLayout()
+            f.setSpacing(10)
+            sec.body.addLayout(f)
+            sec.form = f
+            sections.append(sec)
+            return f
+
         self.name = QLineEdit()
         self.address = QLineEdit()
         self.phone = QLineEdit()
@@ -156,6 +200,7 @@ class SettingsPage(QWidget):
         lang_hint.setWordWrap(True)
         lang_hint.setStyleSheet('color: #64748b; font-size: 12px;')
         form.addRow('', lang_hint)
+        form = new_section(t('Informations du poste'))
         self.product_profile_label = QLabel(product_profile.product_label())
         self.product_profile_label.setStyleSheet('font-weight: 600;')
         self.product_profile_label.mousePressEvent = lambda event: self._on_product_label_clicked(event)
@@ -170,8 +215,7 @@ class SettingsPage(QWidget):
         update_btn.clicked.connect(self._check_updates)
         form.addRow(f"{t('Version installée')} : {_app_version}", update_btn)
         from app.services import catalog_features
-        catalog_title = QLabel(f'<b>{t('settings.catalog_section')}</b>')
-        form.addRow(catalog_title)
+        form = new_section(t('settings.catalog_section'))
         self.catalog_images = QCheckBox(t('settings.catalog_images'))
         self.catalog_images.setToolTip(t('settings.catalog_images_tip'))
         self.catalog_images.setChecked(catalog_features.product_images_enabled())
@@ -199,6 +243,7 @@ class SettingsPage(QWidget):
         self._sync_catalog_action_buttons()
         from app.services import product_profile as _pp
 
+        form = new_section(t('Modules'))
         self._maquis_tables_cb = None
         self._maquis_kitchen_cb = None
         if _pp.is_maquis():
@@ -248,49 +293,12 @@ class SettingsPage(QWidget):
             self._gas_inc_cb = QCheckBox(t("Inclure le gaz dans le chiffre d'affaires, les bénéfices et les dettes générales"))
             self._gas_inc_cb.setChecked(_gs.include_in_totals())
             form.addRow("", self._gas_inc_cb)
-        self._proforma_cb = None
-        if not _pp.is_maquis() and not _pp.is_chantiers():
-            from PySide6.QtWidgets import QFileDialog
-            from app.services import proforma_service as _ps
-
-            form.addRow(QLabel(f"<b>{t('Factures proforma')}</b>"))
-            self._proforma_cb = QCheckBox(t("Activer les factures proforma (menu « Proformas »)"))
-            self._proforma_cb.setChecked(_ps.enabled())
-            form.addRow("", self._proforma_cb)
-            g = settings_service.get_setting
-            self._pf_banner = QLineEdit(g(_ps.SETTING_BANNER, ''))
-            self._pf_banner.setPlaceholderText(t("Image d'en-tête (logo + nom + coordonnées), imprimée en haut"))
-            browse = QPushButton(t("Choisir…"))
-            def _choose_banner() -> None:
-                from PySide6.QtWidgets import QDialog as _QD
-                from app.ui.dialogs.image_crop_dialog import ImageCropDialog
-
-                path = QFileDialog.getOpenFileName(self, t("Image d'en-tête"), "", "Images (*.png *.jpg *.jpeg)")[0]
-                if not path:
-                    return
-                dlg = ImageCropDialog(path, self)
-                if dlg.exec() == _QD.DialogCode.Accepted and dlg.result_path:
-                    self._pf_banner.setText(str(dlg.result_path))
-
-            browse.clicked.connect(_choose_banner)
-            brow = QWidget()
-            bl = QHBoxLayout(brow)
-            bl.setContentsMargins(0, 0, 0, 0)
-            bl.addWidget(self._pf_banner)
-            bl.addWidget(browse)
-            form.addRow(t("En-tête image de la proforma"), brow)
-            self._pf_tagline = QLineEdit(g(_ps.SETTING_TAGLINE, ''))
-            self._pf_tagline.setPlaceholderText(t("ex. Vente de la viande – Poisson – Poulet (sans image d'en-tête)"))
-            self._pf_extra = QLineEdit(g(_ps.SETTING_HEADER_EXTRA, ''))
-            self._pf_extra.setPlaceholderText(t("ex. IFU | RCCM | Secteur 42 Bendogo | Tél. (« | » sépare les lignes ; sans image d'en-tête)"))
-            self._pf_city = QLineEdit(g(_ps.SETTING_CITY, ''))
-            self._pf_city.setPlaceholderText(t("ex. Ouagadougou (« Ouagadougou le 26/10/2026 »)"))
-            self._pf_resp = QLineEdit(g(_ps.SETTING_RESPONSIBLE, ''))
-            self._pf_resp_phone = QLineEdit(g(_ps.SETTING_RESPONSIBLE_PHONE, ''))
-            for label, w in (("Slogan / activités", self._pf_tagline), ("Ligne d'en-tête supplémentaire", self._pf_extra), ("Ville de la proforma", self._pf_city),
-                             ("Le Responsable (nom)", self._pf_resp), ("Le Responsable (téléphone)", self._pf_resp_phone)):
-                form.addRow(t(label), w)
-        outer.addWidget(make_card(form_widget))
+        identity = CollapsibleSection(t('Identité du commerce'), True)
+        identity.body.addWidget(form_widget)
+        outer.addWidget(make_card(identity))
+        for sec in sections:
+            if sec.has_content():
+                outer.addWidget(make_card(sec))
         save = QPushButton(t('Enregistrer les informations'))
         save.setObjectName('Primary')
         save.clicked.connect(self._save_shop)
@@ -424,6 +432,56 @@ class SettingsPage(QWidget):
             if confirm(self, t("Ce changement modifie les menus : l'application doit redémarrer pour l'appliquer.\n\nRedémarrer maintenant ?")):
                 from app.ui.relaunch import relaunch_application
                 relaunch_application()
+
+    def _build_proforma_section(self):
+        """Réglages des factures proforma (placés dans l'onglet Facture) ; None pour Maquis / Chantier."""
+        from app.services import product_profile as _pp
+        self._proforma_cb = None
+        if _pp.is_maquis() or _pp.is_chantiers():
+            return None
+        form_widget = QWidget()
+        form = QFormLayout(form_widget)
+        form.setSpacing(10)
+        from PySide6.QtWidgets import QFileDialog
+        from app.services import proforma_service as _ps
+
+        self._proforma_cb = QCheckBox(t("Activer les factures proforma (menu « Proformas »)"))
+        self._proforma_cb.setChecked(_ps.enabled())
+        form.addRow("", self._proforma_cb)
+        g = settings_service.get_setting
+        self._pf_banner = QLineEdit(g(_ps.SETTING_BANNER, ''))
+        self._pf_banner.setPlaceholderText(t("Image d'en-tête (logo + nom + coordonnées), imprimée en haut"))
+        browse = QPushButton(t("Choisir…"))
+        def _choose_banner() -> None:
+            from PySide6.QtWidgets import QDialog as _QD
+            from app.ui.dialogs.image_crop_dialog import ImageCropDialog
+
+            path = QFileDialog.getOpenFileName(self, t("Image d'en-tête"), "", "Images (*.png *.jpg *.jpeg)")[0]
+            if not path:
+                return
+            dlg = ImageCropDialog(path, self)
+            if dlg.exec() == _QD.DialogCode.Accepted and dlg.result_path:
+                self._pf_banner.setText(str(dlg.result_path))
+
+        browse.clicked.connect(_choose_banner)
+        brow = QWidget()
+        bl = QHBoxLayout(brow)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.addWidget(self._pf_banner)
+        bl.addWidget(browse)
+        form.addRow(t("En-tête image de la proforma"), brow)
+        self._pf_tagline = QLineEdit(g(_ps.SETTING_TAGLINE, ''))
+        self._pf_tagline.setPlaceholderText(t("ex. Vente de la viande – Poisson – Poulet (sans image d'en-tête)"))
+        self._pf_extra = QLineEdit(g(_ps.SETTING_HEADER_EXTRA, ''))
+        self._pf_extra.setPlaceholderText(t("ex. IFU | RCCM | Secteur 42 Bendogo | Tél. (« | » sépare les lignes ; sans image d'en-tête)"))
+        self._pf_city = QLineEdit(g(_ps.SETTING_CITY, ''))
+        self._pf_city.setPlaceholderText(t("ex. Ouagadougou (« Ouagadougou le 26/10/2026 »)"))
+        self._pf_resp = QLineEdit(g(_ps.SETTING_RESPONSIBLE, ''))
+        self._pf_resp_phone = QLineEdit(g(_ps.SETTING_RESPONSIBLE_PHONE, ''))
+        for label, w in (("Slogan / activités", self._pf_tagline), ("Ligne d'en-tête supplémentaire", self._pf_extra), ("Ville de la proforma", self._pf_city),
+                         ("Le Responsable (nom)", self._pf_resp), ("Le Responsable (téléphone)", self._pf_resp_phone)):
+            form.addRow(t(label), w)
+        return form_widget
 
     def _build_appearance_tab(self) -> QWidget:
         wrap = QWidget()
@@ -653,6 +711,11 @@ class SettingsPage(QWidget):
         self._invoice_form = form
         self.shop_type.currentTextChanged.connect(self._apply_enterprise_visibility)
         outer.addWidget(make_card(form_widget))
+        pf = self._build_proforma_section()
+        if pf is not None:
+            pf_sec = CollapsibleSection(t('Factures proforma'), False)
+            pf_sec.body.addWidget(pf)
+            outer.addWidget(make_card(pf_sec))
         hint = QLabel(t("La facture remplit la page : A4 entier, ou A4 coupé en deux (210 × 148,5 mm). Le nom, l'adresse, le téléphone, l'e-mail et le logo viennent de l'onglet <b>Commerce</b> ; le message de bas de page est le <b>Message du ticket</b> (onglet Apparence du ticket). Le type par défaut (ticket ou facture) se règle dans l'onglet Apparence du ticket."))
         hint.setWordWrap(True)
         hint.setStyleSheet('color: #64748b;')
