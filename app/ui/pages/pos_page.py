@@ -153,12 +153,14 @@ class POSPage(QWidget):
             self.cart_table.cellDoubleClicked.connect(self._maquis_edit_qty)
         layout.addWidget(self.cart_table)
         self._discount_row_widget = QWidget()
+        self._discount_row_widget.setObjectName('Plain')
         discount_row = QHBoxLayout(self._discount_row_widget)
         discount_row.setContentsMargins(0, 0, 0, 0)
         discount_row.addWidget(QLabel(t('pos.discount')))
         self.discount_input = MoneySpinBox()
         self.discount_input.setRange(0, 0)
         self.discount_input.setDecimals(3)
+        self.discount_input.setMinimumWidth(150)
         self.discount_input.setSingleStep(100)
         self.discount_input.valueChanged.connect(self._update_total)
         if not self.state.can(perms.APPLY_DISCOUNT):
@@ -184,6 +186,7 @@ class POSPage(QWidget):
         self.loyalty_offer_btn.clicked.connect(self._offer_selected_loyalty_product)
         loyalty_row.addWidget(self.loyalty_offer_btn)
         self._loyalty_row_widget = QWidget()
+        self._loyalty_row_widget.setObjectName('Plain')
         self._loyalty_row_widget.setLayout(loyalty_row)
         layout.addWidget(self._loyalty_row_widget)
         from app.services import product_profile

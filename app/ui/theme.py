@@ -58,6 +58,7 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
         font-size: 14px;
     }}
     QLabel {{ background: transparent; }}
+    QWidget#Plain {{ background: transparent; }}
 
     /* Barre latérale */
     #Sidebar {{ background-color: {c['sidebar']}; }}

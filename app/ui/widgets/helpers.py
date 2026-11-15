@@ -24,11 +24,22 @@ def activate_and_center(widget: QWidget) -> None:
         widget.move(geometry.topLeft())
 
 
+def plainify(root: QWidget) -> None:
+    """Rend transparents les simples conteneurs (QWidget nus) d'une page : plus de bandes grises dans les cartes blanches."""
+    for w in root.findChildren(QWidget):
+        if type(w) is QWidget and not w.objectName():
+            w.setObjectName("Plain")
+            w.style().unpolish(w)
+            w.style().polish(w)
+
+
 def make_card(child: QWidget | None = None) -> QFrame:
     """Retourne un cadre stylé en « carte » contenant éventuellement un widget."""
     card = QFrame()
     card.setObjectName("Card")
     if child is not None:
+        if type(child) is QWidget:
+            child.setObjectName('Plain')  # pas de bande grise dans la carte blanche
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.addWidget(child)

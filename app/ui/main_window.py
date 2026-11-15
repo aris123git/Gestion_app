@@ -6,6 +6,7 @@ import time
 from typing import Optional
 from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from app.ui.icons import nav_icon
+from app.ui.widgets.helpers import plainify
 from PySide6.QtWidgets import QApplication, QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 from app import __version__
 from app.services import permissions as perms
@@ -481,6 +482,7 @@ class MainWindow(QWidget):
                 self.pages.append(None)
                 continue
             page = page_class(self.state)
+            plainify(page)
             self.pages.append(page)
             self.stack.addWidget(page)
             if product_profile.is_maquis() and hasattr(page, "set_order_opener"):
