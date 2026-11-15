@@ -23,7 +23,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import BaseDocTemplate, Frame, KeepTogether, PageTemplate, Paragraph, Spacer, Table, TableStyle
 
 from app import config
-from app.printers.invoice_a4 import client_refs, get_font_size
+from app.printers.invoice_a4 import client_refs, fiscal_rows, get_font_size
 from app.services import settings_service
 from app.services.invoice_numbering import delivery_number
 from app.utils.helpers import format_amount, format_money
@@ -256,6 +256,23 @@ def _footer_cols(canvas, c: Ctx, titles_cols, y0, bar_color=None):
 # ---------------------------------------------------------------------------------
 # Modèle 1 — Bandeau (type « CSMART »)
 # ---------------------------------------------------------------------------------
+def _bandeau_rows(c: Ctx) -> int:
+    if not c.refs.get("known"):
+        return 0
+    return 1 + bool(c.refs.get("address")) + bool(c.refs.get("email")) + min(2, len(fiscal_rows(c.refs)))
+
+
+def _bandeau_extra(c: Ctx) -> int:
+    return max(0, _bandeau_rows(c) - 3)
+
+
+def _marine_extra(c: Ctx) -> int:
+    if not c.refs.get("known"):
+        return 0
+    left = 1 + bool(c.refs.get("address")) + len(fiscal_rows(c.refs))
+    return max(0, left - 2)
+
+
 def _layout_bandeau(c: Ctx):
     p, dark = HexColor(c.style.primary), HexColor(c.style.accent)
 
@@ -280,6 +297,7 @@ def _layout_bandeau(c: Ctx):
                 right.append(("Adresse :", c.refs["address"]))
             if c.refs.get("email"):
                 right.append(("Email :", c.refs["email"]))
+            right += [(f"{l} :", v) for l, v in fiscal_rows(c.refs)][:2]
         y = H - 62 * mm
         for i, (lab, val) in enumerate(left):
             _text(canvas, MX, y - i * 7 * mm, lab, "Helvetica", 9, "#111827")
@@ -290,7 +308,7 @@ def _layout_bandeau(c: Ctx):
             _text(canvas, W / 2 + 5 * mm, y - i * 7 * mm, lab, "Helvetica", 9, "#111827")
             _text(canvas, W / 2 + 27 * mm, y - i * 7 * mm, val, "Helvetica-Bold", 9, "#111827", max_w=W / 2 - MX - 27 * mm - 5 * mm)
             canvas.line(W / 2 + 27 * mm, y - i * 7 * mm - 1.3 * mm, W - MX, y - i * 7 * mm - 1.3 * mm)
-        y2 = y - 3 * 7 * mm - 1 * mm
+        y2 = y - max(3, len(right)) * 7 * mm - 1 * mm
         _text(canvas, MX, y2, "Réf. vente :", "Helvetica", 9, "#111827")
         _text(canvas, MX + 24 * mm, y2, c.sale_ref, "Helvetica-Bold", 9, "#111827", max_w=60 * mm)
         if c.client_no:
@@ -317,7 +335,7 @@ def _layout_bandeau(c: Ctx):
     notes = Table([[Paragraph("NOTES :", _para(c, fs, False)), "", Paragraph("Signature :", _para(c))]], colWidths=[(W - 2 * MX) * 0.45, (W - 2 * MX) * 0.1, (W - 2 * MX) * 0.45], rowHeights=[38 * mm])
     notes.setStyle(TableStyle([("BOX", (0, 0), (0, 0), 0.8, dark), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("TOPPADDING", (0, 0), (-1, -1), 4)]))
     story = [t, Spacer(1, 8 * mm), KeepTogether([foot, Spacer(1, 6 * mm), notes])]
-    return story, first, later, 92 * mm, 14 * mm
+    return story, first, later, (92 + 7 * _bandeau_extra(c)) * mm, 14 * mm
 
 
 # ---------------------------------------------------------------------------------
@@ -356,7 +374,8 @@ def _layout_marine(c: Ctx):
         canvas.setStrokeColor(HexColor(c.style.primary))
         canvas.line(W / 2 - 22 * mm, top - 37.2 * mm, W / 2 + 22 * mm, top - 37.2 * mm)
         yb = top - 52 * mm
-        for x, w, rows in ((MX, 112 * mm, [("Nom :", _client_name(c)), ("Adresse :", c.refs.get("address", "") if c.refs.get("known") else "")]),
+        for x, w, rows in ((MX, 112 * mm, [("Nom :", _client_name(c)), ("Adresse :", c.refs.get("address", "") if c.refs.get("known") else "")]
+                            + ([(f"{l} :", v) for l, v in fiscal_rows(c.refs)] if c.refs.get("known") else [])),
                            (MX + 118 * mm, W - 2 * MX - 118 * mm, [("N° Client :", c.client_no), ("Contact :", c.refs.get("contact", "") if c.refs.get("known") else "")])):
             rows = [r for r in rows if r[1]] or [rows[0]]
             hh = 5.5 * mm * len(rows)
@@ -393,7 +412,7 @@ def _layout_marine(c: Ctx):
     sign = Table([[Paragraph("<u>&nbsp;" + "&nbsp;" * 34 + "</u><br/>Reçoit Conforme", _para(c, fs, False, "#111827", 1)), tot]], colWidths=[(W - 2 * MX) - 70 * mm, 70 * mm])
     sign.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM")]))
     story = [t, Spacer(1, 10 * mm), KeepTogether([sign])]
-    return story, first, later, 98 * mm, 14 * mm
+    return story, first, later, (98 + 5.5 * _marine_extra(c)) * mm, 14 * mm
 
 
 # ---------------------------------------------------------------------------------

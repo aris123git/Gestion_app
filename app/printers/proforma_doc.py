@@ -106,7 +106,7 @@ def build_sale_invoice_pdf(sale, path: str | Path, shop=None) -> Path:
     total = float(sale.total or 0)
     rate, vat = ia._vat_included(sale, items)
     d = dict(date=sale.date or datetime.now(), number=ia.invoice_number(sale), client_name=refs["name"], client_phone=refs["contact"],
-             client_email=refs["email"], client_ifu="", client_rccm="", client_regime="", client_division="", client_address=refs["address"],
+             client_email=refs["email"], client_ifu=refs["ifu"], client_rccm=refs["rccm"], client_regime=refs["regime"], client_division=refs["division"], client_address=refs["address"],
              subject="", notes="", lines=lines, totals=ps.Totals(total + discount, "", 0, 0, total), discount=discount,
              vat_note=(f"dont TVA {rate:g} % : {_num(vat)}" if rate else f"dont TVA : {_num(vat)}") if vat > 0 and ia.show_legal() else "",
              responsible=settings_service.get_setting(ps.SETTING_RESPONSIBLE, ""),

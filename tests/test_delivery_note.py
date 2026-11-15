@@ -66,3 +66,16 @@ class DeliveryNoteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FiscalOnBonsTests(unittest.TestCase):
+    def test_client_fiscal_info_on_delivery_and_pickup(self):
+        from app.printers import bon_enlevement as be
+        from tests.pdf_text import pdf_text
+        sale = _sale()
+        sale.client.ifu, sale.client.rccm, sale.client.regime, sale.client.division = "0012345A", "BF-OUA-1", "RSI", "DGE"
+        for sid in ("bandeau_bleu", "marine_marine"):
+            txt = pdf_text(dn.build_delivery_note(sale, style_id=sid, path=config.TICKET_DIR / f"fis_{sid}.pdf"))
+            self.assertIn("0012345A", txt)
+        self.assertIn("BF-OUA-1", pdf_text(be.build_bon_enlevement(sale, path=config.TICKET_DIR / "fis_be.pdf")))
+

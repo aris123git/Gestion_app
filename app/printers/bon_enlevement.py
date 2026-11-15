@@ -22,7 +22,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app import config
-from app.printers.invoice_a4 import HALF_H, amount_in_words, client_refs, get_font_size, get_format, FORMAT_HALF
+from app.printers.invoice_a4 import fiscal_rows, HALF_H, amount_in_words, client_refs, get_font_size, get_format, FORMAT_HALF
 from app.services import settings_service
 from app.services.invoice_numbering import pickup_number
 from app.utils.helpers import format_amount, format_money
@@ -233,6 +233,9 @@ def build_bon_enlevement(
         right_rows.append([Paragraph(f"<b>Contact :</b> {c_phone}", base)])
     if c_address:
         right_rows.append([Paragraph(f"<b>Adresse :</b> {c_address}", base)])
+    if refs.get("known"):
+        for lab, val in fiscal_rows(refs):
+            right_rows.append([Paragraph(f"<b>{lab} :</b> {val}", base)])
     if right_rows:
         right_box = Table(right_rows, colWidths=[frame_w * 0.52])
         right_box.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.9, LINE), ("TOPPADDING", (0, 0), (-1, -1), 1 if half else 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 1 if half else 2)]))

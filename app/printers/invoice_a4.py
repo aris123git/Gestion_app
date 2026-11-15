@@ -255,18 +255,26 @@ def client_refs(sale) -> dict:
         phones = [str(getattr(client, a, "") or "").strip() for a in ("phone", "phone2")]
         address = str(getattr(client, "address", "") or "").strip()
         email = str(getattr(client, "email", "") or "").strip()
+        fiscal = {k: str(getattr(client, k, "") or "").strip() for k in ("ifu", "rccm", "regime", "division")}
     else:
         name = str(getattr(sale, "client_name", "") or "")
         phones = [str(getattr(sale, "client_phone", "") or "").strip()]
         address = str(getattr(sale, "client_address", "") or "").strip()
         email = str(getattr(sale, "client_email", "") or "").strip()
+        fiscal = {k: str(getattr(sale, "client_" + k, "") or "").strip() for k in ("ifu", "rccm", "regime", "division")}
     return {
+        **fiscal,
         "name": name.strip() or "Client de passage",
         "contact": " / ".join(p for p in phones if p),
         "address": address,
         "email": email,
         "known": client is not None or bool(name.strip() and name.strip() != "Client de passage"),
     }
+
+
+def fiscal_rows(refs: dict) -> list[tuple[str, str]]:
+    """Informations fiscales du client renseignées sur sa fiche, à afficher sur les bons."""
+    return [(lab, refs[k]) for lab, k in (("IFU", "ifu"), ("RCCM", "rccm"), ("Régime fiscal", "regime"), ("Division fiscale", "division")) if refs.get(k)]
 
 
 def _line_cells(item, currency: str):
