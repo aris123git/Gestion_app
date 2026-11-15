@@ -540,19 +540,13 @@ def wrap_text_local(text: str, width: int) -> list[str]:
     return wrap_text(text, width)
 
 
+# Designs proposés (les autres, trop proches, ont été retirés : un ticket enregistré avec l'un d'eux repasse en Classique).
 CLIENT_DESIGN_CLASSES = (
     ClassicDesign,
-    ModernDesign,
     CompactDesign,
     ElegantDesign,
     RestaurantDesign,
-    MinimalDesign,
     BoldDesign,
     TerminalDesign,
     FactureTableauDesign,
-    FactureTableauArrondiDesign,
 )
-
-from app.printers.ticket.designs.futuriste_designs import FUTURISTE_DESIGN_CLASSES  # noqa: E402
-
-CLIENT_DESIGN_CLASSES = CLIENT_DESIGN_CLASSES + FUTURISTE_DESIGN_CLASSES

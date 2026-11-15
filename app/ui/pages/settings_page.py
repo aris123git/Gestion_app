@@ -665,7 +665,7 @@ class SettingsPage(QWidget):
         form.addRow(t('Après vente'), self.auto_print)
         form.addRow(t('Message du ticket'), self.footer)
         outer.addWidget(make_card(form_widget))
-        designs_hint = QLabel(t("Les designs visuels (Classique, Moderne, Bon serveur…) se choisissent dans le bloc <b>Designs des tickets</b>. Le <b>profil imprimante</b> fixe le codepage ESC/POS (accents français) et la largeur en caractères. Sur <b>Xprinter</b>, utilisez le profil « Xprinter … CP850 » : annule le mode chinois et garde les filets de tableau continus (─ │)."))
+        designs_hint = QLabel(t("Les designs visuels (Classique, Compact, Bon serveur…) se choisissent dans le bloc <b>Designs des tickets</b>. Le <b>profil imprimante</b> fixe le codepage ESC/POS (accents français) et la largeur en caractères. Sur <b>Xprinter</b>, utilisez le profil « Xprinter … CP850 » : annule le mode chinois et garde les filets de tableau continus (─ │)."))
         designs_hint.setWordWrap(True)
         designs_hint.setStyleSheet('color: #64748b;')
         outer.addWidget(designs_hint)
