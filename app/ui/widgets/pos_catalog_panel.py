@@ -91,6 +91,8 @@ class PosCatalogPanel(QFrame):
         self.product_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
+        for col in (1, 2):
+            self.product_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.product_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.product_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
@@ -145,7 +147,7 @@ class PosCatalogPanel(QFrame):
         self.product_table.setVisible(not use_images)
         self.product_grid_scroll.setVisible(use_images)
         # Tablette Maquis : tap carte = ajout (pas de bouton « Ajouter »)
-        self.add_to_cart_btn.setVisible(not use_images and not self._maquis)
+        self.add_to_cart_btn.setVisible(False)  # un clic sur le produit l'ajoute
         if self._maquis:
             self._barcode_row.setVisible(False)
 
@@ -293,13 +295,16 @@ class PosCatalogPanel(QFrame):
                 )
             else:
                 price_txt = format_money(product.sale_price, currency)
-            self.product_table.setItem(row, 1, QTableWidgetItem(price_txt))
+            price_item = QTableWidgetItem(price_txt)
+            price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.product_table.setItem(row, 1, price_item)
             stock_item = QTableWidgetItem(
                 t('Sans stock') if getattr(product, 'sell_without_stock', False)
                 else f"{format_quantity(product.quantity)} {product.unit_name}".strip()
             )
             if product.is_out_of_stock:
                 stock_item.setForeground(Qt.GlobalColor.red)
+            stock_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.product_table.setItem(row, 2, stock_item)
         self._clear_product_grid()
         cols = 3

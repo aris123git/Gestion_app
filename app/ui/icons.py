@@ -28,6 +28,7 @@ _PATHS = {
     "🔥": '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
     "📄": '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
     "🛵": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "trash": '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5"/>',
     "🏷️": '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/>',
 }
 
@@ -61,3 +62,15 @@ def nav_icon(emoji: str, normal: str = "#cbd5e1", active: str = "#ffffff", size:
         icon.addPixmap(_pixmap(paths, active, size), QIcon.Mode.Normal, QIcon.State.On)
         _cache[key] = icon
     return _cache[key]
+
+
+def line_icon(key: str, color: str = "#c62f3a", size: int = 18) -> Optional[QIcon]:
+    """Petite icône en traits (corbeille…) d'une couleur donnée."""
+    paths = _PATHS.get(key)
+    if paths is None:
+        return None
+    cache_key = ("line", key, color, size)
+    if cache_key not in _cache:
+        icon = QIcon(_pixmap(paths, color, size))
+        _cache[cache_key] = icon
+    return _cache[cache_key]

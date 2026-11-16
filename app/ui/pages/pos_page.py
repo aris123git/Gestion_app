@@ -1,8 +1,9 @@
 """Module Caisse : interface de vente rapide."""
 from __future__ import annotations
 from typing import Dict, List, Optional
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont, QPixmap
+from app.ui.icons import line_icon
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
 from app.controllers.client_controller import ClientController
@@ -107,7 +108,7 @@ class POSPage(QWidget):
             self.cart_table.setColumnWidth(self.COL_PRICE, 100)
             self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
             self.cart_table.setColumnWidth(self.COL_DEL, 44)
-        total_px = 20 if profile.density == 'compact' else 22 if profile.is_narrow else 26
+        total_px = 22 if profile.density == 'compact' else 26 if profile.is_narrow else 32
         self.total_label.setStyleSheet(f'font-size: {total_px}px; font-weight: 800;')
         if self._pay_button is not None:
             self._pay_button.setMinimumHeight(44 if profile.density != 'comfortable' else 52)
@@ -144,6 +145,9 @@ class POSPage(QWidget):
         self.cart_table = QTableWidget(0, 5)
         self.cart_table.setHorizontalHeaderLabels([t('Produit'), t('Qté'), t('Prix U.'), t('Total'), ''])
         self.cart_table.horizontalHeader().setSectionResizeMode(self.COL_NAME, QHeaderView.ResizeMode.Stretch)
+        for col in (self.COL_QTY, self.COL_PRICE, self.COL_TOTAL):
+            self.cart_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        self.cart_table.horizontalHeader().setMinimumSectionSize(60)
         self.cart_table.setColumnWidth(self.COL_QTY, 70)
         self.cart_table.setColumnWidth(self.COL_PRICE, 100)
         self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
@@ -433,7 +437,7 @@ class POSPage(QWidget):
         if large:
             price_font.setPointSize(pt + 2)
         self.cart_table.setFont(font)
-        self.cart_table.verticalHeader().setDefaultSectionSize(row_h)
+        self.cart_table.verticalHeader().setDefaultSectionSize(max(row_h, 38))  # la corbeille tient dans la ligne
         self.cart_table.verticalHeader().setVisible(False)
         self.cart_table.blockSignals(True)
         try:
@@ -470,9 +474,11 @@ class POSPage(QWidget):
         from app.services.profit_loyalty_service import ProfitLoyaltyService
         cid = client_id if client_id is not None else self._current_client_id()
         currency = settings_service.get_currency()
+        from app.services import product_profile
+        self._loyalty_row_widget.setVisible(ProfitLoyaltyService.is_enabled() and product_profile.supports_profit_loyalty())
         if not cid or not ProfitLoyaltyService.is_enabled():
             self.loyalty_offer_btn.setEnabled(False)
-            self.loyalty_hint.setText('Sélectionnez un client pour offrir un produit fidélité.' if ProfitLoyaltyService.is_enabled() else 'Fidélité bénéfices désactivée (Paramètres admin).')
+            self.loyalty_hint.setText('Sélectionnez un client pour offrir un produit fidélité.')
             self._update_total()
             return
         balance = ProfitLoyaltyService.credit_balance(int(cid))
@@ -656,8 +662,16 @@ class POSPage(QWidget):
             self.cart_table.setItem(row, self.COL_QTY, qty_item)
             self.cart_table.setItem(row, self.COL_PRICE, price_item)
             self.cart_table.setItem(row, self.COL_TOTAL, total_item)
-            delete_button = QPushButton(t('✕'))
-            delete_button.setObjectName('Danger')
+            delete_button = QPushButton()
+            delete_icon = line_icon('trash')
+            if delete_icon is not None:
+                delete_button.setIcon(delete_icon)
+                delete_button.setIconSize(QSize(17, 17))
+                delete_button.setObjectName('DeleteLine')
+            else:
+                delete_button.setText(t('✕'))
+                delete_button.setObjectName('Danger')
+            delete_button.setToolTip(t('Retirer cette ligne'))
             delete_button.clicked.connect(lambda _=False, r=row: self._remove_line(r))
             self.cart_table.setCellWidget(row, self.COL_DEL, delete_button)
         self._apply_large_text()

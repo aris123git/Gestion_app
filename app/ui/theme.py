@@ -59,6 +59,14 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     }}
     QLabel {{ background: transparent; }}
     QWidget#Plain {{ background: transparent; }}
+    QPushButton#DeleteLine {{
+        background-color: #fdecee;
+        border: none;
+        border-radius: 8px;
+        min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px;
+        padding: 0;
+    }}
+    QPushButton#DeleteLine:hover {{ background-color: #f9d3d7; }}
 
     /* Barre latérale */
     #Sidebar {{ background-color: {c['sidebar']}; }}
