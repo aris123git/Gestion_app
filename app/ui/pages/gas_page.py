@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt, QUrl
@@ -431,9 +431,14 @@ class GasPage(QWidget):
         prod = QPushButton(t("Produits et prix"))
         prod.clicked.connect(lambda: ProductsDialog(self).exec())
         top.addWidget(prod)
-        top.addWidget(QLabel(t("Jour")))
-        self.day = _date_edit()
-        self.day.dateChanged.connect(self.refresh)
+        top.addWidget(QLabel(t("Du")))
+        self.f_start = _date_edit()
+        top.addWidget(self.f_start)
+        top.addWidget(QLabel(t("au")))
+        self.day = _date_edit()          # « au » : le jour affiché dans le cahier, les livraisons et le camion
+        self._prev_end = self.day.date()
+        self.day.dateChanged.connect(self._end_changed)
+        self.f_start.dateChanged.connect(self._start_changed)
         top.addWidget(self.day)
         layout.addLayout(top)
         kp = QHBoxLayout()
@@ -450,7 +455,7 @@ class GasPage(QWidget):
         v = QVBoxLayout(tab)
         head = QHBoxLayout()
         head.addLayout(self._buttons([("sell", "+ Vente détaillant", self._sell, True),
-                                      ("loss", "Déclarer une perte", self._loss, False), ("psheet", "Imprimer le cahier", self._print_sheet, False)]), 1)
+                                      ("psheet", "Imprimer le cahier", self._print_sheet, False)]), 1)
         self.total_label = QLabel()
         head.addWidget(self.total_label)
         v.addLayout(head)
@@ -520,32 +525,25 @@ class GasPage(QWidget):
         # Suivi : opérations du jour (annulation) + chiffres et pertes de la période
         tab = QWidget()
         v = QVBoxLayout(tab)
-        v.addWidget(QLabel(f"<b>{t('Opérations du jour')}</b>"))
+        v.addWidget(QLabel(f"<b>{t('Opérations')}</b>"))
         self.jtable = _table(["Heure", "Opération", "Détail", "Montant", "Voyage"])
         self.jtable.verticalHeader().setVisible(False)
         v.addWidget(self.jtable, 1)
         v.addLayout(self._buttons([("jcancel", "Annuler l'opération", self._cancel_op, False)]))
-        pbar = QHBoxLayout()
-        pbar.addWidget(QLabel(f"<b>{t('Période')}</b> &nbsp; {t('Du')}"))
-        self.f_start = _date_edit()
-        self.f_start.setDate(QDate.currentDate().addDays(-QDate.currentDate().day() + 1))
-        pbar.addWidget(self.f_start)
-        pbar.addWidget(QLabel(t("au")))
-        self.f_end = _date_edit()
-        pbar.addWidget(self.f_end)
-        pbar.addStretch()
-        v.addLayout(pbar)
         self.figures_label = QLabel()
         self.figures_label.setTextFormat(Qt.TextFormat.RichText)
         v.addWidget(self.figures_label)
-        v.addWidget(QLabel(f"<b>{t('Pertes de la période')}</b>"))
+        v.addStretch()
+        self.tabs.addTab(tab, t("Suivi"))
+
+        # Pertes de la période
+        tab = QWidget()
+        v = QVBoxLayout(tab)
+        v.addLayout(self._buttons([("loss", "Déclarer une perte", self._loss, True), ("ploss", "Imprimer les pertes", self._print_losses, False)]))
         self.losstable = _table(["Date", "Produit", "Bouteilles", "Motif"])
         self.losstable.verticalHeader().setVisible(False)
         v.addWidget(self.losstable, 1)
-        v.addLayout(self._buttons([("ploss", "Imprimer les pertes", self._print_losses, False)]))
-        self.f_start.dateChanged.connect(self._refresh_states)
-        self.f_end.dateChanged.connect(self._refresh_states)
-        self.tabs.addTab(tab, t("Suivi"))
+        self.tabs.insertTab(3, tab, t("Pertes"))
         self.refresh()
 
     def _buttons(self, spec) -> QHBoxLayout:
@@ -562,6 +560,21 @@ class GasPage(QWidget):
             row.addWidget(b)
         row.addStretch()
         return row
+
+    def _end_changed(self, *_a) -> None:
+        """Jour seul (par défaut) : changer le jour déplace aussi le début. Intervalle : le début reste."""
+        if self.f_start.date() == self._prev_end or self.f_start.date() > self.day.date():
+            self.f_start.blockSignals(True)
+            self.f_start.setDate(self.day.date())
+            self.f_start.blockSignals(False)
+        self._prev_end = self.day.date()
+        self.refresh()
+
+    def _start_changed(self, *_a) -> None:
+        if self.f_start.date() > self.day.date():
+            self.day.setDate(self.f_start.date())      # déclenche _end_changed
+            return
+        self.refresh()
 
     def _day(self) -> date:
         d = self.day.date()
@@ -738,7 +751,7 @@ class GasPage(QWidget):
         self._open(gas_docs.build_losses(*self._period(), self._tmp("gaz_pertes.pdf")))
 
     def _period(self):
-        a, b = self.f_start.date(), self.f_end.date()
+        a, b = self.f_start.date(), self.day.date()
         return date(a.year(), a.month(), a.day()), date(b.year(), b.month(), b.day())
 
     def _refresh_states(self, *_a) -> None:
@@ -825,7 +838,10 @@ class GasPage(QWidget):
             for j, val in enumerate(vals):
                 self.wtable.setItem(i, j, _cell(val, right=j > 0, data=w.id if j == 0 else None))
         delivered_today = sum(d["total"] for d in gs.deliveries_of_day(day))
-        ops = gs.day_operations(day)
+        ops = []
+        d0, d1 = self._period()
+        for k in range(min((d1 - d0).days, 92), -1, -1):
+            ops += gs.day_operations(d1 - timedelta(days=k))
         self.jtable.setRowCount(len(ops))
         for i, o in enumerate(ops):
             for j, val in enumerate([f"{o['when']:%H:%M}", o["label"], o["detail"], _money(o["amount"]) if o["amount"] else "", o["trip"]]):
