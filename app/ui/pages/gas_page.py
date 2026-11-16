@@ -18,7 +18,7 @@ from app.services import audit_service, gas_service as gs, permissions as perms
 from app.ui.pages.rentals_page import _cell, _date_edit, _table
 from app.ui.state import AppState
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import info, page_title, warn
+from app.ui.widgets.helpers import info, make_card, page_title, warn
 
 
 def _money(v) -> str:
@@ -361,6 +361,62 @@ class LineDialog(_Form):
                      self.cost.value() if self.has_cost.isChecked() else None, self.row.id if self.row else None, self.active.isChecked())
 
 
+class ProductsDialog(QDialog):
+    """Produits gaz et prix : réglés une fois, rarement modifiés."""
+
+    def __init__(self, page: "GasPage"):
+        super().__init__(page)
+        self.page = page
+        self.setWindowTitle(t("Produits et prix"))
+        fit_dialog_to_screen(self, min_width=640, min_height=420, preferred_width=780, preferred_height=520)
+        v = QVBoxLayout(self)
+        self.ltable = _table(["Produit", "Prix détaillant", "Prix grossiste", "Prix d'achat", "Stock"])
+        self.ltable.verticalHeader().setVisible(False)
+        self.ltable.doubleClicked.connect(lambda *_: self._edit())
+        v.addWidget(self.ltable, 1)
+        row = QHBoxLayout()
+        for label, slot, primary in (("+ Produit", self._new, False), ("Modifier prix", self._edit, True),
+                                     ("Créer 6 kg / 12,5 kg × 3 formules", self._standard, False)):
+            b = QPushButton(t(label))
+            if primary:
+                b.setObjectName("Primary")
+            b.setEnabled(page.can_manage)
+            b.clicked.connect(slot)
+            row.addWidget(b)
+        row.addStretch()
+        v.addLayout(row)
+        self._fill()
+
+    def _fill(self) -> None:
+        ls = gs.list_lines(False)
+        self.ltable.setRowCount(len(ls))
+        for i, ln in enumerate(ls):
+            cost = "—" if ln.cost_price is None else _money(ln.cost_price)
+            for j, val in enumerate([ln.name, _money(ln.retail_price), _money(ln.wholesale_price), cost, ln.stock]):
+                self.ltable.setItem(i, j, _cell(val, right=j > 0, data=ln.id if j == 0 else None))
+
+    def _after(self) -> None:
+        self._fill()
+        self.page.refresh()
+
+    def _new(self) -> None:
+        self.page._run(LineDialog(self), "Produit gaz")
+        self._fill()
+
+    def _edit(self) -> None:
+        r = self.ltable.currentRow()
+        it = self.ltable.item(r, 0) if r >= 0 else None
+        row = next((x for x in gs.list_lines(False) if it and x.id == it.data(Qt.ItemDataRole.UserRole)), None)
+        if row:
+            self.page._run(LineDialog(self, row), "Produit gaz")
+            self._fill()
+
+    def _standard(self) -> None:
+        n = gs.create_standard_lines()
+        info(self, t("{n} produit(s) créé(s). Renseignez les prix.").format(n=n) if n else t("Les produits standard existent déjà."))
+        self._after()
+
+
 class GasPage(QWidget):
     def __init__(self, state: AppState):
         super().__init__()
@@ -593,7 +649,6 @@ class GasPage(QWidget):
         else:
             TripDaysDialog(self, tid).exec()
     def _wnew(self): self._run(WholesalerDialog(self), "Grossiste gaz")
-    def _lnew(self): self._run(LineDialog(self), "Produit gaz")
 
     def _selected(self, table):
         r = table.currentRow()
@@ -699,11 +754,6 @@ class GasPage(QWidget):
         for i, r in enumerate(rows):
             for j, val in enumerate([f"{r['date']:%d/%m/%Y}", r["line"], r["qty"], r["reason"]]):
                 self.losstable.setItem(i, j, _cell(val, right=j == 2))
-
-    def _lstd(self):
-        n = gs.create_standard_lines()
-        info(self, t("{n} produit(s) créé(s). Renseignez les prix.").format(n=n) if n else t("Les produits standard existent déjà."))
-        self.refresh()
 
     def _select_by_id(self, table, ident) -> None:
         for r in range(table.rowCount()):

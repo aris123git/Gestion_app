@@ -244,7 +244,9 @@ class GasTests(unittest.TestCase):
             state.can = lambda p: True
             page = GasPage(state)
             page.refresh()
-            self.assertGreaterEqual(page.ltable.rowCount(), 6)
+            self.assertGreaterEqual(len(gs.list_lines(False)), 6)
+            from app.ui.pages.gas_page import ProductsDialog
+            self.assertGreaterEqual(ProductsDialog(page).ltable.rowCount(), 6)
             from datetime import datetime as _dt
             tid = gs.start_trip([(page_line.id, 5) for page_line in gs.list_lines()[:1]], truck="Cam", when=_dt(2026, 5, 1, 8))
             page.refresh()
