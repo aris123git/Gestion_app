@@ -636,7 +636,6 @@ class FieldSalesPage(QWidget):
         side.addWidget(self.s_head)
         self.b_day = QPushButton(t("Payer aujourd'hui"))
         self.b_day.setObjectName("Primary")
-        self.b_days = QPushButton(t("Payer les N derniers jours…"))
         self.b_range = QPushButton(t("Payer une période…"))
         self.b_all = QPushButton(t("Tout payer"))
         self.b_wa = QPushButton(t("Contacter (WhatsApp)"))
@@ -644,13 +643,12 @@ class FieldSalesPage(QWidget):
         rm = QPushButton(t("Supprimer"))
         rm.setObjectName("DangerOutline")
         self.b_day.clicked.connect(lambda: self._pay("day"))
-        self.b_days.clicked.connect(lambda: self._pay("days"))
         self.b_range.clicked.connect(lambda: self._pay("range"))
         self.b_all.clicked.connect(lambda: self._pay("all"))
         self.b_wa.clicked.connect(lambda: self._contact(self._seller_id()))
         edit.clicked.connect(lambda: self._seller_dialog(self._current_seller()))
         rm.clicked.connect(self._seller_delete)
-        for b in (self.b_day, self.b_days, self.b_range, self.b_all):
+        for b in (self.b_day, self.b_range, self.b_all):
             b.setEnabled(self.can_manage)
             side.addWidget(b)
         side.addWidget(self.b_wa)
@@ -691,12 +689,6 @@ class FieldSalesPage(QWidget):
         start = end = None
         if mode == "day":
             start, end = fs.day_range(datetime.now())
-        elif mode == "days":
-            n, ok = QInputDialog.getInt(self, t("Payer"), t("Nombre de derniers jours (aujourd'hui compris) :"), 7, 1, 365)
-            if not ok:
-                return
-            end = fs.day_range(datetime.now())[1]
-            start = end - timedelta(days=n)
         elif mode == "range":
             dlg = QDialog(self)
             dlg.setWindowTitle(t("Période à payer"))
