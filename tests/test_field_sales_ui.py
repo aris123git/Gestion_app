@@ -25,7 +25,7 @@ SCRIPT = textwrap.dedent('''
     page = FieldSalesPage(state)
     page.refresh()
     assert page.sellers.rowCount() == 1, page.sellers.rowCount()
-    assert page.tabs.count() == 4
+    assert page.tabs.count() == 3
     assert "WhatsApp" in page.b_wa.text()
     from app.ui.main_window import build_nav_items
     assert any("Tourn" in str(i[0]) for i in build_nav_items())
