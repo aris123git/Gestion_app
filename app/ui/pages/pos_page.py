@@ -1,10 +1,11 @@
 """Module Caisse : interface de vente rapide."""
 from __future__ import annotations
 from typing import Dict, List, Optional
+import html
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFont, QPixmap
 from app.ui.icons import line_icon
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
 from app.controllers.client_controller import ClientController
 from app.controllers.product_controller import ProductController
@@ -109,6 +110,7 @@ class POSPage(QWidget):
             self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
             self.cart_table.setColumnWidth(self.COL_DEL, 44)
         total_px = 22 if profile.density == 'compact' else 26 if profile.is_narrow else 32
+        self._total_px = total_px
         self.total_label.setStyleSheet(f'font-size: {total_px}px; font-weight: 800;')
         if self._pay_button is not None:
             self._pay_button.setMinimumHeight(44 if profile.density != 'comfortable' else 52)
@@ -117,6 +119,7 @@ class POSPage(QWidget):
             self._catalog.apply_layout_profile(profile)
 
     def _build_cart(self) -> QWidget:
+        from app.services import product_profile
         panel = QFrame()
         panel.setObjectName('Card')
         layout = QVBoxLayout(panel)
@@ -128,19 +131,21 @@ class POSPage(QWidget):
         clear = QPushButton(t('pos.clear_cart'))
         clear.setObjectName('Danger')
         clear.clicked.connect(self._clear_cart)
-        header.addWidget(clear)
+        if product_profile.is_maquis():
+            header.addWidget(clear)
         layout.addLayout(header)
         self._client_row_widget = QWidget()
         client_row = QHBoxLayout(self._client_row_widget)
         client_row.setContentsMargins(0, 0, 0, 0)
         client_row.addWidget(QLabel(t('pos.client')))
-        self.client_search = ClientSearchField(placeholder='Tapez un nom ou un téléphone…')
+        self.client_search = ClientSearchField(placeholder='Nom ou téléphone du client, pour facturer ou mettre en dette')
         self.client_search.client_selected.connect(self._on_client_selected)
         client_row.addWidget(self.client_search, 1)
         layout.addWidget(self._client_row_widget)
         self._client_hint = QLabel(t('Suggestions au fur et à mesure. Sélectionnez le client pour facturer ou mettre en dette.'))
         self._client_hint.setWordWrap(True)
         self._client_hint.setStyleSheet('color: #64748b; font-size: 12px;')
+        self._client_hint.setVisible(False)  # le champ client l'explique déjà
         layout.addWidget(self._client_hint)
         self.cart_table = QTableWidget(0, 5)
         self.cart_table.setHorizontalHeaderLabels([t('Produit'), t('Qté'), t('Prix U.'), t('Total'), ''])
@@ -148,6 +153,11 @@ class POSPage(QWidget):
         for col in (self.COL_QTY, self.COL_PRICE, self.COL_TOTAL):
             self.cart_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.cart_table.horizontalHeader().setMinimumSectionSize(60)
+        if not product_profile.is_maquis():
+            self.cart_table.horizontalHeader().setVisible(False)
+            self.cart_table.setShowGrid(False)
+            self.cart_table.setColumnHidden(self.COL_PRICE, True)
+            self.cart_table.cellDoubleClicked.connect(self._edit_price_dialog)
         self.cart_table.setColumnWidth(self.COL_QTY, 70)
         self.cart_table.setColumnWidth(self.COL_PRICE, 100)
         self.cart_table.setColumnWidth(self.COL_TOTAL, 110)
@@ -197,7 +207,7 @@ class POSPage(QWidget):
         self._loyalty_row_widget.setVisible(product_profile.supports_profit_loyalty())
         self.total_label = QLabel(t('Total : 0'))
         self.total_label.setStyleSheet('font-size: 26px; font-weight: 800;')
-        self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignLeft if not product_profile.is_maquis() else Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self.total_label)
         pending_row = QHBoxLayout()
         hold_btn = QPushButton(t('pos.hold'))
@@ -215,12 +225,17 @@ class POSPage(QWidget):
         layout.addWidget(self.order_button)
         self._update_order_button()
         pay_button = QPushButton(t('pos.checkout'))
-        pay_button.setObjectName('Success')
+        pay_button.setObjectName('Success' if product_profile.is_maquis() else 'Primary')
         pay_button.setMinimumHeight(52)
         pay_button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         pay_button.clicked.connect(self._checkout)
         layout.addWidget(pay_button)
         self._pay_button = pay_button
+        if not product_profile.is_maquis():
+            pay_button.setText(t('Encaisser'))
+            clear.setObjectName('DangerOutline')
+            clear.setText(t('Vider le panier'))
+            layout.addWidget(clear)
         if product_profile.is_maquis():
             save_btn = QPushButton(t("Enregistrer commande"))
             save_btn.setObjectName("MaquisEnregistrer")
@@ -437,7 +452,7 @@ class POSPage(QWidget):
         if large:
             price_font.setPointSize(pt + 2)
         self.cart_table.setFont(font)
-        self.cart_table.verticalHeader().setDefaultSectionSize(max(row_h, 38))  # la corbeille tient dans la ligne
+        self.cart_table.verticalHeader().setDefaultSectionSize(max(row_h, 38) if self._maquis_mode else 56)  # la corbeille tient dans la ligne
         self.cart_table.verticalHeader().setVisible(False)
         self.cart_table.blockSignals(True)
         try:
@@ -660,6 +675,17 @@ class POSPage(QWidget):
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.cart_table.setItem(row, self.COL_NAME, name_item)
             self.cart_table.setItem(row, self.COL_QTY, qty_item)
+            if not self._maquis_mode:
+                name_label = QLabel(
+                    f"<div style='font-size:15px'>{html.escape(name_item.text())}</div>"
+                    f"<div style='color:#6b7690;font-size:12px'>{html.escape(format_money(line.unit_price, currency))}</div>")
+                name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+                name_label.setContentsMargins(6, 0, 0, 0)
+                name_item.setToolTip(name_item.text())
+                name_item.setText('')  # le libellé est dessiné par le QLabel à deux lignes
+                self.cart_table.setCellWidget(row, self.COL_NAME, name_label)
+                if qty_item.flags() & Qt.ItemFlag.ItemIsEditable:
+                    self.cart_table.setCellWidget(row, self.COL_QTY, self._make_stepper(row, qty_item.text()))
             self.cart_table.setItem(row, self.COL_PRICE, price_item)
             self.cart_table.setItem(row, self.COL_TOTAL, total_item)
             delete_button = QPushButton()
@@ -673,7 +699,15 @@ class POSPage(QWidget):
                 delete_button.setObjectName('Danger')
             delete_button.setToolTip(t('Retirer cette ligne'))
             delete_button.clicked.connect(lambda _=False, r=row: self._remove_line(r))
-            self.cart_table.setCellWidget(row, self.COL_DEL, delete_button)
+            if self._maquis_mode:
+                self.cart_table.setCellWidget(row, self.COL_DEL, delete_button)
+            else:
+                holder = QWidget()
+                holder.setObjectName('Plain')
+                holder_layout = QHBoxLayout(holder)
+                holder_layout.setContentsMargins(0, 0, 0, 0)
+                holder_layout.addWidget(delete_button, 0, Qt.AlignmentFlag.AlignCenter)
+                self.cart_table.setCellWidget(row, self.COL_DEL, holder)
         self._apply_large_text()
         self._updating = False
         self._refresh_loyalty_credit()
@@ -681,6 +715,46 @@ class POSPage(QWidget):
             from app.services.maquis_cart_store import save_cart
 
             save_cart(self.cart, self.state.user_id)
+
+    def _make_stepper(self, row: int, text: str) -> QWidget:
+        """Quantité d'une ligne : − [valeur] + ; la valeur reste modifiable au clavier."""
+        box = QWidget()
+        box.setObjectName('Stepper')
+        h = QHBoxLayout(box)
+        h.setContentsMargins(2, 2, 2, 2)
+        h.setSpacing(0)
+        minus = QPushButton('−')
+        plus = QPushButton('+')
+        edit = QLineEdit(text)
+        edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        minus.clicked.connect(lambda _=False, r=row: self._bump_qty(r, -1))
+        plus.clicked.connect(lambda _=False, r=row: self._bump_qty(r, 1))
+        edit.editingFinished.connect(lambda r=row, e=edit: self._set_qty_text(r, e.text()))
+        h.addWidget(minus)
+        h.addWidget(edit)
+        h.addWidget(plus)
+        return box
+
+    def _set_qty_text(self, row: int, text: str) -> None:
+        item = self.cart_table.item(row, self.COL_QTY)
+        if item is not None and 0 <= row < len(self.cart) and text.strip() != item.text().strip():
+            item.setText(text.strip())  # déclenche les contrôles habituels (stock, fidélité…)
+
+    def _bump_qty(self, row: int, delta: int) -> None:
+        if 0 <= row < len(self.cart):
+            self._set_qty_text(row, format_quantity(max(0.0, float(self.cart[row].quantity) + delta)))
+
+    def _edit_price_dialog(self, row: int, column: int) -> None:
+        """Double-clic sur une ligne : modifier le prix (si autorisé)."""
+        if column != self.COL_NAME or not (0 <= row < len(self.cart)) or not self.state.can(perms.MANAGE_PRICES):
+            return
+        line = self.cart[row]
+        item = self.cart_table.item(row, self.COL_PRICE)
+        if line.loyalty_reward or line.free_amount or item is None:
+            return
+        value, ok = QInputDialog.getDouble(self, t('Prix unitaire'), t('Nouveau prix'), float(line.unit_price), 0, 1e12, 0)
+        if ok:
+            item.setText(f'{value:g}')
 
     def _remove_line(self, row: int) -> None:
         if 0 <= row < len(self.cart):
@@ -798,7 +872,14 @@ class POSPage(QWidget):
             self.discount_hint.setText(f'Max {format_money(ceiling, currency)}')
         else:
             self.discount_hint.setText('')
-        self.total_label.setText(f'Total : {format_money(self._cart_total(), currency)}')
+        amount = format_money(self._cart_total(), currency)
+        if self._maquis_mode:
+            self.total_label.setText(f'Total : {amount}')
+        else:
+            px = getattr(self, '_total_px', 32)
+            self.total_label.setText(
+                f"<span style='color:#6b7690;font-size:12px;font-weight:700'>TOTAL À PAYER</span><br>"
+                f"<span style='font-size:{px}px;font-weight:800'>{amount}</span>")
 
     def _clear_cart(self) -> None:
         pending_id = self._pending_sale_id

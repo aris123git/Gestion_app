@@ -59,6 +59,12 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     }}
     QLabel {{ background: transparent; }}
     QWidget#Plain {{ background: transparent; }}
+    QWidget#Stepper {{ border: 1px solid {c['border']}; border-radius: 8px; background-color: {c['surface']}; }}
+    QWidget#Stepper QPushButton {{ border: none; background: transparent; font-size: 17px; font-weight: 700; padding: 0; min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; }}
+    QWidget#Stepper QPushButton:hover {{ background-color: {c['bg']}; border-radius: 6px; }}
+    QWidget#Stepper QLineEdit {{ border: none; background: transparent; padding: 0; min-width: 44px; max-width: 64px; }}
+    QPushButton#DangerOutline {{ background-color: {c['surface']}; color: #c62f3a; border: 1px solid #f1c5c9; font-weight: 600; }}
+    QPushButton#DangerOutline:hover {{ background-color: #fdecee; }}
     QPushButton#DeleteLine {{
         background-color: #fdecee;
         border: none;

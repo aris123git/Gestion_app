@@ -57,9 +57,11 @@ class PosCatalogPanel(QFrame):
         layout.addWidget(self._barcode_row)
         if self._maquis:
             self._barcode_row.setVisible(False)
+        else:
+            self._barcode_row.setVisible(False)  # un seul champ : recherche ou code-barres
         filter_row = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(t("pos.search_product"))
+        self.search_input.setPlaceholderText(t("Rechercher un produit ou scanner un code-barres") if not self._maquis else t("pos.search_product"))
         self.search_input.textChanged.connect(self._reload_products)
         self.search_input.returnPressed.connect(self._add_first_found)
         self.category_filter = QComboBox()
@@ -76,7 +78,14 @@ class PosCatalogPanel(QFrame):
         self.category_chips_scroll.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self.category_chips_scroll.setFixedHeight(56)
+        self.category_chips_scroll.setFixedHeight(56 if self._maquis else 64)
+        if not self._maquis:
+            self.category_chips_scroll.setStyleSheet(
+                "QScrollArea { background: transparent; border: none; }"
+                "QScrollArea > QWidget > QWidget { background: transparent; }"
+                "QScrollBar:horizontal { height: 6px; background: transparent; margin: 0; }"
+                "QScrollBar::handle:horizontal { background: #cbd5e1; border-radius: 3px; min-width: 30px; }"
+                "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }")
         self.category_chips_host = QWidget()
         self.category_chips_layout = QHBoxLayout(self.category_chips_host)
         self.category_chips_layout.setContentsMargins(0, 0, 0, 0)
@@ -140,7 +149,7 @@ class PosCatalogPanel(QFrame):
         return None
 
     def _apply_catalog_mode(self) -> None:
-        use_chips = catalog_features.category_browser_enabled()
+        use_chips = catalog_features.category_browser_enabled() or not self._maquis
         use_images = catalog_features.product_images_enabled()
         self.category_filter.setVisible(not use_chips)
         self.category_chips_scroll.setVisible(use_chips)
@@ -148,8 +157,7 @@ class PosCatalogPanel(QFrame):
         self.product_grid_scroll.setVisible(use_images)
         # Tablette Maquis : tap carte = ajout (pas de bouton « Ajouter »)
         self.add_to_cart_btn.setVisible(False)  # un clic sur le produit l'ajoute
-        if self._maquis:
-            self._barcode_row.setVisible(False)
+        self._barcode_row.setVisible(False)
 
     def _reload_categories(self) -> None:
         from app.controllers.category_controller import CategoryController
@@ -182,16 +190,16 @@ class PosCatalogPanel(QFrame):
             btn.setChecked(cat_id == current)
             btn.setMinimumHeight(40)
             btn.setStyleSheet(
-                "QToolButton { padding: 6px 14px; border-radius: 18px; "
-                "border: 1px solid #cbd5e1; background: #f8fafc; }"
-                f"QToolButton:checked {{ background: {self._accent}; color: white; "
+                "QToolButton { padding: 6px 16px; border-radius: 18px; font-weight: 600; "
+                "border: 1px solid #d5dbe7; background: #ffffff; color: #44506b; }"
+                f"QToolButton:checked {{ background: #eaf2ff; color: {self._accent}; "
                 f"border-color: {self._accent}; }}"
             )
             btn.clicked.connect(lambda _=False, cid=cat_id: self._select_category_chip(cid))
             self.category_chips_layout.addWidget(btn)
             self._chip_buttons.append(btn)
 
-        make_chip(t("pos.all_categories"), None)
+        make_chip(t("pos.all_categories") if self._maquis else t("Tous"), None)
         for category in categories:
             make_chip(category.name, category.id)
         self.category_chips_layout.addStretch(1)
@@ -328,7 +336,14 @@ class PosCatalogPanel(QFrame):
 
     def _add_first_found(self) -> None:
         """Entrée dans la recherche : ajoute le premier produit trouvé."""
-        if self.product_table.rowCount() > 0 and self.search_input.text().strip():
+        text = self.search_input.text().strip()
+        if text:
+            product = ProductController.find_by_barcode(text)
+            if product:  # code-barres scanné dans le même champ
+                self.search_input.clear()
+                self._emit_product(product)
+                return
+        if self.product_table.rowCount() > 0 and text:
             self.product_table.selectRow(0)
             self._add_selected_product()
             self.search_input.selectAll()
