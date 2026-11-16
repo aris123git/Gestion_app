@@ -61,6 +61,7 @@ class PosCatalogPanel(QFrame):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(t("pos.search_product"))
         self.search_input.textChanged.connect(self._reload_products)
+        self.search_input.returnPressed.connect(self._add_first_found)
         self.category_filter = QComboBox()
         self.category_filter.currentIndexChanged.connect(self._reload_products)
         filter_row.addWidget(self.search_input, 3)
@@ -94,7 +95,7 @@ class PosCatalogPanel(QFrame):
         self.product_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectRows
         )
-        self.product_table.doubleClicked.connect(self._add_selected_product)
+        self.product_table.clicked.connect(self._add_selected_product)  # un seul clic ajoute au panier
         layout.addWidget(self.product_table)
         self.product_grid_scroll = QScrollArea()
         self.product_grid_scroll.setWidgetResizable(True)
@@ -108,6 +109,7 @@ class PosCatalogPanel(QFrame):
         self.add_to_cart_btn = QPushButton(t("pos.add_to_cart"))
         self.add_to_cart_btn.setObjectName("Primary")
         self.add_to_cart_btn.clicked.connect(self._add_selected_product)
+        self.add_to_cart_btn.setVisible(False)  # remplacé par le clic sur le produit
         layout.addWidget(self.add_to_cart_btn)
         self._chip_buttons: list[QToolButton] = []
         self._grid_product_ids: list[int] = []
@@ -318,6 +320,13 @@ class PosCatalogPanel(QFrame):
             warn(self, f'Aucun produit avec le code-barres « {code} ».')
             return
         self._emit_product(product)
+
+    def _add_first_found(self) -> None:
+        """Entrée dans la recherche : ajoute le premier produit trouvé."""
+        if self.product_table.rowCount() > 0 and self.search_input.text().strip():
+            self.product_table.selectRow(0)
+            self._add_selected_product()
+            self.search_input.selectAll()
 
     def _add_selected_product(self) -> None:
         product = self.selected_product()
