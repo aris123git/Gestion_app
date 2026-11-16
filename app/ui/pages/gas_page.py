@@ -369,70 +369,108 @@ class GasPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
-        layout.addWidget(page_title(t("Gaz")))
-        bar = QHBoxLayout()
-        bar.addWidget(QLabel(t("Jour")))
+        top = QHBoxLayout()
+        top.addWidget(page_title(t("Gaz")))
+        top.addStretch()
+        prod = QPushButton(t("Produits et prix"))
+        prod.clicked.connect(lambda: ProductsDialog(self).exec())
+        top.addWidget(prod)
+        top.addWidget(QLabel(t("Jour")))
         self.day = _date_edit()
         self.day.dateChanged.connect(self.refresh)
-        bar.addWidget(self.day)
-        bar.addStretch()
-        layout.addLayout(bar)
+        top.addWidget(self.day)
+        layout.addLayout(top)
+        kp = QHBoxLayout()
+        self.k_truck, self.k_sales, self.k_due = QLabel(), QLabel(), QLabel()
+        for k in (self.k_truck, self.k_sales, self.k_due):
+            k.setTextFormat(Qt.TextFormat.RichText)
+            kp.addWidget(make_card(k), 1)
+        layout.addLayout(kp)
         self.tabs = QTabWidget()
         layout.addWidget(self.tabs, 1)
 
         # Détaillants : cahier du jour
         tab = QWidget()
         v = QVBoxLayout(tab)
-        self.sheet = _table(["Produit", "S.I", "Entrée", "S.T", "Vente", "P.U", "Montant", "Livré grossistes", "Pertes", "S.F"])
-        v.addWidget(self.sheet, 1)
+        head = QHBoxLayout()
+        head.addLayout(self._buttons([("sell", "+ Vente détaillant", self._sell, True),
+                                      ("loss", "Déclarer une perte", self._loss, False), ("psheet", "Imprimer le cahier", self._print_sheet, False)]), 1)
         self.total_label = QLabel()
-        v.addWidget(self.total_label)
-        v.addLayout(self._buttons([("sell", "+ Vente détaillant", self._sell, True),
-                                   ("loss", "Déclarer une perte", self._loss, False), ("psheet", "Imprimer le cahier", self._print_sheet, False)]))
+        head.addWidget(self.total_label)
+        v.addLayout(head)
+        self.sheet = _table(["Produit", "S.I", "Entrée", "S.T", "Vente", "P.U", "Montant", "Livré grossistes", "Pertes", "S.F"])
+        self.sheet.verticalHeader().setVisible(False)
+        v.addWidget(self.sheet, 1)
         self.tabs.addTab(tab, t("Détaillants"))
 
-        # Grossistes
+        # Grossistes : liste + détail
         tab = QWidget()
         v = QVBoxLayout(tab)
-        self.wtable = _table(["Grossiste", "Livré", "Vides rendues", "Total livré", "Payé", "Reste à payer", "Situation"])
+        bar = QHBoxLayout()
+        bar.addStretch()
+        bar.addLayout(self._buttons([("wnew", "+ Nouveau grossiste", self._wnew, True)]))
+        v.addLayout(bar)
+        body = QHBoxLayout()
+        self.wtable = _table(["Grossiste", "Livré", "Vides rendues", "Reste à payer"])
+        self.wtable.verticalHeader().setVisible(False)
         self.wtable.doubleClicked.connect(lambda *_: self._deliver())
-        v.addWidget(self.wtable, 1)
-        v.addWidget(QLabel(t("Livraisons du jour")))
-        self.dtable = _table(["Grossiste", "Pleines", "Vides rendues", "Total"])
-        v.addWidget(self.dtable, 1)
-        v.addLayout(self._buttons([("wnew", "+ Nouveau grossiste", self._wnew, False), ("wedit", "Modifier", self._wedit, False),
-                                   ("deliver", "Livrer", self._deliver, True), ("pay", "Encaisser un paiement", self._pay, False),
-                                   ("pstate", "Relevé PDF", self._print_statement, False),
-                                   ("psend", "Envoyer le relevé", self._send_statement, False)]))
+        self.wtable.currentCellChanged.connect(lambda *_: self._show_wholesaler())
+        body.addWidget(self.wtable, 3)
+        side = QVBoxLayout()
+        self.w_head = QLabel(t("Choisissez un grossiste."))
+        self.w_head.setTextFormat(Qt.TextFormat.RichText)
+        self.w_head.setWordWrap(True)
+        side.addWidget(self.w_head)
+        side.addWidget(QLabel(f"<b>{t('Livraisons du jour')}</b>"))
+        self.dtable = _table(["Produit", "Pleines", "Vides rendues", "Total"])
+        self.dtable.verticalHeader().setVisible(False)
+        side.addWidget(self.dtable, 1)
+        side.addLayout(self._buttons([("deliver", "Livrer", self._deliver, True), ("pay", "Encaisser un paiement", self._pay, False)]))
+        side.addLayout(self._buttons([("pstate", "Relevé PDF", self._print_statement, False), ("psend", "Envoyer le relevé", self._send_statement, False),
+                                      ("wedit", "Modifier", self._wedit, False)]))
+        body.addLayout(side, 2)
+        v.addLayout(body, 1)
         self.tabs.addTab(tab, t("Grossistes"))
 
-        # Camion : voyages
+        # Camion : voyages + étapes
         tab = QWidget()
         v = QVBoxLayout(tab)
+        bar = QHBoxLayout()
         self.empties_label = QLabel()
-        v.addWidget(self.empties_label)
+        bar.addWidget(self.empties_label, 1)
+        bar.addLayout(self._buttons([("tnew", "+ Nouveau voyage", self._tnew, True)]))
+        v.addLayout(bar)
+        body = QHBoxLayout()
         self.ttable = _table(["N°", "Camion", "Chauffeur", "Départ", "Statut", "Chargé", "Restant"])
+        self.ttable.verticalHeader().setVisible(False)
         self.ttable.doubleClicked.connect(lambda *_: self._tdays())
-        v.addWidget(self.ttable, 1)
-        v.addLayout(self._buttons([("tnew", "+ Nouveau voyage", self._tnew, True), ("tload", "Charger", self._tload, False),
-                                   ("tdays", "Étapes par jour", self._tdays, False),
-                                   ("tprint", "Imprimer le bandeau", self._print_trip, False), ("tadj", "Ajuster le stock", self._tadjust, False),
-                                   ("tedit", "Modifier le voyage", self._tedit, False)]))
+        self.ttable.currentCellChanged.connect(lambda *_: self._show_trip())
+        body.addWidget(self.ttable, 3)
+        side = QVBoxLayout()
+        self.t_head = QLabel(t("Choisissez un voyage."))
+        self.t_head.setTextFormat(Qt.TextFormat.RichText)
+        self.t_head.setWordWrap(True)
+        side.addWidget(self.t_head)
+        side.addWidget(QLabel(f"<b>{t('Étapes par jour')}</b>"))
+        self.t_steps = _table(["Jour", "Étape", "Montant"])
+        self.t_steps.verticalHeader().setVisible(False)
+        side.addWidget(self.t_steps, 1)
+        side.addLayout(self._buttons([("tload", "Charger", self._tload, True), ("tprint", "Imprimer le bandeau", self._print_trip, False)]))
+        side.addLayout(self._buttons([("tadj", "Ajuster le stock", self._tadjust, False), ("tedit", "Modifier le voyage", self._tedit, False)]))
+        body.addLayout(side, 2)
+        v.addLayout(body, 1)
         self.tabs.addTab(tab, t("Camion"))
 
-        # Journal du jour : annuler une opération saisie par erreur
+        # Suivi : opérations du jour (annulation) + chiffres et pertes de la période
         tab = QWidget()
         v = QVBoxLayout(tab)
+        v.addWidget(QLabel(f"<b>{t('Opérations du jour')}</b>"))
         self.jtable = _table(["Heure", "Opération", "Détail", "Montant", "Voyage"])
+        self.jtable.verticalHeader().setVisible(False)
         v.addWidget(self.jtable, 1)
         v.addLayout(self._buttons([("jcancel", "Annuler l'opération", self._cancel_op, False)]))
-        self.tabs.addTab(tab, t("Journal"))
-
-        # États : chiffres gaz (à part) et pertes
-        tab = QWidget()
-        v = QVBoxLayout(tab)
         pbar = QHBoxLayout()
-        pbar.addWidget(QLabel(t("Du")))
+        pbar.addWidget(QLabel(f"<b>{t('Période')}</b> &nbsp; {t('Du')}"))
         self.f_start = _date_edit()
         self.f_start.setDate(QDate.currentDate().addDays(-QDate.currentDate().day() + 1))
         pbar.addWidget(self.f_start)
@@ -444,23 +482,14 @@ class GasPage(QWidget):
         self.figures_label = QLabel()
         self.figures_label.setTextFormat(Qt.TextFormat.RichText)
         v.addWidget(self.figures_label)
-        v.addWidget(QLabel(t("Pertes de la période")))
+        v.addWidget(QLabel(f"<b>{t('Pertes de la période')}</b>"))
         self.losstable = _table(["Date", "Produit", "Bouteilles", "Motif"])
+        self.losstable.verticalHeader().setVisible(False)
         v.addWidget(self.losstable, 1)
         v.addLayout(self._buttons([("ploss", "Imprimer les pertes", self._print_losses, False)]))
         self.f_start.dateChanged.connect(self._refresh_states)
         self.f_end.dateChanged.connect(self._refresh_states)
-        self.tabs.addTab(tab, t("États"))
-
-        # Produits & prix
-        tab = QWidget()
-        v = QVBoxLayout(tab)
-        self.ltable = _table(["Produit", "Prix détaillant", "Prix grossiste", "Prix d'achat", "Stock"])
-        self.ltable.doubleClicked.connect(lambda *_: self._ledit())
-        v.addWidget(self.ltable, 1)
-        v.addLayout(self._buttons([("lnew", "+ Produit", self._lnew, False), ("ledit", "Modifier prix", self._ledit, True),
-                                   ("lstd", "Créer 6 kg / 12,5 kg × 3 formules", self._lstd, False)]))
-        self.tabs.addTab(tab, t("Produits & prix"))
+        self.tabs.addTab(tab, t("Suivi"))
         self.refresh()
 
     def _buttons(self, spec) -> QHBoxLayout:
@@ -593,12 +622,6 @@ class GasPage(QWidget):
         else:
             self._run(PayDialog(self, wid, self._day()), "Paiement gaz")
 
-    def _ledit(self):
-        lid = self._selected(self.ltable)
-        row = next((r for r in gs.list_lines(False) if r.id == lid), None)
-        if row:
-            self._run(LineDialog(self, row), "Produit gaz")
-
     def _open(self, path) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
@@ -682,28 +705,76 @@ class GasPage(QWidget):
         info(self, t("{n} produit(s) créé(s). Renseignez les prix.").format(n=n) if n else t("Les produits standard existent déjà."))
         self.refresh()
 
+    def _select_by_id(self, table, ident) -> None:
+        for r in range(table.rowCount()):
+            it = table.item(r, 0)
+            if it is not None and it.data(Qt.ItemDataRole.UserRole) == ident:
+                table.selectRow(r)
+                return
+        if table.rowCount():
+            table.selectRow(0)
+
+    def _show_wholesaler(self) -> None:
+        wid = self._selected(self.wtable)
+        self.dtable.setRowCount(0)
+        if wid is None:
+            self.w_head.setText(t("Choisissez un grossiste."))
+            return
+        a = gs.wholesaler_account(wid)
+        color = "#b91c1c" if a.balance > 0 else "#15803d"
+        self.w_head.setText(f"<b style='font-size:15px'>{a.name}</b><br><span style='color:{color}'>{a.statement}</span>")
+        names = {ln.id: ln.name for ln in gs.list_lines(False)}
+        rows = []
+        for d in gs.deliveries_of_day(self._day(), wid):
+            for lid, qty in d["lines"].items():
+                rows.append((names.get(lid, "?"), qty, d["empties_back"], _money(d["total"])))
+        self.dtable.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            for j, val in enumerate(r):
+                self.dtable.setItem(i, j, _cell(val, right=j > 0))
+
+    def _show_trip(self) -> None:
+        tid = self._selected(self.ttable)
+        self.t_steps.setRowCount(0)
+        if tid is None:
+            self.t_head.setText(t("Choisissez un voyage."))
+            return
+        tr = gs.get_trip(tid)
+        self.t_head.setText(f"<b style='font-size:15px'>{tr.label}</b><br>{t('Chargé')} {tr.loaded} · {t('Restant')} {tr.remaining}")
+        rows = []
+        for d in gs.trip_days(tid):
+            for st in d["steps"]:
+                rows.append((f"{d['date']:%d/%m}", st["who"], _money(st["amount"]) if st["amount"] else ""))
+        self.t_steps.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            for j, val in enumerate(r):
+                self.t_steps.setItem(i, j, _cell(val, right=j == 2))
+
     def refresh(self, *_a) -> None:
         day = self._day()
-        rows = gs.day_sheet(day, all_sources=True)
+        keep_w, keep_t = self._selected(self.wtable), self._selected(self.ttable)
+        rows = [r for r in gs.day_sheet(day, all_sources=True)
+                if any(r[k] for k in ("si", "entry", "sold", "delivered", "lost", "sf"))]
         self.sheet.setRowCount(len(rows))
         for i, r in enumerate(rows):
             vals = [r["name"], r["si"], r["entry"], r["st"], r["sold"], _money(r["unit_price"]), _money(r["amount"]),
                     r["delivered"], r["lost"], r["sf"]]
             for j, val in enumerate(vals):
                 self.sheet.setItem(i, j, _cell(val, right=j > 0))
-        self.total_label.setText(f"<b>{t('Total du jour, détaillants')} : {_money(gs.day_total(day, all_sources=True))} F</b>")
+        retail = gs.day_total(day, all_sources=True)
+        self.total_label.setText(f"<b>{t('Total du jour, détaillants')} : {_money(retail)} F</b>")
+        for w in (self.wtable, self.ttable):
+            w.blockSignals(True)
         ws = gs.list_wholesalers(False)
         self.wtable.setRowCount(len(ws))
+        due = 0.0
         for i, w in enumerate(ws):
             a = gs.wholesaler_account(w.id)
-            vals = [w.name, a.delivered, a.empties_back, _money(a.amount_due), _money(a.paid), _money(a.balance), a.statement]
+            due += max(0.0, a.balance)
+            vals = [w.name, a.delivered, a.empties_back, _money(a.balance)]
             for j, val in enumerate(vals):
-                self.wtable.setItem(i, j, _cell(val, right=0 < j < 6, data=w.id if j == 0 else None))
-        ds = gs.deliveries_of_day(day)
-        self.dtable.setRowCount(len(ds))
-        for i, d in enumerate(ds):
-            for j, val in enumerate([d["wholesaler"], sum(d["lines"].values()), d["empties_back"], _money(d["total"])]):
-                self.dtable.setItem(i, j, _cell(val, right=j > 0))
+                self.wtable.setItem(i, j, _cell(val, right=j > 0, data=w.id if j == 0 else None))
+        delivered_today = sum(d["total"] for d in gs.deliveries_of_day(day))
         ops = gs.day_operations(day)
         self.jtable.setRowCount(len(ops))
         for i, o in enumerate(ops):
@@ -718,10 +789,15 @@ class GasPage(QWidget):
             for j, val in enumerate([tr.number, tr.truck, tr.driver, f"{tr.started_at:%d/%m/%Y}", t("En cours") if tr.status == "en_cours" else t("Terminé"),
                                      tr.loaded, tr.remaining]):
                 self.ttable.setItem(i, j, _cell(val, right=j >= 5, data=tr.id if j == 0 else None))
+        for w in (self.wtable, self.ttable):
+            w.blockSignals(False)
+        in_truck = sum(tr.remaining for tr in ts if tr.status == "en_cours")
+        grey = "<span style='color:#64748b'>%s</span><br><b style='font-size:24px'>%s</b>"
+        self.k_truck.setText(grey % (t("Bouteilles dans le camion"), in_truck))
+        self.k_sales.setText(grey % (t("Ventes du jour"), f"{_money(retail + delivered_today)} F"))
+        self.k_due.setText(grey % (t("Reste à encaisser (grossistes)"), f"{_money(due)} F"))
+        self._select_by_id(self.wtable, keep_w)
+        self._select_by_id(self.ttable, keep_t)
+        self._show_wholesaler()
+        self._show_trip()
         self._refresh_states()
-        ls = gs.list_lines(False)
-        self.ltable.setRowCount(len(ls))
-        for i, ln in enumerate(ls):
-            cost = "—" if ln.cost_price is None else _money(ln.cost_price)
-            for j, val in enumerate([ln.name, _money(ln.retail_price), _money(ln.wholesale_price), cost, ln.stock]):
-                self.ltable.setItem(i, j, _cell(val, right=j > 0, data=ln.id if j == 0 else None))
