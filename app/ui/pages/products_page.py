@@ -2,20 +2,20 @@
 from __future__ import annotations
 from app.i18n import t
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.category_controller import CategoryController
 from app.controllers.product_controller import ProductController
 from app.reports.excel_report import export_products_excel
 from app.services import audit_service, permissions as perms, product_profile, settings_service
 from app.ui.dialogs.product_dialog import ProductDialog
-from app.ui.responsive import PRODUCT_COLUMNS, PRODUCT_COLUMNS_MAQUIS, LayoutProfile, TableColumnController
+from app.ui.responsive import LayoutProfile
 from app.ui.state import AppState
-from app.ui.widgets.helpers import confirm, info, page_title, warn
+from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.utils.helpers import format_money, format_quantity
 
 class ProductsPage(QWidget):
-    HEADERS = ['Nom', 'Catégorie', 'Code-barres', 'Prix vente', 'Stock', 'Unité']
-    HEADERS_MAQUIS = ['Nom', 'Catégorie', 'Prix vente', 'Stock', 'Unité']
+    HEADERS = ['Nom', 'Catégorie', 'Prix vente', 'Stock', 'Alerte']
     LIST_LIMIT = 5000
 
     def __init__(self, state: AppState):
@@ -23,25 +23,36 @@ class ProductsPage(QWidget):
         self.state = state
         self._maquis = product_profile.is_maquis()
         self._ids: list[int] = []
+        self._rows: list = []
+        self._stock_filter = None          # None | 'low' | 'out'
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(14)
+        layout.setSpacing(12)
         header = QHBoxLayout()
         header.addWidget(page_title(t('Produits')))
         header.addStretch()
-        self.categories_button = QPushButton(t('Catégories et unités'))
-        self.categories_button.clicked.connect(self._open_categories)
-        header.addWidget(self.categories_button)
-        self.export_button = QPushButton(t('Exporter Excel'))
-        self.export_button.clicked.connect(self._export)
+        self.more_button = QPushButton(t('Plus'))
+        menu = QMenu(self.more_button)
+        self.categories_button = menu.addAction(t('Catégories et unités'))
+        self.categories_button.triggered.connect(self._open_categories)
+        self.export_button = menu.addAction(t('Exporter Excel'))
+        self.export_button.triggered.connect(self._export)
+        self.more_button.setMenu(menu)
         self.add_button = QPushButton(t('+ Nouveau produit'))
         self.add_button.setObjectName('Primary')
         self.add_button.clicked.connect(self._add)
-        header.addWidget(self.export_button)
+        header.addWidget(self.more_button)
         header.addWidget(self.add_button)
         layout.addLayout(header)
-        from app.services import catalog_features
-
+        kp = QHBoxLayout()
+        self.k_all, self.k_low, self.k_out, self.k_value = QLabel(), QLabel(), QLabel(), QLabel()
+        self._kpi_cards = []
+        for k in (self.k_all, self.k_low, self.k_out, self.k_value):
+            k.setTextFormat(Qt.TextFormat.RichText)
+            card = make_card(k)
+            self._kpi_cards.append(card)
+            kp.addWidget(card, 1)
+        layout.addLayout(kp)
         self._catalog_hint = QLabel('')
         self._catalog_hint.setWordWrap(True)
         self._catalog_hint.setStyleSheet('color: #1d4ed8; font-size: 12px;')
@@ -56,45 +67,70 @@ class ProductsPage(QWidget):
         )
         self.search.setPlaceholderText(placeholder)
         self.search.textChanged.connect(self.refresh)
+        filters.addWidget(self.search, 1)
+        self._chips = {}
+        for key, label in ((None, 'Tous'), ('low', 'Stock bas'), ('out', 'En rupture')):
+            b = QPushButton(t(label))
+            b.setCheckable(True)
+            b.setStyleSheet('QPushButton:checked { background: #2563eb; color: #ffffff; border-color: #2563eb; }')
+            b.clicked.connect(lambda _=False, k=key: self._set_stock_filter(k))
+            self._chips[key] = b
+            filters.addWidget(b)
         self.category_filter = QComboBox()
         self.category_filter.currentIndexChanged.connect(self.refresh)
-        filters.addWidget(self.search, 3)
-        filters.addWidget(self.category_filter, 1)
+        filters.addWidget(self.category_filter)
         layout.addLayout(filters)
         self.limit_note = QLabel('')
         self.limit_note.setStyleSheet('color: #b45309; font-size: 12px;')
         self.limit_note.setWordWrap(True)
         layout.addWidget(self.limit_note)
-        headers = self.HEADERS_MAQUIS if self._maquis else self.HEADERS
-        self.table = QTableWidget(0, len(headers))
-        self.table.setHorizontalHeaderLabels([t(h) for h in headers])
+        body = QHBoxLayout()
+        self.table = QTableWidget(0, len(self.HEADERS))
+        self.table.setHorizontalHeaderLabels([t(h) for h in self.HEADERS])
+        self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for col in (1, 2, 3, 4):
+            self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.doubleClicked.connect(self._edit)
-        layout.addWidget(self.table)
-        self._columns = TableColumnController(
-            self.table, PRODUCT_COLUMNS_MAQUIS if self._maquis else PRODUCT_COLUMNS
-        )
-        actions = QHBoxLayout()
-        actions.addStretch()
+        self.table.currentCellChanged.connect(lambda *_: self._show_detail())
+        body.addWidget(self.table, 3)
+        side = QVBoxLayout()
+        self.d_head = QLabel(t('Sélectionnez un produit.'))
+        self.d_head.setTextFormat(Qt.TextFormat.RichText)
+        self.d_head.setWordWrap(True)
+        side.addWidget(self.d_head)
+        self.d_info = QLabel()
+        self.d_info.setTextFormat(Qt.TextFormat.RichText)
+        self.d_info.setWordWrap(True)
+        self.d_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.d_info.setMinimumHeight(140)
+        side.addWidget(make_card(self.d_info))
         self.edit_button = QPushButton(t('Modifier'))
+        self.edit_button.setObjectName('Primary')
         self.edit_button.clicked.connect(self._edit)
         self.delete_button = QPushButton(t('Supprimer'))
-        self.delete_button.setObjectName('Danger')
+        self.delete_button.setObjectName('DangerOutline')
         self.delete_button.clicked.connect(self._delete)
+        actions = QHBoxLayout()
         actions.addWidget(self.edit_button)
         actions.addWidget(self.delete_button)
-        layout.addLayout(actions)
+        side.addLayout(actions)
+        side.addStretch()
+        body.addLayout(side, 2)
+        layout.addLayout(body, 1)
         self._apply_permissions()
         self.state.layout_changed.connect(self._on_layout_changed)
         if self.state.layout is not None:
             self._on_layout_changed(self.state.layout)
 
     def _on_layout_changed(self, profile: LayoutProfile) -> None:
-        self._columns.apply(profile.content_width)
         margins = 12 if profile.density == 'compact' else 24
         self.layout().setContentsMargins(margins, margins, margins, margins)
+
+    def _can_see_costs(self) -> bool:
+        return self.state.can(perms.VIEW_PROFITS) or self.state.can(perms.MANAGE_PRODUCTS)
 
     def _apply_permissions(self) -> None:
         can_manage = self.state.can(perms.MANAGE_PRODUCTS)
@@ -102,8 +138,13 @@ class ProductsPage(QWidget):
         self.add_button.setVisible(can_manage)
         self.edit_button.setVisible(can_manage)
         self.delete_button.setVisible(can_delete)
-        self.export_button.setVisible(self.state.can(perms.VIEW_PROFITS) or can_manage)
+        self.export_button.setVisible(self._can_see_costs())
         self.categories_button.setVisible(self.state.can(perms.MANAGE_CATEGORIES) and not product_profile.is_maquis())
+        self.more_button.setVisible(self.export_button.isVisible() or self.categories_button.isVisible())
+
+    def _set_stock_filter(self, key) -> None:
+        self._stock_filter = key
+        self.refresh()
 
     def _refresh_catalog_hint(self) -> None:
         from app.services import catalog_features
@@ -116,44 +157,99 @@ class ProductsPage(QWidget):
         self._catalog_hint.setText(' '.join(bits))
         self._catalog_hint.setVisible(bool(bits))
 
+    @staticmethod
+    def _tracked(product) -> bool:
+        return not getattr(product, 'sell_without_stock', False)
+
     def refresh(self) -> None:
         self._apply_permissions()
         self._refresh_catalog_hint()
         self._reload_categories()
+        for k, b in self._chips.items():
+            b.setChecked(k == self._stock_filter)
+        keep = self._selected_id()
         products = ProductController.list(search=self.search.text().strip(), category_id=self.category_filter.currentData(), limit=self.LIST_LIMIT)
         self.limit_note.setText(f"Affichage limité aux {self.LIST_LIMIT} premiers produits. Affinez la recherche ou la catégorie si le produit recherché n'apparaît pas." if len(products) == self.LIST_LIMIT else '')
+        self.limit_note.setVisible(bool(self.limit_note.text()))
         currency = settings_service.get_currency()
+        allp = ProductController.list(limit=self.LIST_LIMIT)
+        tracked = [p for p in allp if self._tracked(p)]
+        low = [p for p in tracked if p.is_low_stock and not p.is_out_of_stock]
+        out = [p for p in tracked if p.is_out_of_stock]
+        grey = "<span style='color:#64748b'>%s</span><br><b style='font-size:22px'>%s</b>"
+        self.k_all.setText(grey % (t('Produits'), len(allp)))
+        self.k_low.setText(grey % (t('Stock bas'), len(low)))
+        self.k_out.setText(grey % (t('En rupture'), len(out)))
+        value = sum(float(p.quantity or 0) * float(p.purchase_price or 0) for p in tracked)
+        self.k_value.setText(grey % (t("Valeur du stock (achat)"), format_money(value, currency)))
+        self._kpi_cards[3].setVisible(self._can_see_costs())
+        if self._stock_filter == 'low':
+            products = [p for p in products if self._tracked(p) and p.is_low_stock and not p.is_out_of_stock]
+        elif self._stock_filter == 'out':
+            products = [p for p in products if self._tracked(p) and p.is_out_of_stock]
+        self._rows = list(products)
         self._ids = [p.id for p in products]
+        self.table.blockSignals(True)
         self.table.setRowCount(len(products))
         for row, product in enumerate(products):
             name = product.name
             if getattr(product, 'free_amount_sale', False):
                 name = f'{product.name} · montant libre'
-            self.table.setItem(row, 0, QTableWidgetItem(name))
-            self.table.setItem(row, 1, QTableWidgetItem(product.category_name))
             if getattr(product, 'free_amount_sale', False):
                 price_txt = f'réf. {format_money(product.sale_price, currency)}/kg'
             else:
                 price_txt = format_money(product.sale_price, currency)
-            if self._maquis:
-                self.table.setItem(row, 2, QTableWidgetItem(price_txt))
-                stock_item = QTableWidgetItem(t('Sans stock') if getattr(product, 'sell_without_stock', False) else format_quantity(product.quantity))
-                if product.is_out_of_stock:
-                    stock_item.setForeground(Qt.GlobalColor.red)
-                elif product.is_low_stock:
-                    stock_item.setForeground(Qt.GlobalColor.darkYellow)
-                self.table.setItem(row, 3, stock_item)
-                self.table.setItem(row, 4, QTableWidgetItem(product.unit_name))
+            if not self._tracked(product):
+                stock_txt, alert = t('Sans stock'), ''
             else:
-                self.table.setItem(row, 2, QTableWidgetItem(product.barcode))
-                self.table.setItem(row, 3, QTableWidgetItem(price_txt))
-                stock_item = QTableWidgetItem(t('Sans stock') if getattr(product, 'sell_without_stock', False) else format_quantity(product.quantity))
-                if product.is_out_of_stock:
-                    stock_item.setForeground(Qt.GlobalColor.red)
-                elif product.is_low_stock:
-                    stock_item.setForeground(Qt.GlobalColor.darkYellow)
-                self.table.setItem(row, 4, stock_item)
-                self.table.setItem(row, 5, QTableWidgetItem(product.unit_name))
+                stock_txt = f"{format_quantity(product.quantity)} {product.unit_name or ''}".strip()
+                alert = t('Rupture') if product.is_out_of_stock else (t('Bas') if product.is_low_stock else '')
+            cells = [name, product.category_name or '—', price_txt, stock_txt, alert]
+            for col, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if col in (2, 3):
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if col == 4 and alert:
+                    item.setForeground(QColor('#b91c1c' if product.is_out_of_stock else '#b45309'))
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.table.setItem(row, col, item)
+        self.table.blockSignals(False)
+        if self._rows:
+            target = self._ids.index(keep) if keep in self._ids else 0
+            self.table.selectRow(target)
+        self._show_detail()
+
+    def _show_detail(self) -> None:
+        pid = self._selected_id()
+        product = next((p for p in self._rows if p.id == pid), None)
+        has = product is not None
+        self.edit_button.setEnabled(has)
+        self.delete_button.setEnabled(has)
+        if not has:
+            self.d_head.setText(t('Sélectionnez un produit.'))
+            self.d_info.setText('')
+            return
+        currency = settings_service.get_currency()
+        barcode = product.barcode or ''
+        sub = f"{t('Code-barres')} {barcode}" if barcode and not self._maquis else (product.category_name or '')
+        self.d_head.setText(f"<b style='font-size:15px'>{product.name}</b><br><span style='color:#64748b'>{sub}</span>")
+        sale, cost = float(product.sale_price or 0), float(product.purchase_price or 0)
+        lines = [(t('Prix de vente'), f'<b>{format_money(sale, currency)}</b>')]
+        if self._can_see_costs():
+            lines.append((t("Prix d'achat"), format_money(cost, currency)))
+            if sale > 0:
+                lines.append((t('Marge'), f'{format_money(sale - cost, currency)} ({(sale - cost) / sale * 100:.0f} %)'))
+        if self._tracked(product):
+            qty = f"{format_quantity(product.quantity)} {product.unit_name or ''}".strip()
+            color = '#b91c1c' if product.is_out_of_stock or product.is_low_stock else '#0f172a'
+            flag = f" ({t('rupture')})" if product.is_out_of_stock else (f" ({t('bas')})" if product.is_low_stock else '')
+            lines.append((t('Stock'), f"<b style='color:{color}'>{qty}{flag}</b>"))
+        else:
+            lines.append((t('Stock'), t('Sans stock')))
+        self.d_info.setText('<table width="100%" cellspacing="6">' + ''.join(
+            f"<tr><td>{a}</td><td align='right'>{b}</td></tr>" for a, b in lines) + '</table>')
 
     def _reload_categories(self) -> None:
         current = self.category_filter.currentData()
