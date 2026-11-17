@@ -43,12 +43,44 @@ DARK = {
 }
 
 
+def _spin_arrows(color: str) -> dict:
+    """Petites flèches des champs numériques, dessinées une fois dans un dossier temporaire (QSS veut des fichiers)."""
+    import os
+    import tempfile
+
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QColor, QPainter, QPixmap, QPolygonF
+
+    folder = os.path.join(tempfile.gettempdir(), "nexa_arrows")
+    os.makedirs(folder, exist_ok=True)
+    out = {}
+    for name, up in (("up", True), ("down", False)):
+        path = os.path.join(folder, f"{name}_{color.lstrip('#')}.png")
+        if not os.path.exists(path):
+            pm = QPixmap(20, 20)
+            pm.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pm)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setBrush(QColor(color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            pts = [QPointF(4, 13), QPointF(16, 13), QPointF(10, 6)] if up else [QPointF(4, 7), QPointF(16, 7), QPointF(10, 14)]
+            painter.drawPolygon(QPolygonF(pts))
+            painter.end()
+            pm.save(path)
+        out[name] = path.replace("\\", "/")
+    return out
+
+
 def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     """Construit la QSS complète pour le thème demandé."""
     c = DARK if dark else LIGHT
     primary = MAQUIS_PRIMARY if maquis else PRIMARY
     primary_dark = MAQUIS_PRIMARY_DARK if maquis else PRIMARY_DARK
     c = dict(c)
+    try:
+        arrows = _spin_arrows('#94a3b8' if dark else '#64748b')
+    except Exception:  # noqa: BLE001 - sans flèches, le thème reste utilisable
+        arrows = {'up': '', 'down': ''}
     c["sidebar_active"] = primary
     return f"""
     QWidget {{
@@ -177,6 +209,20 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     QLineEdit {{ min-height: 24px; }}
     QPlainTextEdit, QTextEdit {{ min-height: 80px; }}
     QTableView QLineEdit, QTableView QDoubleSpinBox, QTableView QSpinBox {{ padding: 1px 4px; min-height: 18px; }}
+    QDoubleSpinBox, QSpinBox {{ padding-right: 26px; }}
+    QTableView QDoubleSpinBox, QTableView QSpinBox {{ padding-right: 22px; }}
+    QDoubleSpinBox::up-button, QSpinBox::up-button {{
+        subcontrol-origin: border; subcontrol-position: top right; width: 22px;
+        border: none; border-top-right-radius: 7px; background: transparent;
+    }}
+    QDoubleSpinBox::down-button, QSpinBox::down-button {{
+        subcontrol-origin: border; subcontrol-position: bottom right; width: 22px;
+        border: none; border-bottom-right-radius: 7px; background: transparent;
+    }}
+    QDoubleSpinBox::up-button:hover, QSpinBox::up-button:hover,
+    QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover {{ background: {c['border']}; }}
+    QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {{ image: url({arrows['up']}); width: 10px; height: 10px; }}
+    QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {{ image: url({arrows['down']}); width: 10px; height: 10px; }}
     QComboBox::drop-down {{
         subcontrol-origin: padding;
         subcontrol-position: center right;
