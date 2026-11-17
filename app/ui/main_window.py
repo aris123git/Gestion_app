@@ -191,7 +191,7 @@ class MainWindow(QWidget):
         self._topbar_user = QLabel('')
         self._topbar_user.setObjectName('TopBarMeta')
         row.addWidget(self._topbar_user)
-        self._bell_top = QPushButton('🔔')
+        self._bell_top = QPushButton('')
         self._bell_top.setObjectName('TopBarButton')
         self._bell_top.setFixedHeight(36)
         self._bell_top.clicked.connect(self._open_alerts)
@@ -206,9 +206,13 @@ class MainWindow(QWidget):
         except Exception:  # noqa: BLE001 - une alerte ne doit jamais bloquer l'application
             return
         full = getattr(self, '_bell_full', True)
-        text = f'🔔 {n}' if n else '🔔'
-        self._bell_top.setText(text)
-        self._bell_btn.setText(f"🔔 {t('Alertes')}" + (f' ({n})' if n else '') if full else text)
+        self._bell_top.setText(str(n) if n else '')
+        self._bell_btn.setText(t('Alertes') + (f' ({n})' if n else '') if full else (str(n) if n else ''))
+        if not hasattr(self, '_bell_anim'):
+            from app.ui.widgets.bell import BellAnimator
+
+            self._bell_anim = BellAnimator([self._bell_btn, self._bell_top], self)
+        self._bell_anim.set_active(n > 0)
         style = 'font-weight: 700; color: #fca5a5;' if n else ''
         self._bell_btn.setStyleSheet(style)
         self._bell_top.setStyleSheet(style)
@@ -276,7 +280,7 @@ class MainWindow(QWidget):
         subtitle.setObjectName('SidebarSubtitle')
         layout.addWidget(title)
         layout.addWidget(subtitle)
-        self._bell_btn = QPushButton('🔔')
+        self._bell_btn = QPushButton(t('Alertes'))
         self._bell_btn.setObjectName('NavButton')
         self._bell_btn.setToolTip(t('Alertes et rappels'))
         self._bell_btn.setAccessibleName(t('Alertes et rappels'))
