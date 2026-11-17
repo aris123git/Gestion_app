@@ -89,7 +89,7 @@ class ProformaDialog(QDialog):
             head.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(col, width)
         self.table.verticalHeader().setDefaultSectionSize(32)
-        self.table.setMinimumHeight(190)
+        self.table.setMinimumHeight(260)
         root.addWidget(self.table, 1)
         self._rows: list = []
         self._catalog = {c["name"].strip().lower(): c for c in ps.catalog()}
@@ -101,6 +101,10 @@ class ProformaDialog(QDialog):
         row.addWidget(add)
         row.addWidget(rm)
         row.addStretch()
+        self.total_label = QLabel()
+        self.total_label.setTextFormat(Qt.TextFormat.RichText)
+        self.total_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self.total_label)
         root.addLayout(row)
         tax = QFormLayout()
         self.tax_label = QLineEdit(data["tax_label"] if data else "")
@@ -120,9 +124,6 @@ class ProformaDialog(QDialog):
         self.notes.setMaximumHeight(60)
         tax.addRow(t("Notes"), self.notes)
         root.addLayout(tax)
-        self.total_label = QLabel()
-        self.total_label.setTextFormat(Qt.TextFormat.RichText)
-        root.addWidget(self.total_label)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._accept)
         bb.rejected.connect(self.reject)
@@ -175,6 +176,10 @@ class ProformaDialog(QDialog):
             label.editingFinished.connect(_filled)
         self._rows.append((label, cdt, qty, unit, price, total))
         self._totals()
+        self.table.scrollToBottom()
+        self.table.setCurrentCell(r, 0)
+        if line is None:
+            label.setFocus()
 
     def _remove_row(self) -> None:
         r = self.table.currentRow()
@@ -192,7 +197,8 @@ class ProformaDialog(QDialog):
         tt = ps.compute_totals([x for x in self._inputs()], self.tax_label.text() or "Taxe", self.tax_rate.value())
         cur = settings_service.get_shop_info().currency or "FCFA"
         extra = f" + {tt.tax_label} {format_money(tt.tax, cur)}" if tt.tax else ""
-        self.total_label.setText(f"<b>{t('Total')} : {format_money(tt.total, cur)}</b> <span style='color:#64748b'>({t('HT')} {format_money(tt.subtotal, cur)}{extra})</span>")
+        n = len([1 for x in self._inputs() if x.label.strip()])
+        self.total_label.setText(f"<span style='font-size:15px'><b>{t('TOTAL')} ({n} {t('ligne(s)')}) : {format_money(tt.total, cur)}</b></span>" + (f" <span style='color:#64748b'>({t('HT')} {format_money(tt.subtotal, cur)}{extra})</span>" if tt.tax else ""))
 
     def _pick_client(self) -> None:
         cid = self.pick.currentData()
