@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.i18n import t
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
 from app.controllers.product_controller import ProductController
 from app.controllers.stock_controller import StockController
 from app.controllers.supplier_controller import SupplierController
@@ -11,7 +11,7 @@ from app.services import audit_service, permissions as perms
 from app.services.inventory_service import InventoryService
 from app.ui.responsive import LayoutProfile, STOCK_HISTORY_COLUMNS, TableColumnController
 from app.ui.state import AppState
-from app.ui.widgets.helpers import info, make_card, page_title, warn
+from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.utils.helpers import format_datetime, format_quantity
 from app.ui.widgets.money_spin import MoneySpinBox
 
@@ -28,8 +28,9 @@ class StockPage(QWidget):
         layout.addWidget(page_title(t('Gestion du stock')))
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_movement_tab(), t('Mouvements'))
+        self.tabs.addTab(self._build_inventory_tab(), t('Inventaire complet'))
         self.tabs.addTab(self._build_history_tab(), t('Historique'))
-        self.tabs.currentChanged.connect(lambda _: self._reload_history())
+        self.tabs.currentChanged.connect(lambda _: (self._reload_history(), self._reload_inventory()))
         layout.addWidget(self.tabs)
 
     ACTIONS = [
@@ -176,6 +177,151 @@ class StockPage(QWidget):
     def _save(self) -> None:
         {'in': self._stock_in, 'out': self._stock_out, 'loss': self._record_loss, 'inv': self._inventory, 'fix': self._correction}[self._action]()
 
+    # -- inventaire complet -------------------------------------------------------------------------------------
+    def _build_inventory_tab(self) -> QWidget:
+        wrap = QWidget()
+        layout = QVBoxLayout(wrap)
+        layout.setContentsMargins(0, 12, 0, 0)
+        bar = QHBoxLayout()
+        self.inv_search = QLineEdit()
+        self.inv_search.setPlaceholderText(t('Rechercher un produit…'))
+        self.inv_search.textChanged.connect(self._reload_inventory)
+        self.inv_expected = QCheckBox(t('Montrer le stock attendu sur la feuille imprimée'))
+        print_btn = QPushButton(t('Imprimer la feuille'))
+        print_btn.clicked.connect(self._print_inventory)
+        self.inv_validate = QPushButton(t("Valider l'inventaire"))
+        self.inv_validate.setObjectName('Primary')
+        self.inv_validate.clicked.connect(self._validate_inventory)
+        bar.addWidget(self.inv_search, 1)
+        bar.addWidget(self.inv_expected)
+        bar.addWidget(print_btn)
+        bar.addWidget(self.inv_validate)
+        layout.addLayout(bar)
+        self.inv_hint = QLabel(t("Imprimez la feuille, comptez, puis saisissez ici les quantités comptées. Les produits laissés vides ne sont pas modifiés."))
+        self.inv_hint.setStyleSheet('color: #64748b;')
+        self.inv_hint.setWordWrap(True)
+        layout.addWidget(self.inv_hint)
+        self.inv_table = QTableWidget(0, 4)
+        self.inv_table.setHorizontalHeaderLabels([t('Produit'), t('Stock système'), t('Compté'), t('Écart')])
+        self.inv_table.verticalHeader().setVisible(False)
+        self.inv_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.inv_table.itemChanged.connect(self._inventory_edited)
+        layout.addWidget(self.inv_table, 1)
+        self._inv_counts: dict = {}
+        self._inv_loading = False
+        return wrap
+
+    def _inventory_products(self):
+        return [p for p in ProductController.list(only_active=True) if not getattr(p, 'sell_without_stock', False)]
+
+    @staticmethod
+    def _parse_count(text: str):
+        text = (text or '').strip().replace(',', '.').replace(' ', '')
+        if not text:
+            return None
+        try:
+            value = float(text)
+        except ValueError:
+            return None
+        return value if value >= 0 else None
+
+    def _reload_inventory(self, *_a) -> None:
+        if not hasattr(self, 'inv_table'):
+            return
+        text = self.inv_search.text().strip().lower()
+        products = [p for p in self._inventory_products() if not text or text in p.name.lower()]
+        self._inv_loading = True
+        self.inv_table.setRowCount(len(products))
+        for row, product in enumerate(products):
+            name = QTableWidgetItem(product.name)
+            name.setData(Qt.ItemDataRole.UserRole, product.id)
+            name.setFlags(name.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            stock = QTableWidgetItem(format_quantity(product.quantity))
+            stock.setData(Qt.ItemDataRole.UserRole, float(product.quantity or 0))
+            stock.setFlags(stock.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            stock.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            counted = QTableWidgetItem(self._inv_counts.get(product.id, ''))
+            counted.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            gap = QTableWidgetItem('')
+            gap.setFlags(gap.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            gap.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            for col, item in enumerate((name, stock, counted, gap)):
+                self.inv_table.setItem(row, col, item)
+        self._inv_loading = False
+        for row in range(self.inv_table.rowCount()):
+            self._update_gap(row)
+
+    def _update_gap(self, row: int) -> None:
+        stock = self.inv_table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+        counted = self._parse_count(self.inv_table.item(row, 2).text())
+        gap = self.inv_table.item(row, 3)
+        self._inv_loading = True
+        if counted is None:
+            gap.setText('')
+        else:
+            diff = counted - stock
+            gap.setText('0' if abs(diff) < 0.0005 else (f'+{format_quantity(diff)}' if diff > 0 else format_quantity(diff)))
+            gap.setForeground(QColor('#0f172a' if abs(diff) < 0.0005 else ('#15803d' if diff > 0 else '#b91c1c')))
+        self._inv_loading = False
+
+    def _inventory_edited(self, item) -> None:
+        if self._inv_loading or item.column() != 2:
+            return
+        pid = self.inv_table.item(item.row(), 0).data(Qt.ItemDataRole.UserRole)
+        self._inv_counts[pid] = item.text()
+        self._update_gap(item.row())
+
+    def _print_inventory(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from app.printers.inventory_sheet import build_inventory_sheet
+
+        show = self.inv_expected.isChecked()
+        rows = [(p.name, p.unit_name or '', format_quantity(p.quantity)) for p in self._inventory_products()]
+        path = Path(tempfile.gettempdir()) / 'feuille_inventaire.pdf'
+        build_inventory_sheet(rows, path, show_expected=show)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _validate_inventory(self) -> None:
+        if not self._ensure_stock_permission():
+            return
+        products = {p.id: p for p in self._inventory_products()}
+        todo = []
+        for pid, text in self._inv_counts.items():
+            counted = self._parse_count(text)
+            product = products.get(pid)
+            if counted is None or product is None:
+                continue
+            if abs(counted - float(product.quantity or 0)) >= 0.0005:
+                todo.append((product, counted))
+        entered = sum(1 for text in self._inv_counts.values() if self._parse_count(text) is not None)
+        if not entered:
+            warn(self, t('Saisissez au moins une quantité comptée.'))
+            return
+        if not todo:
+            info(self, t('Aucun écart : le stock est déjà juste pour tous les produits comptés.'))
+            self._inv_counts.clear()
+            self._reload_inventory()
+            return
+        if not confirm(self, f"{len(todo)} " + t('produit(s) seront corrigés sur') + f" {entered} " + t('comptés. Valider ?')):
+            return
+        from datetime import date
+
+        reason = f'Inventaire complet {date.today():%d/%m/%Y}'
+        for product, counted in todo:
+            StockController.set_inventory(product.id, counted, reason, self.state.user_id)
+        audit_service.log_action('Inventaire complet', 'Stock', f'{len(todo)} produits corrigés', self.state.user_id, getattr(self.state.current_user, 'username', ''))
+        self._inv_counts.clear()
+        self._reload_products()
+        self._reload_inventory()
+        self._reload_history()
+        self.state.notify_data_changed()
+        info(self, f"{len(todo)} " + t('produit(s) corrigé(s).'))
+
     def _build_history_tab(self) -> QWidget:
         wrap = QWidget()
         layout = QVBoxLayout(wrap)
@@ -226,6 +372,8 @@ class StockPage(QWidget):
             warn(self, t('Choisissez un produit et une quantité.'))
             return
         motif = self.reason.text().strip() or 'Livraison fournisseur'
+        if self.unit_cost.value() <= 0 and not confirm(self, t("Coût unitaire non renseigné : le bénéfice de ces unités sera calculé au dernier prix d'achat connu. Enregistrer quand même ?")):
+            return
         StockController.stock_in(pid, self.quantity.value(), self.unit_cost.value(), motif, self.state.user_id, supplier_id=self._current_supplier_id(), invoice_number=self.invoice_number.text(), comment=self.comment.text(), new_sale_price=self.new_sale_price.value())
         self._after_movement('Entrée de stock', pid)
 
@@ -290,6 +438,7 @@ class StockPage(QWidget):
         info(self, f'{label} enregistré(e).')
 
     def refresh(self) -> None:
+        self._reload_inventory()
         self._reload_products()
         self._reload_suppliers()
         self._reload_history()
