@@ -147,6 +147,30 @@ class SupplierDebtService:
         return [p for pid in created if (p := cls.get_payment(pid))]
 
     @classmethod
+    def pay_debt(cls, debt_id: int, amount: float, *, payment_method: str = "Espèces", note: str = "",
+                 user_id: Optional[int] = None, username: str = "") -> SupplierDebtPayment:
+        """Rembourse une dette précise (ex. celle d'un achat)."""
+        amount = round(to_float(amount), 2)
+        if amount <= 0:
+            raise ValueError("Le montant doit être supérieur à zéro.")
+        with session_scope() as session:
+            debt = session.get(SupplierDebt, debt_id)
+            if debt is None or debt.status not in ACTIVE_DEBT_STATUSES or float(debt.amount_remaining) <= 0:
+                raise ValueError("Cette dette est déjà réglée ou annulée.")
+            if amount > float(debt.amount_remaining) + 0.001:
+                raise ValueError(f"Montant trop élevé : reste dû {format_amount(float(debt.amount_remaining))}.")
+            payment = SupplierDebtPayment(debt_id=debt.id, amount=amount, payment_method=payment_method or "Espèces",
+                                          payment_date=datetime.now(), created_by=user_id, note=(note or "").strip())
+            session.add(payment)
+            debt.amount_remaining = round(float(debt.amount_remaining) - amount, 2)
+            cls._refresh_status(debt)
+            session.flush()
+            pid, supplier_id = payment.id, debt.supplier_id
+        audit_service.log_action("Remboursement dette fournisseur", "SupplierDebtPayment",
+                                 f"supplier={supplier_id} dette={debt_id} montant={amount}", user_id, username)
+        return cls.get_payment(pid)
+
+    @classmethod
     def cancel_debts_for_purchase(
         cls,
         purchase_id: int,
