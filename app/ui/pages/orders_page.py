@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.i18n import t
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -52,6 +53,7 @@ class OrdersPage(QWidget):
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        enable_multi(self.table)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.doubleClicked.connect(self._open_selected)
         layout.addWidget(self.table, 1)
@@ -146,6 +148,13 @@ class OrdersPage(QWidget):
         self.refresh()
 
     def _cancel(self) -> None:
+        rows = selected_rows(self.table)
+        if len(rows) > 1:
+            items = [(self._ids[r], self.table.item(r, 0).text()) for r in rows]
+            if run_batch(self, t("Annuler {n} commandes ?"), items, order_service.OrderService.cancel, t("commande(s) annulée(s)")):
+                self.refresh()
+                self.state.notify_data_changed()
+            return
         oid = self._selected_id()
         if not oid:
             warn(self, t("Sélectionnez une commande."))

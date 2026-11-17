@@ -15,6 +15,7 @@ from app.services.cash_session_service import CashSessionService
 from app.ui.dialogs.authorize_dialog import require_admin_authorization
 from app.ui.dialogs.cancel_sale_dialog import CancelSaleDialog
 from app.ui.state import AppState
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from app.ui.widgets.helpers import info, make_card, page_title, section_title, warn
 from app.utils.helpers import format_datetime, format_money
 
@@ -92,6 +93,8 @@ class ReportsPage(QWidget):
         self.history_table.setHorizontalHeaderLabels([t('Ticket'), t('Date et heure'), t('Client'), t('Caissier'), t('Paiement'), t('Total')])
         self.history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.history_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        enable_multi(self.history_table)
         layout.addWidget(self.history_table)
         history_actions = QHBoxLayout()
         history_actions.addStretch()
@@ -295,12 +298,29 @@ class ReportsPage(QWidget):
         TicketDialog(sale, self, auto_print=False).exec()
         audit_service.log_action('Réimpression ticket', 'Sale', sale.ticket_number, self.state.user_id, getattr(self.state.current_user, 'username', ''))
 
+    def _cancel_many(self, rows: list[int]) -> None:
+        """Annule plusieurs ventes avec un seul motif (l'autorisation admin a déjà été demandée une fois)."""
+        dialog = CancelSaleDialog('', parent=self, many=len(rows))
+        if not dialog.exec() or not dialog.reason:
+            return
+        user = getattr(self.state.current_user, 'username', '')
+        is_admin = bool(self.state.current_user and getattr(self.state.current_user, 'role', '') == perms.ROLE_ADMIN)
+
+        def one(sale_id: int) -> None:
+            SaleController.cancel_sale(sale_id, restock=True, user_id=self.state.user_id, username=user, reason=dialog.reason, allow_old_sales=is_admin)
+            audit_service.log_action('Annulation vente', 'Sale', f'#{sale_id} — motif: {dialog.reason}', self.state.user_id, user)
+
+        items = [(self._sale_ids[r], self.history_table.item(r, 0).text()) for r in rows]
+        run_batch(self, None, items, one, t("vente(s) annulée(s)"))
+        self.state.notify_data_changed()
+
     def _cancel_selected_sale(self) -> None:
         """Annule la vente sélectionnée et remet en stock.
 
         Administrateur : immédiat. Gestionnaire : mot de passe admin requis.
         Motif obligatoire (≥ 10 lettres).
         """
+        rows = selected_rows(self.history_table)
         row = self.history_table.currentRow()
         if row < 0 or row >= len(self._sale_ids):
             warn(self, t("Sélectionnez une vente dans l'historique."))
@@ -313,6 +333,8 @@ class ReportsPage(QWidget):
             ok, authorized_by = require_admin_authorization(self, "L'annulation d'une vente nécessite l'autorisation d'un administrateur.")
             if not ok:
                 return
+        if len(rows) > 1:
+            return self._cancel_many(rows)
         sale_id = self._sale_ids[row]
         ticket = self.history_table.item(row, 0)
         ticket_number = ticket.text() if ticket else str(sale_id)

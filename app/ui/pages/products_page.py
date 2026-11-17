@@ -1,6 +1,7 @@
 """Page de gestion des produits (liste, ajout, modification, suppression)."""
 from __future__ import annotations
 from app.i18n import t
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
@@ -93,6 +94,7 @@ class ProductsPage(QWidget):
             self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        enable_multi(self.table)
         self.table.doubleClicked.connect(self._edit)
         self.table.currentCellChanged.connect(lambda *_: self._show_detail())
         body.addWidget(self.table, 3)
@@ -334,7 +336,25 @@ class ProductsPage(QWidget):
             return True
         return clicked is now
 
+    def _delete_many(self, rows: list[int]) -> None:
+        if not self.state.can(perms.DELETE_PRODUCTS):
+            warn(self, t("Vous n'avez pas l'autorisation de supprimer un produit."))
+            return
+        user = getattr(self.state.current_user, 'username', '')
+
+        def one(pid: int) -> None:
+            ProductController.delete(pid)
+            audit_service.log_action('Suppression produit', 'Product', str(pid), self.state.user_id, user)
+
+        items = [(self._ids[r], self.table.item(r, 0).text()) for r in rows]
+        if run_batch(self, t("Supprimer {n} produits ?\n\nCeux qui existent dans des ventes seront simplement désactivés."), items, one, t("produit(s) supprimé(s) ou désactivé(s)")):
+            self.refresh()
+            self.state.notify_data_changed()
+
     def _delete(self) -> None:
+        rows = selected_rows(self.table)
+        if len(rows) > 1:
+            return self._delete_many(rows)
         product_id = self._selected_id()
         if not product_id:
             warn(self, t('Veuillez sélectionner un produit.'))

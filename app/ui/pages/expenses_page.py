@@ -1,6 +1,7 @@
 """Page de gestion des dépenses."""
 from __future__ import annotations
 from app.i18n import t
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
 from app.controllers.expense_controller import ExpenseController
@@ -46,6 +47,7 @@ class ExpensesPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        enable_multi(self.table)
         layout.addWidget(self.table)
         self._columns = TableColumnController(self.table, EXPENSE_COLUMNS)
         actions = QHBoxLayout()
@@ -76,7 +78,27 @@ class ExpensesPage(QWidget):
         self.refresh()
         self.state.notify_data_changed()
 
+    def _delete_many(self, rows: list[int]) -> None:
+        if not self.state.can(perms.MANAGE_EXPENSES):
+            warn(self, t("Vous n'avez pas l'autorisation de supprimer une dépense."))
+            return
+        from app.services import audit_service
+        user = getattr(self.state.current_user, 'username', '')
+        is_admin = getattr(self.state.current_user, 'role', '') == perms.ROLE_ADMIN
+
+        def one(eid: int) -> None:
+            ExpenseController.delete(eid, is_admin=is_admin, user_id=self.state.user_id)
+            audit_service.log_action('Suppression dépense', 'Expense', f'id={eid}', self.state.user_id, user)
+
+        items = [(self._ids[r], self.table.item(r, 0).text()) for r in rows]
+        if run_batch(self, t("Supprimer {n} dépenses ?"), items, one, t("dépense(s) supprimée(s)")):
+            self.refresh()
+            self.state.notify_data_changed()
+
     def _delete(self) -> None:
+        rows = selected_rows(self.table)
+        if len(rows) > 1:
+            return self._delete_many(rows)
         row = self.table.currentRow()
         if row < 0 or row >= len(self._ids):
             warn(self, t('Sélectionnez une dépense.'))

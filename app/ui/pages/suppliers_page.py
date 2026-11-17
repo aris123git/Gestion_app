@@ -1,6 +1,7 @@
 """Page de gestion des fournisseurs (CRUD, recherche)."""
 from __future__ import annotations
 from app.i18n import t
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtWidgets import QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.supplier_controller import SupplierController
 from app.services import permissions as perms, settings_service
@@ -39,6 +40,7 @@ class SuppliersPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        enable_multi(self.table)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
         self._columns = TableColumnController(self.table, SUPPLIER_COLUMNS)
@@ -138,7 +140,25 @@ class SuppliersPage(QWidget):
         self.state.notify_data_changed()
         info(self, t('Remboursement fournisseur enregistré.'))
 
+    def _delete_many(self, rows: list[int]) -> None:
+        if not self.state.can(perms.MANAGE_SUPPLIERS):
+            warn(self, t("Vous n'avez pas l'autorisation de supprimer un fournisseur."))
+            return
+        from app.services import audit_service
+        user = getattr(self.state.current_user, 'username', '')
+
+        def one(sid: int) -> None:
+            SupplierController.delete(sid)
+            audit_service.log_action('Suppression fournisseur', 'Supplier', str(sid), self.state.user_id, user)
+
+        items = [(self._ids[r], self.table.item(r, 0).text()) for r in rows]
+        if run_batch(self, t("Supprimer {n} fournisseurs ?"), items, one, t("fournisseur(s) supprimé(s)")):
+            self.refresh()
+
     def _delete(self) -> None:
+        rows = selected_rows(self.table)
+        if len(rows) > 1:
+            return self._delete_many(rows)
         supplier_id = self._selected_id()
         if not supplier_id:
             warn(self, t('Sélectionnez un fournisseur.'))

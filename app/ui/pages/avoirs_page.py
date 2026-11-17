@@ -1,6 +1,7 @@
 """Page Avoirs clients (Gestion App + Maquis Caisse)."""
 from __future__ import annotations
 from app.i18n import t
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QAbstractItemView, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QDoubleSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.services.avoir_service import AvoirService
@@ -43,6 +44,7 @@ class AvoirsPage(QWidget):
         self.table.setHorizontalHeaderLabels([t('N°'), t('Client'), t('Montant'), t('Reste'), t('Statut'), t('Motif')])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        enable_multi(self.table)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.table, 1)
         actions = QHBoxLayout()
@@ -112,6 +114,12 @@ class AvoirsPage(QWidget):
             warn(self, str(exc))
 
     def _cancel_selected(self) -> None:
+        rows = selected_rows(self.table)
+        if len(rows) > 1:
+            items = [(self._ids[r], self.table.item(r, 0).text()) for r in rows]
+            if run_batch(self, t("Annuler {n} avoirs ?"), items, AvoirService.cancel, t("avoir(s) annulé(s)")):
+                self.refresh()
+            return
         avoir_id = self._selected_id()
         if not avoir_id:
             warn(self, t('Sélectionnez un avoir.'))

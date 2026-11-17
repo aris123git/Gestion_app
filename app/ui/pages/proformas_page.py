@@ -19,6 +19,7 @@ from app.printers.proforma_doc import build_proforma_pdf, get_model, proforma_mo
 from app.services import audit_service, permissions as perms, proforma_service as ps, settings_service
 from app.ui.dialogs.chantier_dialog import _money
 from app.ui.pages.rentals_page import _cell, _table
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from app.ui.state import AppState
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
@@ -312,6 +313,7 @@ class ProformasPage(QWidget):
         body = QHBoxLayout()
         self.table = _table(["N°", "Date", "Client", "Objet", "Total", "Statut"])
         self.table.verticalHeader().setVisible(False)
+        enable_multi(self.table)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.doubleClicked.connect(lambda *_: self._edit())
         self.table.currentCellChanged.connect(lambda *_: self._show())
@@ -472,6 +474,18 @@ class ProformasPage(QWidget):
             self.refresh()
 
     def _delete(self) -> None:
+        rows = selected_rows(self.table)
+        if len(rows) > 1:
+            items = [(self.table.item(r, 0).data(Qt.ItemDataRole.UserRole), self.table.item(r, 0).text()) for r in rows]
+            user = self._user()
+
+            def one(pid: int) -> None:
+                ps.delete(pid)
+                audit_service.log_action("Proforma supprimée", "Proforma", str(pid), *user)
+
+            if run_batch(self, t("Supprimer {n} proformas ?"), items, one, t("proforma(s) supprimée(s)")):
+                self.refresh()
+            return
         pid = self._id()
         if pid and confirm(self, t("Supprimer cette proforma ?")):
             ps.delete(pid)

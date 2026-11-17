@@ -16,6 +16,7 @@ from app.services import permissions as perms, settings_service
 from app.services.purchase_service import PurchaseLine, PurchaseService
 from app.services.supplier_debt_service import SupplierDebtService
 from app.ui.state import AppState
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.ui.widgets.money_spin import MoneySpinBox
@@ -244,6 +245,7 @@ class PurchasesPage(QWidget):
         body = QHBoxLayout()
         self.history = _table(['Date', 'Fournisseur', 'Facture', 'Total', 'Reste'])
         self.history.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        enable_multi(self.history)
         self.history.currentCellChanged.connect(lambda *_: self._show())
         body.addWidget(self.history, 3)
         side = QVBoxLayout()
@@ -414,6 +416,15 @@ class PurchasesPage(QWidget):
         info(self, t('Remboursement fournisseur enregistré.'))
 
     def _cancel_selected_purchase(self) -> None:
+        rows = selected_rows(self.history)
+        if len(rows) > 1 and self.state.can(perms.MANAGE_PURCHASES):
+            items = [(self._rows[r].id, f"#{self._rows[r].id}") for r in rows if self._rows[r].status != 'cancelled']
+            user = self._user()[1]
+            if run_batch(self, t("Annuler {n} achats ?\n\nLe stock reçu sera retiré. Un achat déjà remboursé sera signalé et conservé."), items,
+                         lambda pid: PurchaseService.cancel_purchase(pid, user_id=self.state.user_id, username=user), t("achat(s) annulé(s)")):
+                self.refresh()
+                self.state.notify_data_changed()
+            return
         p = self._selected()
         if not p:
             warn(self, t("Sélectionnez un achat dans l'historique."))

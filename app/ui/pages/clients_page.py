@@ -1,6 +1,7 @@
 """Page de gestion des clients (CRUD, dettes, historique)."""
 from __future__ import annotations
 from app.i18n import t
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.client_controller import ClientController
@@ -58,6 +59,7 @@ class ClientsPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        enable_multi(self.table)
         self.table.doubleClicked.connect(self._edit)
         layout.addWidget(self.table)
         self._columns = TableColumnController(self.table, CLIENT_COLUMNS)
@@ -284,7 +286,30 @@ class ClientsPage(QWidget):
             return
         DebtHistoryDialog(client_id, client.name, parent=self).exec()
 
+    def _delete_many(self, rows: list[int]) -> None:
+        if not self.state.can(perms.MANAGE_CLIENTS):
+            warn(self, t("Vous n'avez pas l'autorisation de supprimer un client."))
+            return
+        from app.services import audit_service
+        user = getattr(self.state.current_user, 'username', '')
+
+        def one(cid: int) -> None:
+            if DebtService.list_debts(client_id=cid, limit=1):
+                raise ValueError(t('a un historique de dettes'))
+            if ClientController.has_sales(cid):
+                raise ValueError(t('a un historique de ventes'))
+            ClientController.delete(cid)
+            audit_service.log_action('Suppression client', 'Client', str(cid), self.state.user_id, user)
+
+        items = [(self._ids[r], self.table.item(r, 0).text()) for r in rows]
+        if run_batch(self, t("Supprimer {n} clients ?\n\nCeux qui ont des ventes ou des dettes seront conservés."), items, one, t("client(s) supprimé(s)")):
+            self.refresh()
+            self.state.notify_data_changed()
+
     def _delete(self) -> None:
+        rows = selected_rows(self.table)
+        if len(rows) > 1:
+            return self._delete_many(rows)
         client_id = self._selected_id()
         if not client_id:
             warn(self, t('Sélectionnez un client.'))

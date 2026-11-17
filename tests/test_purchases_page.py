@@ -3,21 +3,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-os.environ.setdefault("NEXAPOS_SKIP_ACTIVATION", "1")
+os.environ["NEXAPOS_SKIP_ACTIVATION"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-_TMP = tempfile.mkdtemp()
-os.environ["GESTION_DATA_DIR"] = _TMP
-
-from PySide6.QtWidgets import QApplication
-
-_app = QApplication.instance() or QApplication([])
-
-from app.database.connection import init_database
-from app.database.seed import seed_all
-
-init_database()
-seed_all()
-
+os.environ["GESTION_DATA_DIR"] = tempfile.mkdtemp()
 
 class _Fake:
     def __init__(self, d):
@@ -28,6 +16,15 @@ class _Fake:
 
 
 class PurchasesPageTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        from app.database.connection import init_database
+        from app.database.seed import seed_all
+        cls.app = QApplication.instance() or QApplication([])
+        init_database()
+        seed_all()
+
     def test_list_detail_pay_cancel(self):
         from app.controllers.product_controller import ProductController as PC
         from app.controllers.supplier_controller import SupplierController as SC

@@ -289,7 +289,17 @@ class ProductController:
             if sale_count:
                 product.is_active = False
                 return "deactivated"
-            session.delete(product)
+            from sqlalchemy.exc import IntegrityError
+            try:
+                with session.begin_nested():
+                    session.delete(product)
+                    session.flush()
+            except IntegrityError:
+                # référencé ailleurs (mouvements de stock, lots, achats…) : on désactive pour garder l'historique
+                session.expire_all()
+                product = session.get(Product, product_id)
+                product.is_active = False
+                return "deactivated"
             return "deleted"
 
     @staticmethod

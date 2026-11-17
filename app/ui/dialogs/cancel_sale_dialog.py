@@ -9,7 +9,7 @@ from app.utils.cancel_reason import MIN_CANCEL_REASON_LETTERS, count_letters, va
 class CancelSaleDialog(QDialog):
     """Demande un motif d'annulation (≥ 10 lettres) avant validation."""
 
-    def __init__(self, ticket_number: str, parent=None):
+    def __init__(self, ticket_number: str, parent=None, many: int = 0):
         super().__init__(parent)
         self.setWindowTitle(t('Annuler la vente'))
         self.setModal(True)
@@ -18,7 +18,8 @@ class CancelSaleDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
-        info = QLabel(f"<b>Annuler la vente {ticket_number} ?</b><br/><br/>Les articles seront remis en stock et la vente ne comptera plus dans le chiffre d'affaires.<br/><br/>Un <b>motif obligatoire</b> (au moins 10 lettres) est requis.")
+        title = f"Annuler {many} ventes ?" if many > 1 else f"Annuler la vente {ticket_number} ?"
+        info = QLabel(f"<b>{title}</b><br/><br/>Les articles seront remis en stock et la vente ne comptera plus dans le chiffre d'affaires.<br/><br/>Un <b>motif obligatoire</b> (au moins 10 lettres) est requis.")
         info.setWordWrap(True)
         layout.addWidget(info)
         layout.addWidget(QLabel(t("Motif de l'annulation")))
