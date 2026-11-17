@@ -25,6 +25,8 @@ class AuditPage(QWidget):
         layout.addLayout(actions)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels([t('Date'), t('Utilisateur'), t('Action'), t('Détails')])
+        for col in (0, 1, 2):
+            self.table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self.table)
@@ -39,4 +41,6 @@ class AuditPage(QWidget):
             self.table.setItem(row, 0, QTableWidgetItem(format_datetime(log.date)))
             self.table.setItem(row, 1, QTableWidgetItem(log.username))
             self.table.setItem(row, 2, QTableWidgetItem(log.action))
-            self.table.setItem(row, 3, QTableWidgetItem(log.details))
+            details = QTableWidgetItem(log.details)
+            details.setToolTip(log.details)
+            self.table.setItem(row, 3, details)
