@@ -74,3 +74,4 @@ from app.models.field_sales import (  # noqa: E402,F401
 )
 from app.models.proforma import Proforma, ProformaLine  # noqa: E402,F401
 from app.models.gas import GasDelivery, GasDeliveryItem, GasEmptiesReturn, GasLine, GasMovement, GasPayment, GasTrip, GasWholesaler  # noqa: E402,F401
+from app.models.reminder import Reminder  # noqa: E402,F401

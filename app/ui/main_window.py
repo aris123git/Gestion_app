@@ -164,6 +164,12 @@ class MainWindow(QWidget):
             app.installEventFilter(self)
         self.select_page(0)
         self._viewport_timer.start()
+        self._alerts_timer = QTimer(self)
+        self._alerts_timer.setInterval(5 * 60000)
+        self._alerts_timer.timeout.connect(self._refresh_alert_badge)
+        self._alerts_timer.start()
+        self.state.data_changed.connect(self._refresh_alert_badge)
+        QTimer.singleShot(0, self._refresh_alert_badge)
 
     def _build_topbar(self) -> QWidget:
         bar = QWidget()
@@ -185,7 +191,46 @@ class MainWindow(QWidget):
         self._topbar_user = QLabel('')
         self._topbar_user.setObjectName('TopBarMeta')
         row.addWidget(self._topbar_user)
+        self._bell_top = QPushButton('🔔')
+        self._bell_top.setObjectName('TopBarButton')
+        self._bell_top.setFixedHeight(36)
+        self._bell_top.clicked.connect(self._open_alerts)
+        row.addWidget(self._bell_top)
         return bar
+
+    def _refresh_alert_badge(self) -> None:
+        try:
+            from app.services import notification_service as ns
+
+            n = ns.count(self.state.can)
+        except Exception:  # noqa: BLE001 - une alerte ne doit jamais bloquer l'application
+            return
+        full = getattr(self, '_bell_full', True)
+        text = f'🔔 {n}' if n else '🔔'
+        self._bell_top.setText(text)
+        self._bell_btn.setText(f"🔔 {t('Alertes')}" + (f' ({n})' if n else '') if full else text)
+        style = 'font-weight: 700; color: #fca5a5;' if n else ''
+        self._bell_btn.setStyleSheet(style)
+        self._bell_top.setStyleSheet(style)
+
+    def _open_alerts(self) -> None:
+        from app.ui.dialogs.alerts_dialog import AlertsDialog
+
+        dialog = AlertsDialog(self, self.state.can)
+        dialog.exec()
+        self._refresh_alert_badge()
+        if dialog.target is not None:
+            page_name, ref = dialog.target
+            self._select_page_by_class(page_name)
+            page = self.stack.currentWidget()
+            if ref is not None and hasattr(page, 'select_product'):
+                page.select_product(ref)
+
+    def _select_page_by_class(self, class_name: str) -> Optional[QWidget]:
+        for index, (_label, _icon, page_class, _permission) in enumerate(NAV_ITEMS):
+            if page_class.__name__ == class_name:
+                return self.select_page(index)
+        return None
 
     def _allowed(self, permission: Optional[str], nav_index: Optional[int] = None) -> bool:
         if permission is None:
@@ -231,6 +276,12 @@ class MainWindow(QWidget):
         subtitle.setObjectName('SidebarSubtitle')
         layout.addWidget(title)
         layout.addWidget(subtitle)
+        self._bell_btn = QPushButton('🔔')
+        self._bell_btn.setObjectName('NavButton')
+        self._bell_btn.setToolTip(t('Alertes et rappels'))
+        self._bell_btn.setAccessibleName(t('Alertes et rappels'))
+        self._bell_btn.clicked.connect(self._open_alerts)
+        layout.addWidget(self._bell_btn)
         layout.addSpacing(8)
         self._title_label = title
         self._subtitle_label = subtitle
@@ -411,7 +462,7 @@ class MainWindow(QWidget):
                         button.setFixedHeight(40)
                         button.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
                         button.setStyleSheet('')
-                for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                for extra in (self._search_btn, self._bell_btn, self._logout_btn, self._close_cash_btn):
                     if extra is not None:
                         extra.setFixedHeight(40)
                         extra.setFixedWidth(SIDEBAR_WIDTH_ICONS - 12)
@@ -429,7 +480,7 @@ class MainWindow(QWidget):
                         button.setMaximumWidth(16777215)
                         button.setFixedHeight(40)
                         button.setStyleSheet('')
-                for extra in (self._search_btn, self._logout_btn, self._close_cash_btn):
+                for extra in (self._search_btn, self._bell_btn, self._logout_btn, self._close_cash_btn):
                     if extra is not None:
                         extra.setMinimumWidth(0)
                         extra.setMaximumWidth(16777215)
@@ -469,6 +520,9 @@ class MainWindow(QWidget):
         else:
             self._logout_btn.setText('🚪')
             self._logout_btn.setToolTip(t('Se déconnecter'))
+        self._bell_full = full
+        if hasattr(self, '_bell_top'):
+            self._refresh_alert_badge()
         if self._close_cash_btn is not None:
             if full:
                 self._close_cash_btn.setText('Fermer la caisse')
