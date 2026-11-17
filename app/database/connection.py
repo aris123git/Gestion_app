@@ -78,7 +78,7 @@ def init_database() -> None:
 
 
 # Version du schéma : à incrémenter à chaque ajout de colonne dans ``_migrate_schema``.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 _PRE_MIGRATION_KEEP = 3
 
 
@@ -164,6 +164,7 @@ def _migrate_schema() -> None:
             "no_marketing": "BOOLEAN DEFAULT 0",
         },
         "products": {
+            "supplier_id": "INTEGER",
             "is_active": "BOOLEAN DEFAULT 1",
             "free_amount_sale": "BOOLEAN DEFAULT 0",
             "pack_content": "NUMERIC(14, 3) DEFAULT 0",

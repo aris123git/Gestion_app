@@ -29,6 +29,7 @@ class StockPage(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_movement_tab(), t('Mouvements'))
         self.tabs.addTab(self._build_inventory_tab(), t('Inventaire complet'))
+        self.tabs.addTab(self._build_order_tab(), t('À commander'))
         self.tabs.addTab(self._build_history_tab(), t('Historique'))
         self.tabs.currentChanged.connect(lambda _: (self._reload_history(), self._reload_inventory()))
         layout.addWidget(self.tabs)
@@ -210,6 +211,155 @@ class StockPage(QWidget):
         self._inv_counts: dict = {}
         self._inv_loading = False
         return wrap
+
+    # ---- Suggestion de commande -------------------------------------------------
+    def _build_order_tab(self) -> QWidget:
+        wrap = QWidget()
+        layout = QVBoxLayout(wrap)
+        layout.setContentsMargins(0, 12, 0, 0)
+        bar = QHBoxLayout()
+        self.order_supplier = QComboBox()
+        self.order_supplier.currentIndexChanged.connect(self._reload_order)
+        self.order_print = QPushButton(t('Imprimer (PDF)'))
+        self.order_print.clicked.connect(self._print_order)
+        self.order_wa = QPushButton(t('Envoyer par WhatsApp'))
+        self.order_wa.setObjectName('Primary')
+        self.order_wa.clicked.connect(self._whatsapp_order)
+        bar.addWidget(QLabel(t('Fournisseur')))
+        bar.addWidget(self.order_supplier, 1)
+        bar.addWidget(self.order_print)
+        bar.addWidget(self.order_wa)
+        layout.addLayout(bar)
+        hint = QLabel(t("Produits en rupture ou sous le minimum. Quantité proposée = 2 × minimum − stock ; modifiez-la ou décochez un produit."))
+        hint.setStyleSheet('color: #64748b;')
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self.order_table = QTableWidget(0, 5)
+        self.order_table.setHorizontalHeaderLabels(['', t('Produit'), t('Fournisseur'), t('Stock'), t('À commander')])
+        self.order_table.verticalHeader().setVisible(False)
+        self.order_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.order_table, 1)
+        self._order_loading = False
+        self._order_suppliers_loaded = False
+        return wrap
+
+    @staticmethod
+    def suggested_quantity(product) -> float:
+        stock = float(product.quantity or 0)
+        minimum = float(product.min_stock or 0)
+        return max(2 * minimum - stock, 1.0)
+
+    def _order_candidates(self):
+        out = []
+        for p in self._inventory_products():
+            stock = float(p.quantity or 0)
+            minimum = float(p.min_stock or 0)
+            if stock <= 0 or (minimum > 0 and stock <= minimum):
+                out.append(p)
+        return out
+
+    def _reload_order(self, *_a) -> None:
+        if not hasattr(self, 'order_table') or self._order_loading:
+            return
+        self._order_loading = True
+        names = {s.id: s.name for s in SupplierController.list()}
+        if not self._order_suppliers_loaded or self.order_supplier.count() != len(names) + 2:
+            current = self.order_supplier.currentData()
+            self.order_supplier.blockSignals(True)
+            self.order_supplier.clear()
+            self.order_supplier.addItem(t('Tous'), 'all')
+            self.order_supplier.addItem(t('Sans fournisseur'), 'none')
+            for sid, name in names.items():
+                self.order_supplier.addItem(name, sid)
+            idx = self.order_supplier.findData(current)
+            self.order_supplier.setCurrentIndex(max(idx, 0))
+            self.order_supplier.blockSignals(False)
+            self._order_suppliers_loaded = True
+        flt = self.order_supplier.currentData()
+        products = []
+        for p in self._order_candidates():
+            sid = getattr(p, 'supplier_id', None)
+            if flt == 'all' or (flt == 'none' and not sid) or flt == sid:
+                products.append(p)
+        self.order_table.setRowCount(len(products))
+        for row, p in enumerate(products):
+            chk = QTableWidgetItem()
+            chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            chk.setCheckState(Qt.CheckState.Checked)
+            name = QTableWidgetItem(p.name)
+            name.setData(Qt.ItemDataRole.UserRole, p.id)
+            name.setFlags(name.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            sup = QTableWidgetItem(names.get(getattr(p, 'supplier_id', None), '—'))
+            sup.setFlags(sup.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            stock = QTableWidgetItem(format_quantity(p.quantity))
+            stock.setFlags(stock.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            stock.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            qty = QTableWidgetItem(format_quantity(self.suggested_quantity(p)))
+            qty.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            for col, item in enumerate((chk, name, sup, stock, qty)):
+                self.order_table.setItem(row, col, item)
+        self._order_loading = False
+
+    def _order_lines(self):
+        """Lignes cochées : (produit, unité, stock, quantité) avec quantité > 0."""
+        units = {p.id: (p.unit_name or '') for p in self._inventory_products()}
+        lines = []
+        for row in range(self.order_table.rowCount()):
+            if self.order_table.item(row, 0).checkState() != Qt.CheckState.Checked:
+                continue
+            qty = self._parse_count(self.order_table.item(row, 4).text())
+            if not qty:
+                continue
+            pid = self.order_table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+            lines.append((self.order_table.item(row, 1).text(), units.get(pid, ''), self.order_table.item(row, 3).text(), qty))
+        return lines
+
+    @staticmethod
+    def order_text(lines) -> str:
+        parts = [f"{name} × {format_quantity(qty)}" for name, _u, _s, qty in lines]
+        return t("Bonjour, je voudrais commander : ") + ", ".join(parts) + "."
+
+    def _print_order(self) -> None:
+        lines = self._order_lines()
+        if not lines:
+            warn(self, t('À commander'), t('Aucun produit à commander.'))
+            return
+        import tempfile
+        from pathlib import Path
+
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from app.printers.order_list import build_order_list
+
+        rows = [(n, u, s, format_quantity(q)) for n, u, s, q in lines]
+        sup = self.order_supplier.currentText() if isinstance(self.order_supplier.currentData(), int) else ''
+        path = Path(tempfile.gettempdir()) / 'liste_commande.pdf'
+        build_order_list(rows, path, supplier=sup)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _whatsapp_order(self) -> None:
+        lines = self._order_lines()
+        if not lines:
+            warn(self, t('À commander'), t('Aucun produit à commander.'))
+            return
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from app.services.messaging_service import whatsapp_link
+
+        phone = ''
+        sid = self.order_supplier.currentData()
+        if isinstance(sid, int):
+            sup = next((s for s in SupplierController.list() if s.id == sid), None)
+            phone = (sup.phone if sup else '') or ''
+        try:
+            url = whatsapp_link(phone, self.order_text(lines)) if phone else \
+                'https://wa.me/?text=' + __import__('urllib.parse', fromlist=['quote']).quote(self.order_text(lines), safe='')
+        except ValueError:
+            warn(self, 'WhatsApp', t('Numéro de téléphone du fournisseur invalide.'))
+            return
+        QDesktopServices.openUrl(QUrl(url))
 
     def _inventory_products(self):
         return [p for p in ProductController.list(only_active=True) if not getattr(p, 'sell_without_stock', False)]
@@ -439,6 +589,7 @@ class StockPage(QWidget):
 
     def refresh(self) -> None:
         self._reload_inventory()
+        self._reload_order()
         self._reload_products()
         self._reload_suppliers()
         self._reload_history()

@@ -142,6 +142,7 @@ class ProductController:
                 barcode=barcode,
                 reference=str(data.get("reference", "")).strip(),
                 category_id=data.get("category_id"),
+                supplier_id=data.get("supplier_id"),
                 unit_id=data.get("unit_id"),
                 purchase_price=to_float(data.get("purchase_price")),
                 sale_price=to_float(data.get("sale_price")),
@@ -197,6 +198,7 @@ class ProductController:
             product.barcode = new_barcode
             product.reference = str(data.get("reference", product.reference)).strip()
             product.category_id = data.get("category_id")
+            product.supplier_id = data.get("supplier_id")
             product.unit_id = data.get("unit_id")
             new_cost = to_float(data.get("purchase_price"))
             deferred = False

@@ -27,6 +27,9 @@ class Product(Base, TimestampMixin):
     unit_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("units.id"), nullable=True
     )
+    supplier_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("suppliers.id"), nullable=True
+    )
 
     purchase_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)
     sale_price: Mapped[float] = mapped_column(Numeric(14, 3), default=0)

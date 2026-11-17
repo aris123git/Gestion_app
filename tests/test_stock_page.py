@@ -104,6 +104,42 @@ class StockPageTests(unittest.TestCase):
         build_inventory_sheet([("Inv A", "kg", "8")], out, show_expected=True)
         self.assertGreater(out.stat().st_size, 500)
 
+    def test_order_suggestion_by_supplier(self):
+        from unittest import mock
+        from app.controllers.product_controller import ProductController as PC
+        from app.controllers.supplier_controller import SupplierController as SC
+        from app.ui.pages import stock_page
+        from app.ui.state import AppState
+        from PySide6.QtCore import Qt
+
+        sid = SC.create({"name": "Grossiste Z", "phone": "+22670000001"}).id
+        a = PC.create({"name": "Huile cmd", "sale_price": 1000, "purchase_price": 800, "quantity": 2, "min_stock": 5, "supplier_id": sid}).id
+        PC.create({"name": "Sucre cmd", "sale_price": 500, "purchase_price": 400, "quantity": 0, "min_stock": 0})
+        PC.create({"name": "Sel plein", "sale_price": 500, "purchase_price": 400, "quantity": 50, "min_stock": 5})
+        self.assertEqual(PC.get(a).supplier_id, sid)
+        st = AppState()
+        st.can = lambda _p: True
+        page = stock_page.StockPage(st)
+        page.refresh()
+        names = [page.order_table.item(r, 1).text() for r in range(page.order_table.rowCount())]
+        self.assertIn("Huile cmd", names)
+        self.assertIn("Sucre cmd", names)
+        self.assertNotIn("Sel plein", names)
+        page.order_supplier.setCurrentIndex(page.order_supplier.findData(sid))
+        self.assertEqual(page.order_table.rowCount(), 1)
+        self.assertEqual(page.order_table.item(0, 4).text(), "8")  # 2*5-2
+        page.order_table.item(0, 4).setText("10")
+        text = page.order_text(page._order_lines())
+        self.assertIn("Huile cmd × 10", text)
+        page.order_table.item(0, 0).setCheckState(Qt.CheckState.Unchecked)
+        self.assertEqual(page._order_lines(), [])
+        page.order_table.item(0, 0).setCheckState(Qt.CheckState.Checked)
+        with mock.patch("PySide6.QtGui.QDesktopServices.openUrl") as op:
+            page._whatsapp_order()
+            self.assertIn("wa.me/22670000001", op.call_args[0][0].toString())
+            page._print_order()
+            self.assertEqual(op.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
