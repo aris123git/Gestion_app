@@ -1,6 +1,8 @@
 """Page de gestion du stock : entrées, sorties, inventaire, corrections, historique."""
 from __future__ import annotations
 from app.i18n import t
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget
 from app.controllers.product_controller import ProductController
 from app.controllers.stock_controller import StockController
@@ -30,18 +32,64 @@ class StockPage(QWidget):
         self.tabs.currentChanged.connect(lambda _: self._reload_history())
         layout.addWidget(self.tabs)
 
+    ACTIONS = [
+        ('in', 'Entrée +', 'Quantité reçue', ('supplier', 'invoice', 'cost', 'price', 'comment'), "Enregistrer l'entrée"),
+        ('out', 'Sortie −', 'Quantité sortie', ('reason', 'comment'), 'Enregistrer la sortie'),
+        ('loss', 'Perte', 'Quantité perdue', ('loss', 'comment'), 'Enregistrer la perte'),
+        ('inv', 'Inventaire =', 'Quantité comptée', ('reason', 'comment'), "Enregistrer l'inventaire"),
+        ('fix', 'Correction', 'Nouveau stock', ('reason', 'comment'), 'Enregistrer la correction'),
+    ]
+
     def _build_movement_tab(self) -> QWidget:
         wrap = QWidget()
-        layout = QVBoxLayout(wrap)
-        layout.setContentsMargins(0, 12, 0, 0)
+        outer = QHBoxLayout(wrap)
+        outer.setContentsMargins(0, 12, 0, 0)
+        outer.setSpacing(12)
+        # -- gauche : produits ---------------------------------------------------------------------------
+        left = QVBoxLayout()
+        self.product_search = QLineEdit()
+        self.product_search.setPlaceholderText(t('Rechercher un produit…'))
+        self.product_search.textChanged.connect(self._reload_products)
+        left.addWidget(self.product_search)
+        self.product_table = QTableWidget(0, 3)
+        self.product_table.setHorizontalHeaderLabels([t('Produit'), t('Stock'), t('Alerte')])
+        self.product_table.verticalHeader().setVisible(False)
+        self.product_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.product_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.product_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.product_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.product_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.product_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.product_table.currentCellChanged.connect(lambda *_: self._show_product())
+        left.addWidget(self.product_table, 1)
+        outer.addLayout(left, 3)
+        # -- droite : action et champs utiles ---------------------------------------------------------------
+        side = QVBoxLayout()
+        self.p_head = QLabel(t('Sélectionnez un produit.'))
+        self.p_head.setTextFormat(Qt.TextFormat.RichText)
+        self.p_head.setWordWrap(True)
+        side.addWidget(self.p_head)
+        chips = QHBoxLayout()
+        self._action = 'in'
+        self._action_buttons = {}
+        for key, label, _qty_label, _fields, _cta in self.ACTIONS:
+            b = QPushButton(t(label))
+            b.setCheckable(True)
+            b.setStyleSheet('QPushButton:checked { background: #2563eb; color: #ffffff; border-color: #2563eb; }')
+            b.clicked.connect(lambda _=False, k=key: self._set_action(k))
+            self._action_buttons[key] = b
+            chips.addWidget(b)
+        side.addLayout(chips)
         form_widget = QWidget()
+        form_widget.setObjectName('Plain')
         form = QFormLayout(form_widget)
-        form.setSpacing(10)
-        self.product_combo = QComboBox()
-        self.supplier_combo = QComboBox()
+        form.setSpacing(8)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.quantity = QDoubleSpinBox()
         self.quantity.setRange(0, 10000000)
         self.quantity.setDecimals(3)
+        self.quantity.valueChanged.connect(self._update_preview)
+        self.supplier_combo = QComboBox()
         self.unit_cost = MoneySpinBox()
         self.unit_cost.setRange(0, 1000000000)
         self.unit_cost.setDecimals(3)
@@ -52,36 +100,96 @@ class StockPage(QWidget):
         self.invoice_number = QLineEdit()
         self.invoice_number.setPlaceholderText(t('Facultatif'))
         self.reason = QLineEdit()
-        self.reason.setPlaceholderText(t('Ex. : Livraison fournisseur'))
         self.loss_reason = QComboBox()
         self.loss_reason.addItems(InventoryService.loss_reasons())
         self.comment = QLineEdit()
         self.comment.setPlaceholderText(t('Facultatif'))
-        form.addRow(t('Produit'), self.product_combo)
-        form.addRow(t('Fournisseur'), self.supplier_combo)
-        form.addRow(t('N° facture'), self.invoice_number)
-        form.addRow(t('Quantité'), self.quantity)
-        form.addRow(t('Coût unitaire (entrée)'), self.unit_cost)
-        form.addRow(t('Nouveau prix de vente (après ancien stock)'), self.new_sale_price)
-        form.addRow(t('Motif'), self.reason)
-        form.addRow(t('Motif de perte'), self.loss_reason)
-        form.addRow(t('Commentaire'), self.comment)
-        layout.addWidget(make_card(form_widget))
-        buttons = QHBoxLayout()
-        for label, handler, obj in [('Entrée (+)', self._stock_in, 'Success'), ('Sortie (-)', self._stock_out, 'Danger'), ('Perte (motif)', self._record_loss, 'Danger'), ('Inventaire (=)', self._inventory, 'Primary'), ('Ajustement / correction', self._correction, '')]:
-            button = QPushButton(label)
-            if obj:
-                button.setObjectName(obj)
-            button.clicked.connect(handler)
-            buttons.addWidget(button)
-        layout.addLayout(buttons)
-        layout.addStretch()
+        self._qty_label = QLabel()
+        self._fields = {'supplier': (t('Fournisseur'), self.supplier_combo), 'invoice': (t('N° facture'), self.invoice_number),
+                        'cost': (t('Coût unitaire'), self.unit_cost), 'price': (t('Nouveau prix de vente'), self.new_sale_price),
+                        'reason': (t('Motif'), self.reason), 'loss': (t('Motif de perte'), self.loss_reason), 'comment': (t('Commentaire'), self.comment)}
+        form.addRow(self._qty_label, self.quantity)
+        self._field_labels = {}
+        for key in ('supplier', 'invoice', 'cost', 'price', 'reason', 'loss', 'comment'):
+            label, widget = self._fields[key]
+            form.addRow(label, widget)
+            self._field_labels[key] = form.labelForField(widget)
+        side.addWidget(make_card(form_widget))
+        self.preview = QLabel()
+        self.preview.setTextFormat(Qt.TextFormat.RichText)
+        side.addWidget(self.preview)
+        self.save_button = QPushButton()
+        self.save_button.setObjectName('Primary')
+        self.save_button.clicked.connect(self._save)
+        side.addWidget(self.save_button)
+        side.addStretch()
+        outer.addLayout(side, 2)
+        self._set_action('in')
         return wrap
+
+    def _set_action(self, key: str) -> None:
+        self._action = key
+        spec = next(a for a in self.ACTIONS if a[0] == key)
+        for k, b in self._action_buttons.items():
+            b.setChecked(k == key)
+        self._qty_label.setText(t(spec[2]))
+        for fkey, (_label, widget) in self._fields.items():
+            visible = fkey in spec[3]
+            widget.setVisible(visible)
+            self._field_labels[fkey].setVisible(visible)
+        self.reason.setPlaceholderText(t({'out': 'Ex. : Usage personnel', 'inv': 'Ex. : Inventaire de fin de mois', 'fix': 'Obligatoire. Ex. : erreur de saisie'}.get(key, '')))
+        self.save_button.setText(t(spec[4]))
+        self._update_preview()
+
+    def _selected_product(self):
+        row = self.product_table.currentRow()
+        pid = self.product_table.item(row, 0).data(Qt.ItemDataRole.UserRole) if row >= 0 and self.product_table.item(row, 0) else None
+        return next((p for p in getattr(self, '_products', []) if p.id == pid), None)
+
+    def _show_product(self) -> None:
+        product = self._selected_product()
+        if product is None:
+            self.p_head.setText(t('Sélectionnez un produit.'))
+        else:
+            color = '#b91c1c' if product.is_out_of_stock or product.is_low_stock else '#0f172a'
+            self.p_head.setText(f"<b style='font-size:15px'>{product.name}</b><br><span style='color:{color}'><b>{t('Stock actuel')} : {format_quantity(product.quantity)}</b></span>"
+                                f" <span style='color:#64748b'>({t('minimum')} {format_quantity(product.min_stock or 0)})</span>")
+        self.save_button.setEnabled(product is not None)
+        self._update_preview()
+
+    def _update_preview(self, *_a) -> None:
+        product = self._selected_product()
+        if product is None:
+            self.preview.setText('')
+            return
+        cur, q = float(product.quantity or 0), self.quantity.value()
+        after = {'in': cur + q, 'out': cur - q, 'loss': cur - q, 'inv': q, 'fix': q}[self._action]
+        self.preview.setText(f"<span style='color:#64748b'>{t('Stock après')} : </span><b>{format_quantity(after)}</b>")
+
+    def _current_product_id(self):
+        product = self._selected_product()
+        return product.id if product else None
+
+    def _current_supplier_id(self):
+        return self.supplier_combo.currentData()
+
+    def _save(self) -> None:
+        {'in': self._stock_in, 'out': self._stock_out, 'loss': self._record_loss, 'inv': self._inventory, 'fix': self._correction}[self._action]()
 
     def _build_history_tab(self) -> QWidget:
         wrap = QWidget()
         layout = QVBoxLayout(wrap)
         layout.setContentsMargins(0, 12, 0, 0)
+        bar = QHBoxLayout()
+        self.history_search = QLineEdit()
+        self.history_search.setPlaceholderText(t('Rechercher un produit…'))
+        self.history_search.textChanged.connect(self._reload_history)
+        self.history_type = QComboBox()
+        self.history_type.addItem(t('Tous les mouvements'), None)
+        self.history_type.currentIndexChanged.connect(self._reload_history)
+        bar.addWidget(self.history_search, 1)
+        bar.addWidget(self.history_type)
+        layout.addLayout(bar)
         self.history_note = QLabel('')
         self.history_note.setStyleSheet('color: #b45309; font-size: 12px;')
         self.history_note.setWordWrap(True)
@@ -103,12 +211,6 @@ class StockPage(QWidget):
     def _on_layout_changed(self, profile: LayoutProfile) -> None:
         if hasattr(self, '_history_columns'):
             self._history_columns.apply(profile.content_width)
-
-    def _current_product_id(self):
-        return self.product_combo.currentData()
-
-    def _current_supplier_id(self):
-        return self.supplier_combo.currentData()
 
     def _ensure_stock_permission(self) -> bool:
         if self.state.can(perms.MANAGE_STOCK):
@@ -192,16 +294,32 @@ class StockPage(QWidget):
         self._reload_suppliers()
         self._reload_history()
 
-    def _reload_products(self) -> None:
-        current = self.product_combo.currentData()
-        self.product_combo.blockSignals(True)
-        self.product_combo.clear()
-        for product in ProductController.list(only_active=False):
-            self.product_combo.addItem(f'{product.name} (stock: {format_quantity(product.quantity)})', product.id)
-        index = self.product_combo.findData(current)
-        if index >= 0:
-            self.product_combo.setCurrentIndex(index)
-        self.product_combo.blockSignals(False)
+    def _reload_products(self, *_a) -> None:
+        keep = self._current_product_id()
+        text = self.product_search.text().strip().lower()
+        self._products = [p for p in ProductController.list(only_active=False) if not text or text in p.name.lower()]
+        self.product_table.blockSignals(True)
+        self.product_table.setRowCount(len(self._products))
+        for row, product in enumerate(self._products):
+            tracked = not getattr(product, 'sell_without_stock', False)
+            alert = (t('Rupture') if product.is_out_of_stock else (t('Bas') if product.is_low_stock else '')) if tracked else ''
+            for col, value in enumerate([product.name, format_quantity(product.quantity), alert]):
+                item = QTableWidgetItem(value)
+                if col == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, product.id)
+                if col == 1:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if col == 2 and alert:
+                    item.setForeground(QColor('#b91c1c' if product.is_out_of_stock else '#b45309'))
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.product_table.setItem(row, col, item)
+        self.product_table.blockSignals(False)
+        ids = [p.id for p in self._products]
+        if ids:
+            self.product_table.selectRow(ids.index(keep) if keep in ids else 0)
+        self._show_product()
 
     def _reload_suppliers(self) -> None:
         current = self.supplier_combo.currentData()
@@ -217,6 +335,20 @@ class StockPage(QWidget):
 
     def _reload_history(self) -> None:
         movements = StockController.history(limit=self.HISTORY_LIMIT)
+        kinds = sorted({m.movement_type for m in movements if m.movement_type})
+        if [self.history_type.itemData(i) for i in range(1, self.history_type.count())] != kinds:
+            self.history_type.blockSignals(True)
+            chosen = self.history_type.currentData()
+            self.history_type.clear()
+            self.history_type.addItem(t('Tous les mouvements'), None)
+            for k in kinds:
+                self.history_type.addItem(k, k)
+            self.history_type.setCurrentIndex(max(0, self.history_type.findData(chosen)))
+            self.history_type.blockSignals(False)
+        text = self.history_search.text().strip().lower()
+        kind = self.history_type.currentData()
+        movements = [m for m in movements if (not kind or m.movement_type == kind)
+                     and (not text or text in (m.product.name.lower() if m.product else ''))]
         self.history_note.setText(f'Historique limité aux {self.HISTORY_LIMIT} derniers mouvements.' if len(movements) == self.HISTORY_LIMIT else '')
         self.history_table.setRowCount(len(movements))
         for row, movement in enumerate(movements):
