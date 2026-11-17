@@ -434,6 +434,7 @@ class POSPage(QWidget):
             self._catalog.refresh()
         self._reload_clients()
         self._apply_large_text()
+        self._update_total()
 
     def _apply_large_text(self) -> None:
         """Agrandit noms/prix catalogue + panier si activé dans Paramètres."""
