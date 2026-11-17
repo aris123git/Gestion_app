@@ -18,6 +18,7 @@ from app.services import audit_service, gas_service as gs, permissions as perms
 from app.ui.pages.rentals_page import _cell, _date_edit, _table
 from app.ui.state import AppState
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
+from app.ui.widgets.period_picker import PeriodPicker
 from app.ui.widgets.helpers import info, make_card, page_title, warn
 
 
@@ -431,15 +432,10 @@ class GasPage(QWidget):
         prod = QPushButton(t("Produits et prix"))
         prod.clicked.connect(lambda: ProductsDialog(self).exec())
         top.addWidget(prod)
-        top.addWidget(QLabel(t("Du")))
-        self.f_start = _date_edit()
-        top.addWidget(self.f_start)
-        top.addWidget(QLabel(t("au")))
-        self.day = _date_edit()          # « au » : le jour affiché dans le cahier, les livraisons et le camion
-        self._prev_end = self.day.date()
-        self.day.dateChanged.connect(self._end_changed)
-        self.f_start.dateChanged.connect(self._start_changed)
-        top.addWidget(self.day)
+        self.picker = PeriodPicker()
+        self.f_start, self.day = self.picker.start_edit, self.picker.end_edit
+        self.picker.changed.connect(self.refresh)
+        top.addWidget(self.picker)
         layout.addLayout(top)
         kp = QHBoxLayout()
         self.k_truck, self.k_sales, self.k_due = QLabel(), QLabel(), QLabel()
@@ -482,7 +478,7 @@ class GasPage(QWidget):
         self.w_head.setTextFormat(Qt.TextFormat.RichText)
         self.w_head.setWordWrap(True)
         side.addWidget(self.w_head)
-        side.addWidget(QLabel(f"<b>{t('Livraisons du jour')}</b>"))
+        side.addWidget(QLabel(f"<b>{t('Livraisons')}</b>"))
         self.dtable = _table(["Produit", "Pleines", "Vides rendues", "Total"])
         self.dtable.verticalHeader().setVisible(False)
         side.addWidget(self.dtable, 1)
@@ -561,24 +557,11 @@ class GasPage(QWidget):
         row.addStretch()
         return row
 
-    def _end_changed(self, *_a) -> None:
-        """Jour seul (par défaut) : changer le jour déplace aussi le début. Intervalle : le début reste."""
-        if self.f_start.date() == self._prev_end or self.f_start.date() > self.day.date():
-            self.f_start.blockSignals(True)
-            self.f_start.setDate(self.day.date())
-            self.f_start.blockSignals(False)
-        self._prev_end = self.day.date()
-        self.refresh()
-
-    def _start_changed(self, *_a) -> None:
-        if self.f_start.date() > self.day.date():
-            self.day.setDate(self.f_start.date())      # déclenche _end_changed
-            return
-        self.refresh()
-
     def _day(self) -> date:
-        d = self.day.date()
-        return date(d.year(), d.month(), d.day())
+        """Jour des saisies et du cahier imprimé : le jour choisi ; sur une période, aujourd'hui s'il en fait partie, sinon le dernier jour."""
+        d0, d1 = self._period()
+        today = date.today()
+        return today if d0 <= today <= d1 else d1
 
     def _log(self, action: str, ref: str) -> None:
         audit_service.log_action(action, "gaz", ref, self.state.user_id, getattr(self.state.current_user, "username", ""))
@@ -788,7 +771,8 @@ class GasPage(QWidget):
         self.w_head.setText(f"<b style='font-size:15px'>{a.name}</b><br><span style='color:{color}'>{a.statement}</span>")
         names = {ln.id: ln.name for ln in gs.list_lines(False)}
         rows = []
-        for d in gs.deliveries_of_day(self._day(), wid):
+        d0, d1 = self._period()
+        for d in gs.deliveries_of_day(d0, wid, end=d1):
             for lid, qty in d["lines"].items():
                 rows.append((names.get(lid, "?"), qty, d["empties_back"], _money(d["total"])))
         self.dtable.setRowCount(len(rows))
@@ -816,7 +800,8 @@ class GasPage(QWidget):
     def refresh(self, *_a) -> None:
         day = self._day()
         keep_w, keep_t = self._selected(self.wtable), self._selected(self.ttable)
-        rows = [r for r in gs.day_sheet(day, all_sources=True)
+        d0, d1 = self._period()
+        rows = [r for r in gs.day_sheet(d0, all_sources=True, end=d1)
                 if any(r[k] for k in ("si", "entry", "sold", "delivered", "lost", "sf"))]
         self.sheet.setRowCount(len(rows))
         for i, r in enumerate(rows):
@@ -824,8 +809,8 @@ class GasPage(QWidget):
                     r["delivered"], r["lost"], r["sf"]]
             for j, val in enumerate(vals):
                 self.sheet.setItem(i, j, _cell(val, right=j > 0))
-        retail = gs.day_total(day, all_sources=True)
-        self.total_label.setText(f"<b>{t('Total du jour, détaillants')} : {_money(retail)} F</b>")
+        retail = gs.day_total(d0, all_sources=True, end=d1)
+        self.total_label.setText(f"<b>{t('Total détaillants')} : {_money(retail)} F</b>")
         for w in (self.wtable, self.ttable):
             w.blockSignals(True)
         ws = gs.list_wholesalers(False)
@@ -837,7 +822,7 @@ class GasPage(QWidget):
             vals = [w.name, a.delivered, a.empties_back, _money(a.balance)]
             for j, val in enumerate(vals):
                 self.wtable.setItem(i, j, _cell(val, right=j > 0, data=w.id if j == 0 else None))
-        delivered_today = sum(d["total"] for d in gs.deliveries_of_day(day))
+        delivered_today = sum(d["total"] for d in gs.deliveries_of_day(d0, end=d1))
         ops = []
         d0, d1 = self._period()
         for k in range(min((d1 - d0).days, 92), -1, -1):
@@ -860,7 +845,7 @@ class GasPage(QWidget):
         in_truck = sum(tr.remaining for tr in ts if tr.status == "en_cours")
         grey = "<span style='color:#64748b'>%s</span><br><b style='font-size:24px'>%s</b>"
         self.k_truck.setText(grey % (t("Bouteilles dans le camion"), in_truck))
-        self.k_sales.setText(grey % (t("Ventes du jour"), f"{_money(retail + delivered_today)} F"))
+        self.k_sales.setText(grey % (t("Ventes du jour") if d0 == d1 else t("Ventes de la période"), f"{_money(retail + delivered_today)} F"))
         self.k_due.setText(grey % (t("Reste à encaisser (grossistes)"), f"{_money(due)} F"))
         self._select_by_id(self.wtable, keep_w)
         self._select_by_id(self.ttable, keep_t)

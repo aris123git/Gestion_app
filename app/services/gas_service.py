@@ -377,9 +377,10 @@ def wholesaler_account(wholesaler_id: int, until: Optional[datetime] = None) -> 
         return Account(w.id, w.name, int(qty), int(back), _f(due), paid, _f(due) - paid, int(qty) - int(back))
 
 
-def deliveries_of_day(day: date, wholesaler_id: Optional[int] = None, trip_id: Optional[int] = None) -> List[dict]:
-    """Feuille « Entrée » d'une journée : une ligne par grossiste (quantités par produit, total, payé)."""
-    a, b = _day_bounds(day)
+def deliveries_of_day(day: date, wholesaler_id: Optional[int] = None, trip_id: Optional[int] = None,
+                      end: Optional[date] = None) -> List[dict]:
+    """Feuille « Entrée » d'une journée (ou d'une période si `end` est donné) : une ligne par livraison."""
+    a, b = _day_bounds(day)[0], _day_bounds(end or day)[1]
     with session_scope() as s:
         q = select(GasDelivery).where(GasDelivery.delivered_at >= a, GasDelivery.delivered_at < b).order_by(GasDelivery.delivered_at)
         if wholesaler_id:
@@ -407,10 +408,11 @@ def _stock_all(session, line_id: int, before: datetime) -> int:
                                .where(GasMovement.line_id == line_id, GasMovement.moved_at < before)).scalar() or 0)
 
 
-def day_sheet(day: date, trip_id: Optional[int] = None, all_sources: bool = False) -> List[dict]:
+def day_sheet(day: date, trip_id: Optional[int] = None, all_sources: bool = False, end: Optional[date] = None) -> List[dict]:
     """Une ligne par produit, comme le cahier : S.I (stock initial), Entrée, S.T, Vente, P.U moyen, Montant,
-    Livré grossistes, Pertes, S.F (stock final). Les ventes et livraisons sont comptées séparément."""
-    a, b = _day_bounds(day)
+    Livré grossistes, Pertes, S.F (stock final). Les ventes et livraisons sont comptées séparément.
+    Avec `end` : même tableau sur une période (S.I au début, totaux, S.F à la fin)."""
+    a, b = _day_bounds(day)[0], _day_bounds(end or day)[1]
     with session_scope() as s:
         rows = []
         for ln in s.execute(select(GasLine).where(GasLine.active.is_(True)).order_by(GasLine.size_kg, GasLine.id)).scalars():
@@ -433,8 +435,8 @@ def day_sheet(day: date, trip_id: Optional[int] = None, all_sources: bool = Fals
         return rows
 
 
-def day_total(day: date, trip_id: Optional[int] = None, all_sources: bool = False) -> float:
-    return sum(r["amount"] for r in day_sheet(day, trip_id, all_sources))
+def day_total(day: date, trip_id: Optional[int] = None, all_sources: bool = False, end: Optional[date] = None) -> float:
+    return sum(r["amount"] for r in day_sheet(day, trip_id, all_sources, end))
 
 
 def losses(start: Optional[date] = None, end: Optional[date] = None) -> List[dict]:
