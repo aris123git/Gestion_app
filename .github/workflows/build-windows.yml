@@ -8,6 +8,7 @@ on:
       - "main"
     tags:
       - "v*"
+      - "V*"
   workflow_dispatch:
 
 jobs:
@@ -24,7 +25,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          $v = "${{ github.ref_name }}".TrimStart('v')
+          $v = "${{ github.ref_name }}".TrimStart('v','V')
           (Get-Content app/__init__.py) -replace '__version__ = ".*"', ('__version__ = "' + $v + '"') | Set-Content app/__init__.py
           Select-String -Path app/__init__.py -Pattern '__version__'
 
