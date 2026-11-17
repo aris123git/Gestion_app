@@ -3,7 +3,9 @@ from __future__ import annotations
 from app.i18n import t
 from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from datetime import date
+
+from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.client_controller import ClientController
 from app.services import permissions as perms, settings_service
 from app.services.debt_service import DebtService
@@ -13,19 +15,22 @@ from app.ui.dialogs.debt_history_dialog import DebtHistoryDialog
 from app.ui.dialogs.debt_payment_dialog import DebtPaymentDialog
 from app.ui.responsive import CLIENT_COLUMNS, LayoutProfile, TableColumnController
 from app.ui.state import AppState
-from app.ui.widgets.helpers import confirm, info, page_title, warn
+from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.utils.helpers import format_money, format_quantity
 
 class ClientsPage(QWidget):
-    HEADERS = ['Nom', 'Téléphone', 'Adresse', 'Dette', 'Dettes actives', 'Points', 'Dernière visite', 'Achats']
+    HEADERS = ['Nom', 'Téléphone', 'Dette']
+
+    FILTERS = [('all', 'Tous'), ('with_debt', 'Avec dette'), ('overdue', 'Dette échue')]
 
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
         self._ids: list[int] = []
+        self._filter = 'all'
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(14)
+        layout.setSpacing(12)
         header = QHBoxLayout()
         header.addWidget(page_title(t('Clients')))
         header.addStretch()
@@ -38,7 +43,13 @@ class ClientsPage(QWidget):
         add.clicked.connect(self._add)
         header.addWidget(add)
         layout.addLayout(header)
-        filters = QHBoxLayout()
+        kp = QHBoxLayout()
+        self.k_count, self.k_due, self.k_late = QLabel(), QLabel(), QLabel()
+        for k in (self.k_count, self.k_due, self.k_late):
+            k.setTextFormat(Qt.TextFormat.RichText)
+            kp.addWidget(make_card(k), 1)
+        layout.addLayout(kp)
+        bar = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText(t('Rechercher (nom, téléphone, note de dette)…'))
         self._search_timer = QTimer(self)
@@ -46,51 +57,90 @@ class ClientsPage(QWidget):
         self._search_timer.setInterval(300)
         self._search_timer.timeout.connect(self.refresh)
         self.search.textChanged.connect(lambda _text='': self._search_timer.start())
-        self.debt_filter = QComboBox()
-        self.debt_filter.addItem(t('Tous les clients'), 'all')
-        self.debt_filter.addItem(t('Avec dette'), 'with_debt')
-        self.debt_filter.addItem(t('Dettes échues'), 'overdue')
-        self.debt_filter.currentIndexChanged.connect(self.refresh)
-        filters.addWidget(self.search, 3)
-        filters.addWidget(self.debt_filter, 1)
-        layout.addLayout(filters)
+        bar.addWidget(self.search, 1)
+        self._chips = {}
+        for key, label in self.FILTERS:
+            chip = QPushButton(t(label))
+            chip.setCheckable(True)
+            chip.setStyleSheet('QPushButton:checked { background: #2563eb; color: #ffffff; border-color: #2563eb; }')
+            chip.clicked.connect(lambda _=False, k=key: self._set_filter(k))
+            self._chips[key] = chip
+            bar.addWidget(chip)
+        layout.addLayout(bar)
+        body = QHBoxLayout()
         self.table = QTableWidget(0, len(self.HEADERS))
-        self.table.setHorizontalHeaderLabels(self.HEADERS)
+        self.table.setHorizontalHeaderLabels([t(h) for h in self.HEADERS])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         enable_multi(self.table)
         self.table.doubleClicked.connect(self._edit)
-        layout.addWidget(self.table)
-        self._columns = TableColumnController(self.table, CLIENT_COLUMNS)
-        actions = QHBoxLayout()
-        actions.addStretch()
-        for label, handler, obj in [('Modifier', self._edit, ''), ('+ Dette', self._add_debt, 'Primary'), ('Payé', self._settle, 'Success'), ('Échanger points', self._redeem_points, 'Primary'), ('Historique dettes', self._history, 'Primary'), ('Historique des achats', self._purchases, 'Primary'), ('Supprimer', self._delete, 'Danger')]:
-            button = QPushButton(label)
+        self.table.currentCellChanged.connect(lambda *_: self._show())
+        body.addWidget(self.table, 3)
+        side = QVBoxLayout()
+        self.d_head = QLabel(t('Sélectionnez un client.'))
+        self.d_head.setTextFormat(Qt.TextFormat.RichText)
+        self.d_head.setWordWrap(True)
+        side.addWidget(self.d_head)
+        self.d_info = QLabel()
+        self.d_info.setTextFormat(Qt.TextFormat.RichText)
+        self.d_info.setWordWrap(True)
+        side.addWidget(self.d_info)
+        self.d_ops = QLabel()
+        self.d_ops.setTextFormat(Qt.TextFormat.RichText)
+        self.d_ops.setWordWrap(True)
+        side.addWidget(self.d_ops)
+        side.addStretch(1)
+        self.buttons = {}
+        row1, row2 = QHBoxLayout(), QHBoxLayout()
+        specs = [(row1, 'settle', 'Encaisser', self._settle, 'Success'), (row1, 'whatsapp', 'WhatsApp', self._whatsapp, 'Primary'),
+                 (row2, 'edit', 'Modifier', self._edit, ''), (row2, 'purchases', 'Historique achats', self._purchases, '')]
+        for lay, key, label, handler, obj in specs:
+            button = QPushButton(t(label))
             if obj:
                 button.setObjectName(obj)
             button.clicked.connect(handler)
-            if label == '+ Dette':
-                self.add_debt_btn = button
-                button.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
-                button.setToolTip(t("Saisie libre hors caisse — réservée à l'administrateur"))
-            actions.addWidget(button)
-        layout.addLayout(actions)
-        self.state.layout_changed.connect(self._on_layout_changed)
-        if self.state.layout is not None:
-            self._on_layout_changed(self.state.layout)
+            self.buttons[key] = button
+            lay.addWidget(button)
+        more = QPushButton(t('Plus ▾'))
+        menu = QMenu(more)
+        self.add_debt_action = menu.addAction(t('+ Dette'), self._add_debt)
+        menu.addAction(t('Échanger points'), self._redeem_points)
+        menu.addAction(t('Historique des dettes'), self._history)
+        menu.addSeparator()
+        menu.addAction(t('Supprimer'), self._delete)
+        more.setMenu(menu)
+        self.buttons['more'] = more
+        row2.addWidget(more)
+        side.addLayout(row1)
+        side.addLayout(row2)
+        body.addLayout(side, 2)
+        layout.addLayout(body, 1)
+        self._chips['all'].setChecked(True)
 
-    def _on_layout_changed(self, profile: LayoutProfile) -> None:
-        self._columns.apply(profile.content_width)
+    def _set_filter(self, key: str, refresh: bool = True) -> None:
+        self._filter = key
+        for k, chip in self._chips.items():
+            chip.setChecked(k == key)
+        if refresh:
+            self.refresh()
 
     def refresh(self) -> None:
-        if hasattr(self, 'add_debt_btn'):
-            self.add_debt_btn.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
+        self.add_debt_action.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
         clients = ClientController.list(self.search.text().strip())
-        mode = self.debt_filter.currentData()
+        mode = self._filter
         currency = settings_service.get_currency()
-        client_ids = [client.id for client in clients]
-        debt_summaries = DebtService.summaries_for_clients(client_ids)
+        everyone = ClientController.list('')
+        all_summaries = DebtService.summaries_for_clients([c.id for c in everyone])
+        total_due = sum(s['total_remaining'] for s in all_summaries.values())
+        late = [s for s in all_summaries.values() if s['overdue_count'] > 0]
+        self.k_count.setText(f"<span style='color:#64748b'>{t('Clients')}</span><br><b style='font-size:18px'>{len(everyone)}</b>")
+        self.k_due.setText(f"<span style='color:#64748b'>{t('Dettes à recevoir')}</span><br><b style='font-size:18px'>{format_money(total_due, currency)}</b>")
+        self.k_late.setText(f"<span style='color:#64748b'>{t('Dettes échues')}</span><br><b style='font-size:18px;color:#b91c1c'>{len(late)} {t('client(s)')}</b>")
+        keep = self._selected_id()
+        debt_summaries = DebtService.summaries_for_clients([client.id for client in clients])
         rows_data = []
         for client in clients:
             summary = debt_summaries.get(client.id, {'total_remaining': 0.0, 'active_count': 0, 'overdue_count': 0, 'debts': []})
@@ -120,20 +170,66 @@ class ClientsPage(QWidget):
                     continue
                 rows_data.append((client, summary))
         self._ids = [c.id for c, _ in rows_data]
-        loyalty_balances = LoyaltyService.balances_for_clients(self._ids)
+        self._summaries = {c.id: s for c, s in rows_data}
+        self.table.blockSignals(True)
         self.table.setRowCount(len(rows_data))
         for row, (client, summary) in enumerate(rows_data):
             self.table.setItem(row, 0, QTableWidgetItem(client.name))
             self.table.setItem(row, 1, QTableWidgetItem(client.phone))
-            self.table.setItem(row, 2, QTableWidgetItem(client.address))
-            debt_item = QTableWidgetItem(format_money(summary['total_remaining'], currency))
+            owed = summary['total_remaining']
+            debt_item = QTableWidgetItem(format_money(owed, currency) if owed > 0 else '—')
+            debt_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if summary['overdue_count'] > 0:
                 debt_item.setForeground(Qt.GlobalColor.red)
-            self.table.setItem(row, 3, debt_item)
-            self.table.setItem(row, 4, QTableWidgetItem(str(summary['active_count'])))
-            self.table.setItem(row, 5, QTableWidgetItem(format_quantity(loyalty_balances.get(client.id, 0.0))))
-            self.table.setItem(row, 6, QTableWidgetItem(client.last_visit or ''))
-            self.table.setItem(row, 7, QTableWidgetItem(str(client.purchase_count or 0)))
+            elif owed <= 0:
+                debt_item.setForeground(Qt.GlobalColor.gray)
+            self.table.setItem(row, 2, debt_item)
+        self.table.blockSignals(False)
+        if keep in self._ids:
+            self.table.setCurrentCell(self._ids.index(keep), 0)
+        self._show()
+
+    def _show(self) -> None:
+        cid = self._selected_id()
+        for b in self.buttons.values():
+            b.setEnabled(bool(cid))
+        if not cid:
+            self.d_head.setText(t('Sélectionnez un client.'))
+            self.d_info.setText('')
+            self.d_ops.setText('')
+            return
+        client = ClientController.get(cid)
+        if not client:
+            return
+        cur = settings_service.get_currency()
+        s = DebtService.client_summary(cid)
+        points = LoyaltyService.get_balance(cid)
+        self.d_head.setText(f"<b style='font-size:17px'>{client.name}</b><br><span style='color:#64748b'>{client.phone or t('pas de numéro')}{' · ' + client.address if client.address else ''}</span>")
+        late = ''
+        if s['overdue_count']:
+            days = max((date.today() - d.due_date).days for d in s['debts'] if d.is_overdue)
+            late = f"<br><span style='color:#b91c1c'>{t('échue depuis')} {days} {t('jour(s)')}</span>"
+        owed_color = '#b91c1c' if s['overdue_count'] else '#0f172a'
+        self.d_info.setText(f"<table cellspacing='10'><tr><td><span style='color:#64748b'>{t('Dette')}</span><br><b style='color:{owed_color}'>{format_money(s['total_remaining'], cur)}</b>{late}</td>"
+                            f"<td><span style='color:#64748b'>{t('Points')}</span><br><b>{format_quantity(points)}</b></td>"
+                            f"<td><span style='color:#64748b'>{t('Dernière visite')}</span><br><b>{client.last_visit or '—'}</b></td>"
+                            f"<td><span style='color:#64748b'>{t('Achats')}</span><br><b>{client.purchase_count or 0}</b></td></tr></table>")
+        lines = []
+        for d in (s['debts'] or [])[:4]:
+            when = d.created_at.strftime('%d/%m') if getattr(d, 'created_at', None) else ''
+            lines.append(f"{when} · {t('Dette')} {format_money(d.amount_initial, cur)} · {t('reste')} {format_money(d.amount_remaining, cur)}" + (f" · {d.note}" if d.note else ''))
+        self.d_ops.setText(("<span style='color:#64748b'>" + t('Dernières dettes') + "</span><br>" + '<br>'.join(lines)) if lines else '')
+        self.buttons['settle'].setEnabled(s['total_remaining'] > 0)
+
+    def _whatsapp(self) -> None:
+        cid = self._selected_id()
+        client = ClientController.get(cid) if cid else None
+        if not client:
+            warn(self, t('Sélectionnez un client.'))
+            return
+        from app.ui.dialogs.client_message_dialog import ClientMessageDialog
+        debt = DebtService.client_summary(cid)['total_remaining']
+        ClientMessageDialog(client.name, client.phone or '', debt, bool(getattr(client, 'no_marketing', False)), parent=self).exec()
 
     def _selected_id(self):
         row = self.table.currentRow()
@@ -146,7 +242,7 @@ class ClientsPage(QWidget):
             self.search.blockSignals(True)
             self.search.clear()
             self.search.blockSignals(False)
-            self.debt_filter.setCurrentIndex(0)
+            self._set_filter('all', refresh=False)
             self.refresh()
         if client_id in self._ids:
             row = self._ids.index(client_id)
