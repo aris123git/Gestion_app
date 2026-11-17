@@ -30,6 +30,7 @@ def _table(headers: list[str]) -> QTableWidget:
     tb.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     tb.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     tb.verticalHeader().setVisible(False)
+    tb.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
     return tb
 
 

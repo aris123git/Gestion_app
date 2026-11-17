@@ -57,8 +57,17 @@ class PurchasesPageTest(unittest.TestCase):
         # filtre "À payer" vide, puis annulation
         page._set_filter("due")
         self.assertEqual(page.history.rowCount(), 0)
+        # un achat déjà remboursé ne peut plus être annulé (message, sans bloquer)
         page._set_filter("all")
         page.history.setCurrentCell(0, 0)
+        with mock.patch.object(mod, "confirm", return_value=True), mock.patch.object(mod, "warn") as w:
+            page._cancel_selected_purchase()
+            self.assertTrue(w.called)
+        # un achat sans paiement s'annule
+        PurchaseService.create([PurchaseLine(pid, "Riz ach", 1, 700)], supplier_id=sid, invoice_number="F-2", amount_paid=700)
+        page.refresh()
+        row = [i for i in range(page.history.rowCount()) if page.history.item(i, 2).text() == "F-2"][0]
+        page.history.setCurrentCell(row, 0)
         with mock.patch.object(mod, "confirm", return_value=True), mock.patch.object(mod, "info"):
             page._cancel_selected_purchase()
         page._set_filter("cancelled")
