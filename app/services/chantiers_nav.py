@@ -62,7 +62,6 @@ def build_chantiers_nav_items() -> List[NavEntry]:
         from app.ui.pages.debts_page import DebtsPage
         from app.ui.pages.pos_page import POSPage
         from app.ui.pages.products_page import ProductsPage
-        from app.ui.pages.purchases_page import PurchasesPage
         from app.ui.pages.stock_page import StockPage
 
         sales = [
@@ -70,7 +69,6 @@ def build_chantiers_nav_items() -> List[NavEntry]:
             (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
             (t("nav.categories"), "🏷️", CategoriesPage, perms.MANAGE_CATEGORIES),
             (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
-            (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
             (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         ]
     return [

@@ -201,17 +201,18 @@ class PayDialog(QDialog):
 class PurchasesPage(QWidget):
     FILTERS = [('all', 'Tous'), ('due', 'À payer'), ('cancelled', 'Annulés')]
 
-    def __init__(self, state: AppState):
+    def __init__(self, state: AppState, embedded: bool = False):
         super().__init__()
         self.state = state
         self._filter = 'all'
         self._rows: list = []
         self._debts: dict[int, tuple[int, float]] = {}
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setContentsMargins(0, 12, 0, 0) if embedded else layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
         top = QHBoxLayout()
-        top.addWidget(page_title(t('Achats / Réceptions')))
+        if not embedded:
+            top.addWidget(page_title(t('Achats / Réceptions')))
         top.addStretch()
         self.picker = PeriodPicker()
         self.picker.mode.setCurrentIndex(self.picker.mode.findData('month'))

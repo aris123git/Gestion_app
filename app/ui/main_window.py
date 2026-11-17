@@ -23,7 +23,6 @@ from app.ui.pages.expenses_page import ExpensesPage
 from app.ui.pages.orders_page import OrdersPage
 from app.ui.pages.pos_page import POSPage
 from app.ui.pages.products_page import ProductsPage
-from app.ui.pages.purchases_page import PurchasesPage
 from app.ui.pages.accounting_page import AccountingPage
 from app.ui.pages.reports_page import ReportsPage
 from app.ui.pages.settings_page import SettingsPage
@@ -76,7 +75,6 @@ def build_nav_items():
         *proformas,
         (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
         (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
-        (t("nav.purchases"), "🧾", PurchasesPage, perms.MANAGE_PURCHASES),
         (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
         (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
@@ -97,7 +95,7 @@ def nav_group_of(page_class) -> Optional[str]:
     if product_profile.is_maquis() or product_profile.is_chantiers():
         return None
     groups = {
-        ProductsPage: "Catalogue et stock", StockPage: "Catalogue et stock", PurchasesPage: "Catalogue et stock",
+        ProductsPage: "Catalogue et stock", StockPage: "Catalogue et stock",
         ClientsPage: "Tiers", DebtsPage: "Tiers", AvoirsPage: "Tiers", SuppliersPage: "Tiers",
         ExpensesPage: "Finances", ReportsPage: "Finances", AccountingPage: "Finances",
         UsersPage: "Administration", AuditPage: "Administration", AssistantPage: "Administration",

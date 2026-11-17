@@ -30,8 +30,13 @@ class StockPage(QWidget):
         self.tabs.addTab(self._build_movement_tab(), t('Mouvements'))
         self.tabs.addTab(self._build_inventory_tab(), t('Inventaire complet'))
         self.tabs.addTab(self._build_order_tab(), t('À commander'))
+        self.purchases = None
+        if state.can(perms.MANAGE_PURCHASES):      # réception de marchandise : plus de page Achats séparée
+            from app.ui.pages.purchases_page import PurchasesPage
+            self.purchases = PurchasesPage(state, embedded=True)
+            self.tabs.addTab(self.purchases, t('Achats'))
         self.tabs.addTab(self._build_history_tab(), t('Historique'))
-        self.tabs.currentChanged.connect(lambda _: (self._reload_history(), self._reload_inventory()))
+        self.tabs.currentChanged.connect(lambda _: (self._reload_history(), self._reload_inventory(), self._refresh_purchases()))
         layout.addWidget(self.tabs)
 
     ACTIONS = [
@@ -587,7 +592,12 @@ class StockPage(QWidget):
         self.state.notify_data_changed()
         info(self, f'{label} enregistré(e).')
 
+    def _refresh_purchases(self) -> None:
+        if self.purchases is not None and self.tabs.currentWidget() is self.purchases:
+            self.purchases.refresh()
+
     def refresh(self) -> None:
+        self._refresh_purchases()
         self._reload_inventory()
         self._reload_order()
         self._reload_products()
