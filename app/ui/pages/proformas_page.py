@@ -273,50 +273,117 @@ class ProformasPage(QWidget):
         super().__init__()
         self.state = state
         self.can_manage = state.can(perms.MANAGE_PROFORMAS)
+        self._status_filter = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
-        layout.addWidget(page_title(t("Factures proforma")))
-        bar = QHBoxLayout()
-        self.status = QComboBox()
-        self.status.addItem(t("Toutes"), None)
-        for s in STATUSES:
-            self.status.addItem(t(s), s)
-        self.status.currentIndexChanged.connect(self.refresh)
-        bar.addWidget(self.status)
-        bar.addStretch()
-        layout.addLayout(bar)
+        top = QHBoxLayout()
+        top.addWidget(page_title(t("Factures proforma")))
+        top.addStretch()
+        new = QPushButton(t("+ Nouvelle proforma"))
+        new.setObjectName("Primary")
+        new.setEnabled(self.can_manage)
+        new.clicked.connect(self._new)
+        top.addWidget(new)
+        layout.addLayout(top)
+        kp = QHBoxLayout()
+        self.k_open, self.k_ok, self.k_ko = QLabel(), QLabel(), QLabel()
+        for k in (self.k_open, self.k_ok, self.k_ko):
+            k.setTextFormat(Qt.TextFormat.RichText)
+            kp.addWidget(make_card(k), 1)
+        layout.addLayout(kp)
+        chips = QHBoxLayout()
+        self._chips = {}
+        for key, label in [(None, "Toutes")] + [(s, s) for s in STATUSES]:
+            b = QPushButton(t(label))
+            b.setCheckable(True)
+            b.setStyleSheet("QPushButton:checked { background: #2563eb; color: #ffffff; border-color: #2563eb; }")
+            b.clicked.connect(lambda _=False, k=key: self._set_filter(k))
+            self._chips[key] = b
+            chips.addWidget(b)
+        chips.addStretch()
+        layout.addLayout(chips)
+        body = QHBoxLayout()
         self.table = _table(["N°", "Date", "Client", "Objet", "Total", "Statut"])
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
         self.table.doubleClicked.connect(lambda *_: self._edit())
-        layout.addWidget(self.table, 1)
-        model_row = QHBoxLayout()
-        model_row.addWidget(QLabel(t("Modèle d'impression")))
+        self.table.currentCellChanged.connect(lambda *_: self._show())
+        body.addWidget(self.table, 3)
+        side = QVBoxLayout()
+        self.d_head = QLabel(t("Sélectionnez une proforma."))
+        self.d_head.setTextFormat(Qt.TextFormat.RichText)
+        self.d_head.setWordWrap(True)
+        side.addWidget(self.d_head)
+        self.d_lines = _table(["Désignation", "Qté", "Prix", "Total"])
+        self.d_lines.verticalHeader().setVisible(False)
+        self.d_lines.horizontalHeader().setStretchLastSection(True)
+        side.addWidget(self.d_lines, 1)
+        self.d_total = QLabel()
+        self.d_total.setAlignment(Qt.AlignmentFlag.AlignRight)
+        side.addWidget(self.d_total)
+        side.addWidget(QLabel(t("Modèle d'impression")))
         self.model = QComboBox()
         for mid, label in proforma_models():
             self.model.addItem(label, mid)
         self.model.setCurrentIndex(max(0, self.model.findData(get_model())))
         self.model.currentIndexChanged.connect(lambda *_: set_model(self.model.currentData()))    # le choix est retenu
-        model_row.addWidget(self.model, 1)
-        layout.addLayout(model_row)
-        row = QHBoxLayout()
+        side.addWidget(self.model)
         self.buttons = {}
-        for key, label, slot, primary in (("new", "+ Nouvelle proforma", self._new, True), ("edit", "Modifier", self._edit, False),
-                                          ("print", "Imprimer / PDF", self._print, True), ("send", "Envoyer", self._send, False), ("dup", "Dupliquer", self._dup, False),
-                                          ("sale", "Transformer en vente", self._convert, False), ("ok", "Marquer acceptée", lambda: self._status("Acceptée"), False),
-                                          ("ko", "Marquer refusée", lambda: self._status("Refusée"), False), ("del", "Supprimer", self._delete, False)):
-            b = QPushButton(t(label))
-            if primary:
-                b.setObjectName("Primary")
-            if key == "del":
-                b.setObjectName("Danger")
-            b.clicked.connect(slot)
-            if key != "print":
-                b.setEnabled(self.can_manage)
-            self.buttons[key] = b
-            row.addWidget(b)
-        row.addStretch()
-        layout.addLayout(row)
+        rows = [[("print", "Imprimer / PDF", self._print, True), ("send", "Envoyer", self._send, False), ("edit", "Modifier", self._edit, False)],
+                [("sale", "Transformer en vente", self._convert, True), ("status", "Statut", None, False)],
+                [("dup", "Dupliquer", self._dup, False), ("del", "Supprimer", self._delete, False)]]
+        for spec in rows:
+            row = QHBoxLayout()
+            for key, label, slot, primary in spec:
+                b = QPushButton(t(label))
+                if primary:
+                    b.setObjectName("Primary")
+                if key == "del":
+                    b.setObjectName("DangerOutline")
+                if slot:
+                    b.clicked.connect(slot)
+                if key != "print":
+                    b.setEnabled(self.can_manage)
+                self.buttons[key] = b
+                row.addWidget(b)
+            side.addLayout(row)
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self.buttons["status"])
+        for label, st in (("Marquer acceptée", "Acceptée"), ("Marquer refusée", "Refusée"), ("Remettre ouverte", STATUSES[0])):
+            menu.addAction(t(label), lambda st=st: self._status(st))
+        self.buttons["status"].setText(t("Statut"))
+        self.buttons["status"].setMenu(menu)
+        body.addLayout(side, 2)
+        layout.addLayout(body, 1)
+        self._chips[None].setChecked(True)
         self.refresh()
+
+    def _set_filter(self, key) -> None:
+        self._status_filter = key
+        self.refresh()
+
+    def _show(self) -> None:
+        pid = self._id()
+        has = bool(pid)
+        for k, b in self.buttons.items():
+            b.setEnabled(has and (k == "print" or self.can_manage))
+        if not has:
+            self.d_head.setText(t("Sélectionnez une proforma."))
+            self.d_lines.setRowCount(0)
+            self.d_total.setText("")
+            return
+        d = ps.get(pid)
+        cur = settings_service.get_shop_info().currency or "FCFA"
+        self.buttons["sale"].setEnabled(self.can_manage and d["status"] != "Facturée")
+        self.d_head.setText(f"<b style='font-size:15px'>{d['number']} · {d['client_name']}</b><br>"
+                            f"<span style='color:#64748b'>{d['subject'] or ''} · {t(d['status'])}</span>")
+        self.d_lines.setRowCount(len(d["lines"]))
+        for r, ln in enumerate(d["lines"]):
+            vals = [ln["label"], f"{ln['quantity']:g} {ln['unit']}".strip(), format_money(ln["unit_price"], cur), format_money(ln["quantity"] * ln["unit_price"], cur)]
+            for c, v in enumerate(vals):
+                self.d_lines.setItem(r, c, _cell(v, c > 0))
+        self.d_total.setText(f"<b>{t('Total')} {format_money(d['totals'].total, cur)}</b>")
 
     def _id(self):
         r = self.table.currentRow()
@@ -407,8 +474,26 @@ class ProformasPage(QWidget):
 
     def refresh(self) -> None:
         cur = settings_service.get_shop_info().currency or "FCFA"
-        rows = ps.list_all(self.status.currentData())
+        keep = self._id()
+        for k, b in self._chips.items():
+            b.setChecked(k == self._status_filter)
+        everything = ps.list_all()
+        rows = [x for x in everything if self._status_filter in (None, x["status"])]
+        self.table.blockSignals(True)
         self.table.setRowCount(len(rows))
         for r, x in enumerate(rows):
             for c, v in enumerate([x["number"], x["date"].strftime("%d/%m/%Y"), x["client"], x["subject"], format_money(x["total"], cur), t(x["status"])]):
                 self.table.setItem(r, c, _cell(v, c == 4, x["id"] if c == 0 else None))
+        self.table.blockSignals(False)
+
+        def kpi(label, status):
+            sel = [x for x in everything if x["status"] in status]
+            return (f"<span style='color:#64748b'>{label}</span><br><b style='font-size:22px'>{len(sel)} · "
+                    f"{format_money(sum(x['total'] for x in sel), cur)}</b>")
+        self.k_open.setText(kpi(t("Ouvertes (en attente)"), (STATUSES[0],)))
+        self.k_ok.setText(kpi(t("Acceptées et facturées"), ("Acceptée", "Facturée")))
+        self.k_ko.setText(kpi(t("Refusées"), ("Refusée",)))
+        target = next((r for r in range(len(rows)) if rows[r]["id"] == keep), 0 if rows else -1)
+        if target >= 0:
+            self.table.selectRow(target)
+        self._show()
