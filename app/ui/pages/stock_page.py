@@ -321,8 +321,8 @@ class StockPage(QWidget):
 
     @staticmethod
     def order_text(lines) -> str:
-        parts = [f"{name} × {format_quantity(qty)}" for name, _u, _s, qty in lines]
-        return t("Bonjour, je voudrais commander : ") + ", ".join(parts) + "."
+        from app.services import order_message
+        return order_message.format_order([(name, qty) for name, _u, _s, qty in lines], t("Bonjour, je voudrais commander :"))
 
     def _print_order(self) -> None:
         lines = self._order_lines()

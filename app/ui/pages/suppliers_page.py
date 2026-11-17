@@ -48,6 +48,9 @@ class SuppliersPage(QWidget):
         actions.addStretch()
         edit = QPushButton(t('Modifier'))
         edit.clicked.connect(self._edit)
+        wa = QPushButton(t('WhatsApp'))
+        wa.setObjectName('Primary')
+        wa.clicked.connect(self._whatsapp)
         settle = QPushButton(t('Régler dette'))
         settle.setObjectName('Success')
         settle.clicked.connect(self._settle_debt)
@@ -55,6 +58,7 @@ class SuppliersPage(QWidget):
         delete.setObjectName('Danger')
         delete.clicked.connect(self._delete)
         actions.addWidget(edit)
+        actions.addWidget(wa)
         actions.addWidget(settle)
         actions.addWidget(delete)
         layout.addLayout(actions)
@@ -76,6 +80,15 @@ class SuppliersPage(QWidget):
             self.table.setItem(row, 2, QTableWidgetItem(supplier.address))
             self.table.setItem(row, 3, QTableWidgetItem(supplier.email))
             self.table.setItem(row, 4, QTableWidgetItem(format_money(SupplierDebtService.total_remaining(supplier.id), currency)))
+
+    def _whatsapp(self) -> None:
+        sid = self._selected_id()
+        supplier = next((s for s in SupplierController.list() if s.id == sid), None) if sid else None
+        if not supplier:
+            warn(self, t('Sélectionnez un fournisseur.'))
+            return
+        from app.ui.dialogs.supplier_message_dialog import SupplierMessageDialog
+        SupplierMessageDialog(supplier.id, supplier.name, supplier.phone or '', parent=self).exec()
 
     def _selected_id(self):
         row = self.table.currentRow()
