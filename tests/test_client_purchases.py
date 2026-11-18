@@ -70,7 +70,7 @@ class ClientPurchasesTestCase(unittest.TestCase):
 
         page = ReportsPage(AppState())
         page._generate()
-        self.assertEqual(page.history_table.columnCount(), 6)
+        self.assertEqual(page.history_table.columnCount(), 7)
         names = {page.history_table.item(r, 2).text() for r in range(page.history_table.rowCount())}
         self.assertIn("Awa Konaté", names)
         page.history_search.setText("Paul")

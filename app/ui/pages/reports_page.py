@@ -1,11 +1,14 @@
-"""Page des rapports : synthèse par période et exports PDF/Excel."""
+"""Page des rapports : cartes, courbe des ventes, modes de paiement, top produits, historique, exports."""
 from __future__ import annotations
 from app.i18n import t
-from datetime import date, datetime
-from PySide6.QtCore import QDate, QTimer
-from PySide6.QtWidgets import QComboBox, QDateEdit, QDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from collections import OrderedDict
+from datetime import date, datetime, timedelta
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPlainTextEdit, QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget
 from app import config
-from app.controllers.report_controller import ReportController, period_bounds
+from app.controllers.expense_controller import ExpenseController
+from app.controllers.report_controller import ReportController
 from app.controllers.sale_controller import SaleController
 from app.reports.excel_report import export_report_excel
 from app.reports.pdf_report import export_report_pdf
@@ -16,70 +19,91 @@ from app.ui.dialogs.authorize_dialog import require_admin_authorization
 from app.ui.dialogs.cancel_sale_dialog import CancelSaleDialog
 from app.ui.state import AppState
 from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
-from app.ui.widgets.helpers import info, make_card, page_title, section_title, warn
+from app.ui.widgets.helpers import info, make_card, page_title, warn
+from app.ui.widgets.mini_charts import LineChart, Sparkline
+from app.ui.widgets.period_picker import PeriodPicker
 from app.utils.helpers import format_datetime, format_money
+
+STATUS_STYLE = {'Payée': ('#dcfce7', '#166534'), 'Crédit': ('#fef3c7', '#92400e'), 'Annulée': ('#fee2e2', '#991b1b')}
+
+
+def sale_status(sale) -> str:
+    if sale.status == 'cancelled':
+        return 'Annulée'
+    paid = sum(float(p.amount or 0) for p in (sale.payments or []))
+    return 'Crédit' if float(sale.total or 0) - paid > 0.01 else 'Payée'
+
 
 class ReportsPage(QWidget):
     HISTORY_LIMIT = 5000
+    HEADERS = ['Ticket', 'Date et heure', 'Client', 'Caissier', 'Paiement', 'Statut', 'Total']
 
     def __init__(self, state: AppState):
         super().__init__()
         self.state = state
         self._report = None
         self._sale_ids: list[int] = []
+        self._all_sales: list = []
+        self._shown: list = []
+        self._sort = (1, True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(14)
-        layout.addWidget(page_title(t('Rapports')))
-        controls = QHBoxLayout()
-        self.period = QComboBox()
-        self.period.addItems(['Journalier', 'Hebdomadaire', 'Mensuel', 'Annuel', 'Personnalisé'])
-        self.period.currentTextChanged.connect(self._period_changed)
-        self.start = QDateEdit(QDate.currentDate())
-        self.start.setCalendarPopup(True)
-        self.end = QDateEdit(QDate.currentDate())
-        self.end.setCalendarPopup(True)
-        generate = QPushButton(t('Générer'))
-        generate.setObjectName('Primary')
-        generate.clicked.connect(self._generate)
-        z_report = QPushButton(t('Z de caisse (jour)'))
+        layout.setSpacing(12)
+        top = QHBoxLayout()
+        top.addWidget(page_title(t('Rapports')))
+        top.addStretch()
+        z_report = QPushButton(t('Z de caisse'))
         z_report.clicked.connect(self._show_z_report)
         sessions_btn = QPushButton(t('Sessions caisse'))
         sessions_btn.clicked.connect(self._show_cash_sessions)
-        controls.addWidget(QLabel(t('Période :')))
-        controls.addWidget(self.period)
-        controls.addWidget(QLabel(t('Du')))
-        controls.addWidget(self.start)
-        controls.addWidget(QLabel(t('Au')))
-        controls.addWidget(self.end)
-        controls.addWidget(generate)
-        controls.addWidget(z_report)
-        controls.addWidget(sessions_btn)
-        controls.addStretch()
-        layout.addLayout(controls)
-        self._period_changed(self.period.currentText())
-        self.summary_grid = QGridLayout()
-        self.summary_grid.setSpacing(12)
+        export = QPushButton(t('Exporter'))
+        export.setObjectName('Primary')
+        menu = QMenu(export)
+        menu.addAction(t('PDF'), self._export_pdf)
+        menu.addAction(t('Excel'), self._export_excel)
+        export.setMenu(menu)
+        for w in (z_report, sessions_btn, export):
+            top.addWidget(w)
+        layout.addLayout(top)
+        self.picker = PeriodPicker()
+        self.picker.mode.setCurrentIndex(self.picker.mode.findData('month'))
+        self.picker.changed.connect(self._generate)
+        prow = QHBoxLayout()
+        prow.addWidget(self.picker)
+        prow.addStretch(1)
+        layout.addLayout(prow)
+        cards = QHBoxLayout()
+        cards.setSpacing(12)
         self.lbl_revenue = self._metric('CA encaissé')
-        self.lbl_debt_pay = self._metric('Règlements dettes')
         self.lbl_sales = self._metric('Nombre de ventes')
         self.lbl_profit = self._metric('Bénéfice brut')
-        self.lbl_expenses = self._metric('Dépenses')
+        self.lbl_expenses = self._metric('Dépenses', bad_up=True)
         self.lbl_net = self._metric('Bénéfice net')
-        for i, widget in enumerate([self.lbl_revenue, self.lbl_debt_pay, self.lbl_sales, self.lbl_profit, self.lbl_expenses, self.lbl_net]):
-            self.summary_grid.addWidget(widget['card'], 0, i)
-        layout.addLayout(self.summary_grid)
-        layout.addWidget(section_title(t('Top produits sur la période')))
-        self.top_table = QTableWidget(0, 3)
-        self.top_table.setHorizontalHeaderLabels([t('Produit'), t('Quantité'), t('Total ventes')])
-        self.top_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.top_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.top_table)
-        layout.addWidget(section_title(t('Historique des ventes (date et heure)')))
-        self.history_note = QLabel('')
-        self.history_note.setStyleSheet('color: #b45309; font-size: 12px;')
-        self.history_note.setWordWrap(True)
-        layout.addWidget(self.history_note)
+        for w in (self.lbl_revenue, self.lbl_sales, self.lbl_profit, self.lbl_expenses, self.lbl_net):
+            cards.addWidget(w['card'], 1)
+        layout.addLayout(cards)
+        mid = QHBoxLayout()
+        mid.setSpacing(12)
+        chart_box = QWidget()
+        cb = QVBoxLayout(chart_box)
+        cb.setContentsMargins(0, 0, 0, 0)
+        self.chart_title = QLabel()
+        self.chart_title.setTextFormat(Qt.TextFormat.RichText)
+        self.chart = LineChart()
+        cb.addWidget(self.chart_title)
+        cb.addWidget(self.chart, 1)
+        mid.addWidget(make_card(chart_box), 3)
+        side_box = QWidget()
+        self.side = QVBoxLayout(side_box)
+        self.side.setContentsMargins(0, 0, 0, 0)
+        self.side.setSpacing(4)
+        mid.addWidget(make_card(side_box), 2)
+        layout.addLayout(mid)
+        hist = QWidget()
+        hl = QVBoxLayout(hist)
+        hl.setContentsMargins(0, 0, 0, 0)
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel('<b>' + t('Ventes de la période') + '</b>'))
         self.history_search = QLineEdit()
         self.history_search.setPlaceholderText(t('Rechercher : client, téléphone, n° de ticket ou de facture…'))
         self.history_search.setClearButtonEnabled(True)
@@ -88,108 +112,222 @@ class ReportsPage(QWidget):
         self._search_timer.setInterval(300)
         self._search_timer.timeout.connect(self._load_history)
         self.history_search.textChanged.connect(lambda _t: self._search_timer.start())
-        layout.addWidget(self.history_search)
-        self.history_table = QTableWidget(0, 6)
-        self.history_table.setHorizontalHeaderLabels([t('Ticket'), t('Date et heure'), t('Client'), t('Caissier'), t('Paiement'), t('Total')])
-        self.history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.status_filter = QComboBox()
+        for label in ('Toutes', 'Payée', 'Crédit', 'Annulée'):
+            self.status_filter.addItem(t(label), label)
+        self.status_filter.currentIndexChanged.connect(lambda _i: self._load_history())
+        bar.addWidget(self.history_search, 1)
+        bar.addWidget(self.status_filter)
+        hl.addLayout(bar)
+        self.history_note = QLabel('')
+        self.history_note.setStyleSheet('color: #b45309; font-size: 12px;')
+        self.history_note.setWordWrap(True)
+        hl.addWidget(self.history_note)
+        self.history_table = QTableWidget(0, len(self.HEADERS))
+        self.history_table.setHorizontalHeaderLabels([t(h) for h in self.HEADERS])
+        hh = self.history_table.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionsClickable(True)
+        hh.sectionClicked.connect(self._sort_by)
+        self.history_table.verticalHeader().setVisible(False)
+        self.history_table.verticalHeader().setDefaultSectionSize(36)
+        self.history_table.setShowGrid(False)
+        self.history_table.setMinimumHeight(220)
         self.history_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.history_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         enable_multi(self.history_table)
-        layout.addWidget(self.history_table)
-        history_actions = QHBoxLayout()
-        history_actions.addStretch()
+        hl.addWidget(self.history_table, 1)
+        foot = QHBoxLayout()
+        self.history_count = QLabel('')
+        self.history_count.setStyleSheet('color: #64748b;')
+        foot.addWidget(self.history_count)
+        foot.addStretch()
         self.reprint_button = QPushButton(t('Réimprimer ticket'))
         self.reprint_button.clicked.connect(self._reprint_selected_sale)
-        history_actions.addWidget(self.reprint_button)
         self.cancel_sale_button = QPushButton(t('Annuler la vente sélectionnée'))
-        self.cancel_sale_button.setObjectName('Danger')
+        self.cancel_sale_button.setObjectName('DangerOutline')
         self.cancel_sale_button.clicked.connect(self._cancel_selected_sale)
-        history_actions.addWidget(self.cancel_sale_button)
-        layout.addLayout(history_actions)
-        exports = QHBoxLayout()
-        exports.addStretch()
-        pdf = QPushButton(t('Exporter PDF'))
-        pdf.clicked.connect(self._export_pdf)
-        excel = QPushButton(t('Exporter Excel'))
-        excel.clicked.connect(self._export_excel)
-        exports.addWidget(pdf)
-        exports.addWidget(excel)
-        layout.addLayout(exports)
+        foot.addWidget(self.reprint_button)
+        foot.addWidget(self.cancel_sale_button)
+        hl.addLayout(foot)
+        layout.addWidget(make_card(hist), 1)
         self._apply_permissions()
 
     def _apply_permissions(self) -> None:
         show_profits = self.state.can(perms.VIEW_PROFITS)
-        self.lbl_profit['card'].setVisible(show_profits)
-        self.lbl_expenses['card'].setVisible(show_profits)
-        self.lbl_net['card'].setVisible(show_profits)
+        for w in (self.lbl_profit, self.lbl_expenses, self.lbl_net):
+            w['card'].setVisible(show_profits)
         self.cancel_sale_button.setVisible(perms.can_cancel_sale(self.state.current_user))
 
-    def _metric(self, title: str) -> dict:
+    def _metric(self, title: str, bad_up: bool = False) -> dict:
         wrap = QWidget()
-        inner = QVBoxLayout(wrap)
-        inner.setContentsMargins(4, 4, 4, 4)
-        caption = QLabel(title)
-        caption.setStyleSheet('color: #64748b; font-size: 12px;')
-        value = QLabel(t('—'))
-        value.setStyleSheet('font-size: 20px; font-weight: 700;')
-        inner.addWidget(caption)
-        inner.addWidget(value)
-        return {'card': make_card(wrap), 'value': value}
+        row = QHBoxLayout(wrap)
+        row.setContentsMargins(4, 4, 4, 4)
+        text = QLabel()
+        text.setTextFormat(Qt.TextFormat.RichText)
+        text.setMinimumHeight(58)
+        spark = Sparkline('#b91c1c' if bad_up else '#2563eb')
+        row.addWidget(text, 1)
+        row.addWidget(spark, 0, Qt.AlignmentFlag.AlignTop)
+        return {'card': make_card(wrap), 'text': text, 'spark': spark, 'title': title, 'bad_up': bad_up}
 
-    def _period_changed(self, kind: str) -> None:
-        self.start.setEnabled(True)
-        self.end.setEnabled(True)
-        if kind != 'Personnalisé':
-            start, end = period_bounds(kind)
-            self.start.setDate(QDate(start.year, start.month, start.day))
-            self.end.setDate(QDate(end.year, end.month, end.day))
+    def _set_metric(self, m: dict, value: str, now: float, before: float, series: list[float], extra: str = '') -> None:
+        if before:
+            pct = (now - before) / abs(before) * 100
+            good = (pct >= 0) != m['bad_up']
+            color = '#15803d' if good else '#b91c1c'
+            delta = f"<span style='color:{color};font-size:11px'>{'▲' if pct >= 0 else '▼'} {abs(pct):.1f} % {t('vs période précédente')}</span>"
+        else:
+            delta = f"<span style='color:#94a3b8;font-size:11px'>{t('Pas de comparaison')}</span>"
+        sub = f"<br><span style='color:#64748b;font-size:11px'>{extra}</span>" if extra else ''
+        m['text'].setText(f"<span style='color:#64748b;font-size:12px'>{t(m['title'])}</span><br><b style='font-size:19px'>{value}</b><br>{delta}{sub}")
+        m['spark'].set_values(series)
 
-    def _current_range(self):
-        s = self.start.date()
-        e = self.end.date()
-        return (date(s.year(), s.month(), s.day()), date(e.year(), e.month(), e.day()))
+    @staticmethod
+    def _buckets(start: date, end: date):
+        """Jours (ou mois si la période dépasse ~2 mois) de la période : liste de (clé, étiquette)."""
+        out = []
+        if (end - start).days > 62:
+            cur = start.replace(day=1)
+            while cur <= end:
+                out.append(((cur.year, cur.month), f'{cur:%m/%y}'))
+                cur = (cur + timedelta(days=32)).replace(day=1)
+        else:
+            cur = start
+            while cur <= end:
+                out.append((cur, f'{cur:%d/%m}'))
+                cur += timedelta(days=1)
+        return out, (end - start).days > 62
 
     def _generate(self) -> None:
         self._apply_permissions()
-        start, end = self._current_range()
+        start, end = self.picker.period()
+        days = (end - start).days + 1
+        prev_end = start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=days - 1)
         self._report = ReportController.build(start, end)
+        prev = ReportController.build(prev_start, prev_end)
         currency = settings_service.get_currency()
-        self.lbl_revenue['value'].setText(format_money(self._report['cash_revenue'], currency))
-        self.lbl_debt_pay['value'].setText(format_money(self._report.get('debt_repayments', 0), currency))
-        self.lbl_sales['value'].setText(str(self._report['sales_count']))
-        if self.state.can(perms.VIEW_PROFITS):
-            self.lbl_profit['value'].setText(format_money(self._report['profit'], currency))
-            self.lbl_expenses['value'].setText(format_money(self._report['expenses'], currency))
-            self.lbl_net['value'].setText(format_money(self._report['net_profit'], currency))
-        top = self._report['top_products']
-        self.top_table.setRowCount(len(top))
-        for row, (name, qty, total) in enumerate(top):
-            self.top_table.setItem(row, 0, QTableWidgetItem(name))
-            self.top_table.setItem(row, 1, QTableWidgetItem(f'{qty:g}'))
-            self.top_table.setItem(row, 2, QTableWidgetItem(format_money(total, currency)))
-        self._load_history()
+        rep = self._report
+        buckets, monthly = self._buckets(start, end)
+        keyf = (lambda d: (d.year, d.month)) if monthly else (lambda d: d)
+        rev = OrderedDict((k, 0.0) for k, _l in buckets)
+        cnt = OrderedDict((k, 0.0) for k, _l in buckets)
+        prof = OrderedDict((k, 0.0) for k, _l in buckets)
+        exp = OrderedDict((k, 0.0) for k, _l in buckets)
+        self._all_sales = SaleController.list(start=start, end=end, limit=self.HISTORY_LIMIT)
+        for s in self._all_sales:
+            k = keyf(s.date.date())
+            if s.status == 'cancelled' or k not in rev:
+                continue
+            rev[k] += float(s.total or 0)
+            cnt[k] += 1
+            prof[k] += float(s.profit or 0)
+        show_profits = self.state.can(perms.VIEW_PROFITS)
+        if show_profits:
+            for e in ExpenseController.list(start=start, end=end, limit=20000):
+                k = keyf(e.date.date())
+                if k in exp:
+                    exp[k] += float(e.amount or 0)
+        net = [prof[k] - exp[k] for k in prof]
+        debt = rep.get('debt_repayments', 0)
+        extra = f"{t('dont règlements dettes')} : {format_money(debt, currency)}" if debt else ''
+        self._set_metric(self.lbl_revenue, format_money(rep['cash_revenue'], currency), rep['cash_revenue'], prev['cash_revenue'], list(rev.values()), extra)
+        self._set_metric(self.lbl_sales, str(rep['sales_count']), rep['sales_count'], prev['sales_count'], list(cnt.values()))
+        if show_profits:
+            self._set_metric(self.lbl_profit, format_money(rep['profit'], currency), rep['profit'], prev['profit'], list(prof.values()))
+            self._set_metric(self.lbl_expenses, format_money(rep['expenses'], currency), rep['expenses'], prev['expenses'], list(exp.values()))
+            self._set_metric(self.lbl_net, format_money(rep['net_profit'], currency), rep['net_profit'], prev['net_profit'], net)
+        self.chart_title.setText(f"<b>{t('Ventes dans le temps')}</b> <span style='color:#64748b'>· {t('par mois') if monthly else t('par jour')}</span>")
+        self.chart.set_data([l for _k, l in buckets], list(rev.values()))
+        self._fill_side(rep, currency)
+        self._load_history(use_cache=True)
 
-    def _load_history(self) -> None:
-        """Historique des ventes de la période, filtré par la recherche (client, téléphone, n° ticket/facture)."""
+    @staticmethod
+    def _pair(left: str, right: str) -> QWidget:
+        w = QWidget()
+        w.setStyleSheet('background: transparent;')
+        h = QHBoxLayout(w)
+        h.setContentsMargins(0, 6, 0, 0)
+        a, b = QLabel(left), QLabel(right)
+        for x in (a, b):
+            x.setTextFormat(Qt.TextFormat.RichText)
+        h.addWidget(a, 1)
+        h.addWidget(b)
+        return w
+
+    def _fill_side(self, rep: dict, currency: str) -> None:
+        while self.side.count():
+            it = self.side.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+        self.side.addWidget(QLabel('<b>' + t('Modes de paiement') + '</b>'))
+        payments = [(m, v) for m, v in rep.get('payments') or [] if v]
+        total = sum(v for _m, v in payments)
+        if not payments:
+            self.side.addWidget(QLabel(t('Aucun encaissement.')))
+        for method, value in sorted(payments, key=lambda mv: -mv[1]):
+            pct = value / total * 100 if total else 0
+            line = self._pair(method, f"<b>{format_money(value, currency)} · {pct:.0f} %</b>")
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            bar.setValue(int(round(pct)))
+            bar.setTextVisible(False)
+            bar.setFixedHeight(10)
+            bar.setStyleSheet('QProgressBar {background: #e2e8f0; border: none; border-radius: 5px;} QProgressBar::chunk {background: #2563eb; border-radius: 5px;}')
+            self.side.addWidget(line)
+            self.side.addWidget(bar)
+        self.side.addSpacing(10)
+        self.side.addWidget(QLabel('<b>' + t('Top produits') + '</b>'))
+        top = rep['top_products'][:5]
+        if not top:
+            self.side.addWidget(QLabel(t('Aucune vente.')))
+        for name, qty, amount in top:
+            self.side.addWidget(self._pair(f"{name} <span style='color:#64748b'>× {qty:g}</span>", f"<b>{format_money(amount, currency)}</b>"))
+        self.side.addStretch(1)
+
+    def _sort_by(self, col: int) -> None:
+        self._sort = (col, not self._sort[1]) if self._sort[0] == col else (col, False)
+        self._render_history()
+
+    def _load_history(self, use_cache: bool = False) -> None:
+        """Ventes de la période, filtrées par la recherche (client, téléphone, n° ticket/facture) et le statut."""
+        text = self.history_search.text().strip()
+        if text:
+            start, end = self.picker.period()
+            sales = SaleController.list(search=text, start=start, end=end, limit=self.HISTORY_LIMIT)
+        else:
+            sales = self._all_sales
+        want = self.status_filter.currentData()
+        self._shown = [s for s in sales if want in (None, 'Toutes') or sale_status(s) == want]
+        self.history_note.setText(f'Historique limité aux {self.HISTORY_LIMIT} ventes les plus récentes sur la période. Réduisez la plage de dates pour afficher un sous-ensemble précis.' if len(sales) >= self.HISTORY_LIMIT else '')
+        self._render_history()
+
+    def _render_history(self) -> None:
         currency = settings_service.get_currency()
-        start, end = self._current_range()
-        sales = SaleController.list(search=self.history_search.text().strip(), start=start, end=end, limit=self.HISTORY_LIMIT)
-        self.history_note.setText(f'Historique limité aux {self.HISTORY_LIMIT} ventes les plus récentes sur la période. Réduisez la plage de dates pour afficher un sous-ensemble précis.' if len(sales) == self.HISTORY_LIMIT else '')
+        keys = {0: lambda s: s.ticket_number, 1: lambda s: s.date, 2: lambda s: (s.client.name if s.client else '').lower(), 3: lambda s: (s.cashier_name or '').lower(), 4: lambda s: s.payment_summary, 5: sale_status, 6: lambda s: float(s.total or 0)}
+        col, desc = self._sort
+        sales = sorted(self._shown, key=keys.get(col, keys[1]), reverse=desc)
         self._sale_ids = [s.id for s in sales]
+        self.history_count.setText(f'{len(sales)} {t("vente(s)")}')
         self.history_table.setRowCount(len(sales))
         for row, sale in enumerate(sales):
-            self.history_table.setItem(row, 0, QTableWidgetItem(sale.ticket_number))
-            self.history_table.setItem(row, 1, QTableWidgetItem(format_datetime(sale.date)))
-            self.history_table.setItem(row, 2, QTableWidgetItem(sale.client.name if sale.client else ''))
-            self.history_table.setItem(row, 3, QTableWidgetItem(sale.cashier_name))
-            self.history_table.setItem(row, 4, QTableWidgetItem(sale.payment_summary))
-            total_item = QTableWidgetItem(format_money(sale.total, currency))
-            if sale.status == 'cancelled':
+            status = sale_status(sale)
+            total_text = format_money(sale.total, currency)
+            total = QTableWidgetItem(total_text)
+            total.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            st = QTableWidgetItem(status)
+            bg, fg = STATUS_STYLE[status]
+            st.setBackground(QBrush(QColor(bg)))
+            st.setForeground(QBrush(QColor(fg)))
+            st.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if status == 'Annulée':
                 motif = (getattr(sale, 'cancel_reason', None) or '').strip()
-                suffix = f' (annulée — {motif[:40]})' if motif else ' (annulée)'
-                total_item.setText(format_money(sale.total, currency) + suffix)
-                total_item.setToolTip(motif or 'Vente annulée')
-            self.history_table.setItem(row, 5, total_item)
+                st.setToolTip(motif or 'Vente annulée')
+                total.setToolTip(motif or 'Vente annulée')
+            for c, item in enumerate([QTableWidgetItem(sale.ticket_number), QTableWidgetItem(format_datetime(sale.date)), QTableWidgetItem(sale.client.name if sale.client else ''), QTableWidgetItem(sale.cashier_name), QTableWidgetItem(sale.payment_summary), st, total]):
+                self.history_table.setItem(row, c, item)
 
     def _format_z_report(self, report: dict) -> str:
         currency = settings_service.get_currency()
@@ -208,8 +346,7 @@ class ReportsPage(QWidget):
         return '\n'.join(lines)
 
     def _show_z_report(self) -> None:
-        qdate = self.start.date()
-        day = date(qdate.year(), qdate.month(), qdate.day())
+        day = min(self.picker.period()[1], date.today())
         users = AuthService.list_users()
         labels = ['Tous les caissiers']
         ids: list = [None]
@@ -418,7 +555,7 @@ class ReportsPage(QWidget):
         sections = self._choose_sections(pdf=False)
         if sections is None:
             return
-        start, end = self._current_range()
+        start, end = self.picker.period()
         rows = ReportController.sales_rows(start, end)
         path = export_report_excel(self._report, rows, include_profits=self.state.can(perms.VIEW_PROFITS), sections=sections)
         info(self, f'Rapport Excel généré :\n{path}')
