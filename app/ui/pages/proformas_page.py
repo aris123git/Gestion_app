@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QDate, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QFrame, QScrollArea,
     QComboBox, QCompleter, QDateEdit, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
     QPushButton, QTableWidget, QVBoxLayout, QWidget,
 )
@@ -42,7 +43,14 @@ class ProformaDialog(QDialog):
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=760, min_height=640, preferred_width=880, preferred_height=760)
         self.client_id = data.get("client_id") if data else None
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        root = QVBoxLayout(content)           # tout le formulaire défile : plus de lignes qui se chevauchent
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
         form = QFormLayout()
         self.pick = QComboBox()
         self.pick.addItem(t("— Client saisi à la main —"), None)
@@ -89,8 +97,8 @@ class ProformaDialog(QDialog):
         for col, width in ((1, 70), (2, 100), (3, 70), (4, 130), (5, 110)):
             head.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self.table.setColumnWidth(col, width)
-        self.table.verticalHeader().setDefaultSectionSize(32)
-        self.table.setMinimumHeight(260)
+        self.table.verticalHeader().setDefaultSectionSize(40)
+        self.table.setMinimumHeight(320)
         root.addWidget(self.table, 1)
         self._rows: list = []
         self._catalog = {c["name"].strip().lower(): c for c in ps.catalog()}
@@ -128,7 +136,7 @@ class ProformaDialog(QDialog):
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._accept)
         bb.rejected.connect(self.reject)
-        root.addWidget(bb)
+        outer.addWidget(bb)
         self.tax_rate.valueChanged.connect(self._totals)
         for l in (data["lines"] if data else [None]):
             self._add_row(l)
