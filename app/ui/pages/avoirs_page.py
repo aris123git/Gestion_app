@@ -156,7 +156,7 @@ class AvoirsPage(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.currentCellChanged.connect(lambda *_: self._show())
-        body.addWidget(self.table, 2)
+        body.addWidget(self.table, 3)
         side = QVBoxLayout()
         self.d_head = QLabel(t('Sélectionnez un avoir.'))
         self.d_head.setTextFormat(Qt.TextFormat.RichText)
@@ -182,7 +182,7 @@ class AvoirsPage(QWidget):
         for b in (self.use_button, self.card_button, self.cancel_button):
             row.addWidget(b)
         side.addLayout(row)
-        body.addLayout(side, 3)
+        body.addLayout(side, 2)
         root.addLayout(body, 1)
         self._chips['active'].setChecked(True)
 
