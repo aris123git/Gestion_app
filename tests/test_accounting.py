@@ -86,6 +86,10 @@ class AccountingTestCase(unittest.TestCase):
         page._generate()
         self.assertGreater(page.result_table.rowCount(), 5)
         self.assertGreater(page.balance_table.rowCount(), 3)
+        titles = [page.tabs.tabText(i) for i in range(page.tabs.count())]
+        self.assertIn('Détail comptable', titles)
+        self.assertNotIn('Journal', titles)
+        self.assertIn('Écritures manuelles', titles)
 
 
 if __name__ == "__main__":
