@@ -5,7 +5,7 @@ from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
 from PySide6.QtCore import Qt, QTimer
 from datetime import date
 
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QTabWidget, QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app.controllers.client_controller import ClientController
 from app.services import permissions as perms, settings_service
 from app.services.debt_service import DebtService
@@ -28,11 +28,23 @@ class ClientsPage(QWidget):
         self.state = state
         self._ids: list[int] = []
         self._filter = 'all'
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.addWidget(page_title(t('Clients')))
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs, 1)
+        clients_tab = QWidget()
+        layout = QVBoxLayout(clients_tab)
+        layout.setContentsMargins(0, 12, 0, 0)
         layout.setSpacing(12)
+        self.tabs.addTab(clients_tab, t('Clients'))
+        self.debts = None
+        if state.can(perms.MANAGE_CLIENT_DEBTS) or state.can(perms.MANAGE_CLIENTS):
+            from app.ui.pages.debts_page import DebtsPage
+            self.debts = DebtsPage(state, embedded=True, on_open_client=self._go_client)
+            self.tabs.addTab(self.debts, t('Dettes'))
+        self.tabs.currentChanged.connect(lambda _i: self.refresh())
         header = QHBoxLayout()
-        header.addWidget(page_title(t('Clients')))
         header.addStretch()
         bulk = QPushButton(t('📣 Message groupé'))
         bulk.setToolTip(t('WhatsApp (un par un) ou e-mail à un groupe de clients'))
@@ -127,7 +139,20 @@ class ClientsPage(QWidget):
         if refresh:
             self.refresh()
 
+    def show_unpaid(self) -> None:
+        """Ouvre l'onglet Dettes (ex. depuis le tableau de bord)."""
+        if self.debts is not None:
+            self.tabs.setCurrentWidget(self.debts)
+            self.debts.show_unpaid()
+
+    def _go_client(self, client_id: int) -> None:
+        self.tabs.setCurrentIndex(0)
+        self.select_client(client_id)
+
     def refresh(self) -> None:
+        if self.debts is not None and self.tabs.currentWidget() is self.debts:
+            self.debts.refresh()
+            return
         self.add_debt_action.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
         clients = ClientController.list(self.search.text().strip())
         mode = self._filter

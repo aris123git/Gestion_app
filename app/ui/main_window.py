@@ -17,7 +17,6 @@ from app.ui.pages.avoirs_page import AvoirsPage
 from app.ui.pages.categories_page import CategoriesPage
 from app.ui.pages.clients_page import ClientsPage
 from app.ui.pages.dashboard_page import DashboardPage
-from app.ui.pages.debts_page import DebtsPage
 from app.ui.pages.chantiers_page import ChantiersPage
 from app.ui.pages.expenses_page import ExpensesPage
 from app.ui.pages.orders_page import OrdersPage
@@ -76,7 +75,6 @@ def build_nav_items():
         (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
         (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
         (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
-        (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
         (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
@@ -96,7 +94,7 @@ def nav_group_of(page_class) -> Optional[str]:
         return None
     groups = {
         ProductsPage: "Catalogue et stock", StockPage: "Catalogue et stock",
-        ClientsPage: "Tiers", DebtsPage: "Tiers", AvoirsPage: "Tiers", SuppliersPage: "Tiers",
+        ClientsPage: "Tiers", AvoirsPage: "Tiers", SuppliersPage: "Tiers",
         ExpensesPage: "Finances", ReportsPage: "Finances", AccountingPage: "Finances",
         UsersPage: "Administration", AuditPage: "Administration", AssistantPage: "Administration",
     }
@@ -227,6 +225,8 @@ class MainWindow(QWidget):
             page = self.stack.currentWidget()
             if ref is not None and hasattr(page, 'select_product'):
                 page.select_product(ref)
+            elif page_name == 'ClientsPage' and hasattr(page, 'show_unpaid'):
+                page.show_unpaid()      # alerte « dette échue » : ouvre l'onglet Dettes
 
     def _select_page_by_class(self, class_name: str) -> Optional[QWidget]:
         for index, (_label, _icon, page_class, _permission) in enumerate(NAV_ITEMS):

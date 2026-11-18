@@ -128,7 +128,7 @@ def alerts(can: Optional[Callable[[str], bool]] = None, include_upcoming: bool =
                 g["total"] += float(d.amount_remaining)
                 g["since"] = min(g["since"], d.due_date)
             for g in sorted(by_client.values(), key=lambda g: g["since"]):
-                out.append(Alert(KIND_DEBT, f"{g['name']} : {format_money(g['total'], cur)} en retard depuis le {g['since']:%d/%m/%Y}", "DebtsPage"))
+                out.append(Alert(KIND_DEBT, f"{g['name']} : {format_money(g['total'], cur)} en retard depuis le {g['since']:%d/%m/%Y}", "ClientsPage"))
     if is_enabled(KIND_PROSPECT) and can(perms.MANAGE_FIELD_SALES):
         from app.services import field_sales_service as fs
 

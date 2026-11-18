@@ -206,7 +206,7 @@ class DashboardPage(QWidget):
         window = self.window()
         if window is None or not hasattr(window, '_select_page_by_label'):
             return
-        page = window._select_page_by_label('Dettes')
+        page = window._select_page_by_label(t('nav.clients'))
         if page is not None and hasattr(page, 'show_unpaid'):
             page.show_unpaid()
 
