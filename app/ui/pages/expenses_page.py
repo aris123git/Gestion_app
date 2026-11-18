@@ -1,16 +1,72 @@
-"""Page de gestion des dépenses."""
+"""Page de gestion des dépenses : saisie rapide, période, répartition par catégorie, modification."""
 from __future__ import annotations
-from app.i18n import t
-from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDoubleSpinBox, QHBoxLayout, QHeaderView, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+
+from datetime import date, datetime, time
+from typing import Optional
+
+from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QAbstractItemView, QComboBox, QDateEdit, QDialog, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+)
+
 from app import config
 from app.controllers.expense_controller import ExpenseController
+from app.i18n import t
 from app.services import audit_service, permissions as perms, settings_service
-from app.ui.responsive import EXPENSE_COLUMNS, LayoutProfile, TableColumnController
 from app.ui.state import AppState
-from app.ui.widgets.helpers import confirm, make_card, page_title, warn
-from app.utils.helpers import format_datetime, format_money
+from app.ui.widgets.batch import enable_multi, run_batch, selected_rows
+from app.ui.widgets.helpers import confirm, info, make_card, page_title, warn
 from app.ui.widgets.money_spin import MoneySpinBox
+from app.ui.widgets.period_picker import PeriodPicker
+from app.utils.helpers import format_money
+
+
+class ExpenseDialog(QDialog):
+    """Modification d'une dépense."""
+
+    def __init__(self, expense, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(t('Modifier la dépense'))
+        self.setMinimumWidth(420)
+        form = QFormLayout(self)
+        self.category = QComboBox()
+        self.category.addItems(config.EXPENSE_CATEGORIES)
+        i = self.category.findText(expense.category)
+        if i < 0:
+            self.category.addItem(expense.category)
+            i = self.category.count() - 1
+        self.category.setCurrentIndex(i)
+        self.label = QLineEdit(expense.label)
+        self.amount = MoneySpinBox()
+        self.amount.setRange(0, 1000000000)
+        self.amount.setDecimals(3)
+        self.amount.setValue(float(expense.amount))
+        d = expense.date
+        self.date = QDateEdit(QDate(d.year, d.month, d.day))
+        self.date.setCalendarPopup(True)
+        self.date.setDisplayFormat('dd/MM/yyyy')
+        self._time = d.time()
+        form.addRow(t('Catégorie'), self.category)
+        form.addRow(t('Libellé'), self.label)
+        form.addRow(t('Montant'), self.amount)
+        form.addRow(t('Date'), self.date)
+        row = QHBoxLayout()
+        no = QPushButton(t('Annuler'))
+        no.clicked.connect(self.reject)
+        ok = QPushButton(t('Enregistrer'))
+        ok.setObjectName('Success')
+        ok.clicked.connect(self.accept)
+        row.addWidget(no)
+        row.addWidget(ok)
+        form.addRow(row)
+
+    def values(self) -> dict:
+        q = self.date.date()
+        return {'category': self.category.currentText(), 'label': self.label.text().strip(), 'amount': self.amount.value(),
+                'date': datetime.combine(date(q.year(), q.month(), q.day()), self._time)}
+
 
 class ExpensesPage(QWidget):
     HEADERS = ['Date', 'Catégorie', 'Libellé', 'Montant']
@@ -19,10 +75,18 @@ class ExpensesPage(QWidget):
         super().__init__()
         self.state = state
         self._ids: list[int] = []
+        self._cat: Optional[str] = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(14)
-        layout.addWidget(page_title(t('Dépenses')))
+        layout.setSpacing(12)
+        top = QHBoxLayout()
+        top.addWidget(page_title(t('Dépenses')))
+        top.addStretch()
+        self.picker = PeriodPicker()
+        self.picker.mode.setCurrentIndex(self.picker.mode.findData('month'))
+        self.picker.changed.connect(self.refresh)
+        top.addWidget(self.picker)
+        layout.addLayout(top)
         entry = QWidget()
         entry_layout = QHBoxLayout(entry)
         entry_layout.setContentsMargins(0, 0, 0, 0)
@@ -42,27 +106,62 @@ class ExpensesPage(QWidget):
         entry_layout.addWidget(self.amount, 1)
         entry_layout.addWidget(add)
         layout.addWidget(make_card(entry))
+        kp = QHBoxLayout()
+        self.k_total, self.k_count, self.k_top = QLabel(), QLabel(), QLabel()
+        for k in (self.k_total, self.k_count, self.k_top):
+            k.setTextFormat(Qt.TextFormat.RichText)
+            k.setMinimumHeight(44)
+            kp.addWidget(make_card(k), 1)
+        layout.addLayout(kp)
+        body = QHBoxLayout()
+        left = QVBoxLayout()
+        bar = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(t('Rechercher un libellé…'))
+        self.search.textChanged.connect(lambda _=None: self.refresh())
+        self.cat_filter = QComboBox()
+        self.cat_filter.currentIndexChanged.connect(self._filter_changed)
+        bar.addWidget(self.search, 1)
+        bar.addWidget(self.cat_filter)
+        left.addLayout(bar)
         self.table = QTableWidget(0, len(self.HEADERS))
-        self.table.setHorizontalHeaderLabels(self.HEADERS)
+        self.table.setHorizontalHeaderLabels([t(h) for h in self.HEADERS])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         enable_multi(self.table)
-        layout.addWidget(self.table)
-        self._columns = TableColumnController(self.table, EXPENSE_COLUMNS)
-        actions = QHBoxLayout()
-        actions.addStretch()
+        self.table.doubleClicked.connect(self._edit)
+        left.addWidget(self.table, 1)
+        body.addLayout(left, 3)
+        side = QVBoxLayout()
+        side.addWidget(QLabel('<b>' + t('Répartition par catégorie') + '</b>'))
+        self.breakdown = QVBoxLayout()
+        side.addLayout(self.breakdown)
+        hint = QLabel(t('Cliquer une catégorie filtre la liste.'))
+        hint.setStyleSheet('color: #64748b;')
+        side.addWidget(hint)
+        side.addStretch(1)
+        row = QHBoxLayout()
+        edit = QPushButton(t('Modifier'))
+        edit.clicked.connect(self._edit)
         delete = QPushButton(t('Supprimer'))
-        delete.setObjectName('Danger')
+        delete.setObjectName('DangerOutline')
         delete.clicked.connect(self._delete)
-        actions.addWidget(delete)
-        layout.addLayout(actions)
-        self.state.layout_changed.connect(self._on_layout_changed)
-        if self.state.layout is not None:
-            self._on_layout_changed(self.state.layout)
+        row.addWidget(edit)
+        row.addWidget(delete)
+        side.addLayout(row)
+        body.addLayout(side, 2)
+        layout.addLayout(body, 1)
 
-    def _on_layout_changed(self, profile: LayoutProfile) -> None:
-        self._columns.apply(profile.content_width)
+    def _filter_changed(self, *_a) -> None:
+        self._cat = self.cat_filter.currentData()
+        self.refresh()
+
+    def _set_category(self, cat: Optional[str]) -> None:
+        i = self.cat_filter.findData(cat)
+        self.cat_filter.setCurrentIndex(max(i, 0))
 
     def _add(self) -> None:
         if not self.state.can(perms.MANAGE_EXPENSES):
@@ -75,6 +174,33 @@ class ExpensesPage(QWidget):
         audit_service.log_action('Dépense', 'Expense', f'{self.category.currentText()} {self.amount.value()}', self.state.user_id, getattr(self.state.current_user, 'username', ''))
         self.label.clear()
         self.amount.setValue(0)
+        self.refresh()
+        self.state.notify_data_changed()
+
+    def _edit(self, *_a) -> None:
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self._ids):
+            warn(self, t('Sélectionnez une dépense.'))
+            return
+        if not self.state.can(perms.MANAGE_EXPENSES):
+            warn(self, t("Vous n'avez pas l'autorisation de modifier une dépense."))
+            return
+        expense = next((e for e in self._expenses if e.id == self._ids[row]), None)
+        if not expense:
+            return
+        dlg = ExpenseDialog(expense, self)
+        if not dlg.exec():
+            return
+        v = dlg.values()
+        if v['amount'] <= 0:
+            warn(self, t('Le montant doit être supérieur à zéro.'))
+            return
+        try:
+            ExpenseController.update(expense.id, v, is_admin=getattr(self.state.current_user, 'role', '') == perms.ROLE_ADMIN, user_id=self.state.user_id)
+        except ValueError as exc:
+            warn(self, str(exc))
+            return
+        audit_service.log_action('Modification dépense', 'Expense', f"id={expense.id} {v['category']} {v['amount']}", self.state.user_id, getattr(self.state.current_user, 'username', ''))
         self.refresh()
         self.state.notify_data_changed()
 
@@ -119,12 +245,61 @@ class ExpensesPage(QWidget):
             self.state.notify_data_changed()
 
     def refresh(self) -> None:
-        expenses = ExpenseController.list()
-        currency = settings_service.get_currency()
-        self._ids = [e.id for e in expenses]
-        self.table.setRowCount(len(expenses))
-        for row, expense in enumerate(expenses):
-            self.table.setItem(row, 0, QTableWidgetItem(format_datetime(expense.date)))
-            self.table.setItem(row, 1, QTableWidgetItem(expense.category))
-            self.table.setItem(row, 2, QTableWidgetItem(expense.label))
-            self.table.setItem(row, 3, QTableWidgetItem(format_money(expense.amount, currency)))
+        cur = settings_service.get_currency()
+        d0, d1 = self.picker.period()
+        everything = ExpenseController.list(start=d0, end=d1, limit=20000)
+        self._expenses = everything
+        # répartition par catégorie (sur toute la période, quel que soit le filtre)
+        totals: dict[str, float] = {}
+        for e in everything:
+            totals[e.category] = totals.get(e.category, 0.0) + float(e.amount)
+        grand = sum(totals.values())
+        self.k_total.setText(f"<span style='color:#64748b'>{t('Dépenses de la période')}</span><br><b style='font-size:18px;color:#b91c1c'>{format_money(grand, cur)}</b>")
+        self.k_count.setText(f"<span style='color:#64748b'>{t('Nombre de dépenses')}</span><br><b style='font-size:18px'>{len(everything)}</b>")
+        ranked = sorted(totals.items(), key=lambda kv: -kv[1])
+        if ranked and grand > 0:
+            self.k_top.setText(f"<span style='color:#64748b'>{t('Plus grosse catégorie')}</span><br><b style='font-size:18px'>{ranked[0][0]}</b> <span style='color:#64748b'>({ranked[0][1] / grand * 100:.0f} %)</span>")
+        else:
+            self.k_top.setText(f"<span style='color:#64748b'>{t('Plus grosse catégorie')}</span><br><b style='font-size:18px'>—</b>")
+        # menu de filtre
+        keep_cat = self._cat
+        self.cat_filter.blockSignals(True)
+        self.cat_filter.clear()
+        self.cat_filter.addItem(t('Toutes les catégories'), None)
+        for cat, _v in ranked:
+            self.cat_filter.addItem(cat, cat)
+        i = self.cat_filter.findData(keep_cat)
+        self.cat_filter.setCurrentIndex(max(i, 0))
+        self._cat = self.cat_filter.currentData()
+        self.cat_filter.blockSignals(False)
+        # barres
+        while self.breakdown.count():
+            w = self.breakdown.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        for cat, value in ranked:
+            pct = value / grand * 100 if grand else 0
+            btn = QPushButton(f"{cat}   —   {format_money(value, cur)} · {pct:.0f} %")
+            btn.setFlat(True)
+            btn.setStyleSheet('text-align: left; padding: 2px 0; border: none; background: transparent;' + (' font-weight: 700;' if cat == self._cat else ''))
+            btn.clicked.connect(lambda _=False, c=cat: self._set_category(None if self._cat == c else c))
+            bar = QProgressBar()
+            bar.setRange(0, 100)
+            bar.setValue(int(round(pct)))
+            bar.setTextVisible(False)
+            bar.setFixedHeight(8)
+            self.breakdown.addWidget(btn)
+            self.breakdown.addWidget(bar)
+        # liste filtrée
+        needle = self.search.text().strip().lower()
+        rows = [e for e in everything if (not self._cat or e.category == self._cat) and (not needle or needle in (e.label or '').lower())]
+        keep = self._ids[self.table.currentRow()] if 0 <= self.table.currentRow() < len(self._ids) else None
+        self._ids = [e.id for e in rows]
+        self.table.setRowCount(len(rows))
+        for r, e in enumerate(rows):
+            amount = QTableWidgetItem(format_money(e.amount, cur))
+            amount.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            for c, it in enumerate([QTableWidgetItem(e.date.strftime('%d/%m/%Y')), QTableWidgetItem(e.category), QTableWidgetItem(e.label), amount]):
+                self.table.setItem(r, c, it)
+        if keep in self._ids:
+            self.table.setCurrentCell(self._ids.index(keep), 0)
