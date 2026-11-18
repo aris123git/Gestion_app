@@ -35,7 +35,7 @@ def _qty() -> QDoubleSpinBox:
 
 
 class ProformaDialog(QDialog):
-    COLS = ("Désignation", "CDT", "Quantité", "Unité", "Prix unitaire", "Total")
+    COLS = ("Désignation", "Conditionnement", "Quantité", "Unité", "Prix unitaire", "Total")
 
     def __init__(self, parent=None, data: dict | None = None):
         super().__init__(parent)

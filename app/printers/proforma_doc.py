@@ -181,7 +181,7 @@ def _render(d: dict, out: Path, title: str, noun: str, shop=None) -> Path:
     story.append(Spacer(1, 4 * mm))
 
     cdt = any((l["packaging"] or "").strip() for l in d["lines"])
-    head = ["Désignation"] + (["CDT"] if cdt else []) + ["Quant.", "Prix Unit.", "Prix total"]
+    head = ["Désignation"] + (["Cond."] if cdt else []) + ["Quant.", "Prix Unit.", "Prix total"]
     widths = ([68, 22, 26, 28, 32] if cdt else [86, 26, 32, 36])
     widths = [w * mm for w in widths]
     widths[0] += PAGE_W - sum(widths)

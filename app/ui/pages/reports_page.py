@@ -52,7 +52,7 @@ class ReportsPage(QWidget):
         top = QHBoxLayout()
         top.addWidget(page_title(t('Rapports')))
         top.addStretch()
-        z_report = QPushButton(t('Z de caisse'))
+        z_report = QPushButton(t('Bilan de caisse du jour'))
         z_report.clicked.connect(self._show_z_report)
         sessions_btn = QPushButton(t('Sessions caisse'))
         sessions_btn.clicked.connect(self._show_cash_sessions)
@@ -333,7 +333,7 @@ class ReportsPage(QWidget):
         currency = settings_service.get_currency()
         day = report.get('day') or report['start']
         cashier = report.get('cashier_label') or 'Tous les caissiers'
-        lines = ['Z DE CAISSE', f'Date : {day:%d/%m/%Y}', f'Périmètre : {cashier}', f'Généré le : {datetime.now():%d/%m/%Y %H:%M}', '', f'CA encaissé (ventes + règlements) : {format_money(report['cash_revenue'], currency)}', f'dont règlements dettes : {format_money(report['debt_repayments'], currency)}', f'Crédit client (non encaissé) : {format_money(report['credit_sales'], currency)}', f'Dépenses : {format_money(report['expenses'], currency)}', f'Règlements fournisseurs : {format_money(report['supplier_debt_payments'], currency)}', f'Trésorerie : {format_money(report['treasury'], currency)}', '', 'Détail par mode de paiement :']
+        lines = ['BILAN DE CAISSE DU JOUR', f'Date : {day:%d/%m/%Y}', f'Périmètre : {cashier}', f'Généré le : {datetime.now():%d/%m/%Y %H:%M}', '', f'CA encaissé (ventes + règlements) : {format_money(report['cash_revenue'], currency)}', f'dont règlements dettes : {format_money(report['debt_repayments'], currency)}', f'Crédit client (non encaissé) : {format_money(report['credit_sales'], currency)}', f'Dépenses : {format_money(report['expenses'], currency)}', f'Règlements fournisseurs : {format_money(report['supplier_debt_payments'], currency)}', f'Trésorerie : {format_money(report['treasury'], currency)}', '', 'Détail par mode de paiement :']
         payments = report.get('payments') or []
         if payments:
             lines.extend((f'- {method} : {format_money(amount, currency)}' for method, amount in payments))
@@ -357,7 +357,7 @@ class ReportsPage(QWidget):
             labels.append(f'{label} ({user.role})')
             ids.append(user.id)
         from PySide6.QtWidgets import QInputDialog
-        choice, ok = QInputDialog.getItem(self, 'Z de caisse', 'Périmètre :', labels, 0, False)
+        choice, ok = QInputDialog.getItem(self, 'Bilan de caisse du jour', 'Périmètre :', labels, 0, False)
         if not ok:
             return
         user_id = ids[labels.index(choice)]
@@ -365,7 +365,7 @@ class ReportsPage(QWidget):
         report['cashier_label'] = choice
         content = self._format_z_report(report)
         dialog = QDialog(self)
-        dialog.setWindowTitle(t('Z de caisse'))
+        dialog.setWindowTitle(t('Bilan de caisse du jour'))
         dialog.setMinimumSize(520, 480)
         layout = QVBoxLayout(dialog)
         preview = QPlainTextEdit()
@@ -380,9 +380,9 @@ class ReportsPage(QWidget):
 
         def _save() -> None:
             config.ensure_directories()
-            path = config.EXPORT_DIR / f'z_caisse_{day:%Y%m%d}_{datetime.now():%H%M%S}.txt'
+            path = config.EXPORT_DIR / f'bilan_caisse_{day:%Y%m%d}_{datetime.now():%H%M%S}.txt'
             path.write_text(content, encoding='utf-8')
-            info(dialog, f'Z de caisse enregistré :\n{path}')
+            info(dialog, f'Bilan de caisse enregistré :\n{path}')
         save.clicked.connect(_save)
         buttons.addWidget(close)
         buttons.addStretch()

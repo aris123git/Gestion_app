@@ -143,7 +143,7 @@ class ProformaTests(unittest.TestCase):
         self.assertEqual((d["totals"].subtotal, d["totals"].tax, d["totals"].total), (20_000, 400, 20_400))
         from app.printers.proforma_doc import build_proforma_pdf
         txt = pdf_text(build_proforma_pdf(pid, Path(_D) / "q.pdf"))
-        for part in ("CDT", "B/100", "MONTANT HT", "BIC 2 %", "MONTANT TTC", "20 400"):
+        for part in ("Cond.", "B/100", "MONTANT HT", "BIC 2 %", "MONTANT TTC", "20 400"):
             self.assertIn(part.lower(), txt.lower(), part)
 
     def test_validation_duplicate_status(self):
