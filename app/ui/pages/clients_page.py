@@ -39,10 +39,14 @@ class ClientsPage(QWidget):
         layout.setSpacing(12)
         self.tabs.addTab(clients_tab, t('Clients'))
         self.debts = None
+        self.avoirs = None
         if state.can(perms.MANAGE_CLIENT_DEBTS) or state.can(perms.MANAGE_CLIENTS):
             from app.ui.pages.debts_page import DebtsPage
             self.debts = DebtsPage(state, embedded=True, on_open_client=self._go_client)
             self.tabs.addTab(self.debts, t('Dettes'))
+            from app.ui.pages.avoirs_page import AvoirsPage
+            self.avoirs = AvoirsPage(state, embedded=True, on_open_client=self._go_client)
+            self.tabs.addTab(self.avoirs, t('Avoirs'))
         self.tabs.currentChanged.connect(lambda _i: self.refresh())
         header = QHBoxLayout()
         header.addStretch()
@@ -152,6 +156,9 @@ class ClientsPage(QWidget):
     def refresh(self) -> None:
         if self.debts is not None and self.tabs.currentWidget() is self.debts:
             self.debts.refresh()
+            return
+        if self.avoirs is not None and self.tabs.currentWidget() is self.avoirs:
+            self.avoirs.refresh()
             return
         self.add_debt_action.setVisible(self.state.can(perms.CREATE_MANUAL_CLIENT_DEBT))
         clients = ClientController.list(self.search.text().strip())

@@ -109,6 +109,20 @@ class AvoirService:
             return avoir
 
     @staticmethod
+    def redemptions(avoir_id: int) -> list:
+        """Utilisations d'un avoir, les plus récentes d'abord."""
+        with session_scope() as session:
+            rows = session.scalars(select(AvoirRedemption).where(AvoirRedemption.avoir_id == avoir_id).order_by(AvoirRedemption.id.desc())).all()
+            session.expunge_all()
+            return list(rows)
+
+    @staticmethod
+    def redeemed_since(since) -> float:
+        with session_scope() as session:
+            rows = session.scalars(select(AvoirRedemption).where(AvoirRedemption.created_at >= since)).all()
+            return round(sum(float(r.amount) for r in rows), 2)
+
+    @staticmethod
     def cancel(avoir_id: int) -> Avoir:
         with session_scope() as session:
             avoir = session.get(Avoir, avoir_id)

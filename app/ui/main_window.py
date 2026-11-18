@@ -13,7 +13,6 @@ from app.services import permissions as perms
 from app.services import product_profile, settings_service
 from app.ui.pages.assistant_page import AssistantPage
 from app.ui.pages.audit_page import AuditPage
-from app.ui.pages.avoirs_page import AvoirsPage
 from app.ui.pages.categories_page import CategoriesPage
 from app.ui.pages.clients_page import ClientsPage
 from app.ui.pages.dashboard_page import DashboardPage
@@ -75,7 +74,6 @@ def build_nav_items():
         (t("nav.products"), "📦", ProductsPage, perms.VIEW_PRODUCTS),
         (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
         (t("nav.clients"), "👥", ClientsPage, perms.MANAGE_CLIENTS),
-        (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.suppliers"), "🚚", SuppliersPage, perms.MANAGE_SUPPLIERS),
         (t("nav.expenses"), "💸", ExpensesPage, perms.MANAGE_EXPENSES),
         (t("nav.reports"), "📈", ReportsPage, perms.VIEW_REPORTS),
@@ -94,7 +92,7 @@ def nav_group_of(page_class) -> Optional[str]:
         return None
     groups = {
         ProductsPage: "Catalogue et stock", StockPage: "Catalogue et stock",
-        ClientsPage: "Tiers", AvoirsPage: "Tiers", SuppliersPage: "Tiers",
+        ClientsPage: "Tiers", SuppliersPage: "Tiers",
         ExpensesPage: "Finances", ReportsPage: "Finances", AccountingPage: "Finances",
         UsersPage: "Administration", AuditPage: "Administration", AssistantPage: "Administration",
     }

@@ -63,7 +63,7 @@ class ProductProfileTestCase(unittest.TestCase):
 
         product_profile.set_product(product_profile.PRODUCT_GESTION)
         gestion_labels = {item[0] for item in build_nav_items()}
-        self.assertIn("Avoirs", gestion_labels)
+        self.assertNotIn("Avoirs", gestion_labels)      # Avoirs est un onglet de Clients
         self.assertNotIn("Tables", gestion_labels)
 
         product_profile.set_product(product_profile.PRODUCT_MAQUIS)
