@@ -5,7 +5,7 @@ import re
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
 
 from app.i18n import t
 from app.services import messaging_service as ms
@@ -21,9 +21,12 @@ class SupplierMessageDialog(QDialog):
         self.phone = phone
         shop = settings_service.get_shop_info().name or ''
         sign = f"\n{shop}" if shop else ''
-        lines = [(p.name, order_message.suggested_quantity(p)) for p in order_message.products_to_order(supplier_id)]
+        self.name = name
+        self._lines = [(p.name, order_message.suggested_quantity(p), getattr(getattr(p, 'unit', None), 'name', '') or '', float(p.quantity or 0)) for p in order_message.products_to_order(supplier_id)]
+        lines = [(n, q) for n, q, _u, _s in self._lines]
+        many = len(lines) >= order_message.PDF_FROM
         self._templates = {
-            'order': (order_message.format_order(lines, f"Bonjour {name}, je voudrais commander :") + sign) if lines else '',
+            'order': ((order_message.pdf_intro(len(lines), f"Bonjour {name}, voici ma commande") if many else order_message.format_order(lines, f"Bonjour {name}, je voudrais commander :")) + sign) if lines else '',
             'late': f"Bonjour {name}, où en est ma commande ? Merci de me tenir informé de la date de livraison.{sign}",
             'paid': f"Bonjour {name}, j'ai réglé [montant] pour la facture [n° facture]. Merci de confirmer la réception.{sign}",
             'free': '',
@@ -43,9 +46,11 @@ class SupplierMessageDialog(QDialog):
         self.hint.setStyleSheet('color: #64748b;')
         self.hint.setWordWrap(True)
         root.addWidget(self.hint)
+        self.attach = QCheckBox(t('Joindre la commande en PDF'))
+        self.attach.setChecked(many)
+        root.addWidget(self.attach)
         self.text = QPlainTextEdit()
         self.text.setMinimumHeight(220)
-        self.text.setStyleSheet('font-family: Consolas, monospace;')
         root.addWidget(self.text)
         row = QHBoxLayout()
         row.addStretch()
@@ -62,6 +67,7 @@ class SupplierMessageDialog(QDialog):
     def _apply_model(self, *_a) -> None:
         key = self.model.currentData()
         text = self._templates.get(key, '')
+        self.attach.setVisible(key == 'order' and bool(self._lines))
         if key == 'order' and not text:
             self.hint.setText(t("Aucun produit en rupture pour ce fournisseur (renseignez « Fournisseur habituel » sur les produits). Écrivez la commande à la main."))
         elif key == 'paid':
@@ -83,5 +89,11 @@ class SupplierMessageDialog(QDialog):
         except ValueError:
             warn(self, t("Ce fournisseur n'a pas de numéro de téléphone valide."))
             return
-        QDesktopServices.openUrl(QUrl(url))
+        if self.model.currentData() == 'order' and self.attach.isChecked() and self._lines:
+            from app.utils.helpers import format_quantity
+            from app.ui.widgets.order_attach import send_with_pdf
+            rows = [(n, u, format_quantity(s), format_quantity(q)) for n, q, u, s in self._lines]
+            send_with_pdf(self, rows, self.name, url)
+        else:
+            QDesktopServices.openUrl(QUrl(url))
         self.accept()

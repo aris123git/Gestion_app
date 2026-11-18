@@ -18,14 +18,9 @@ class SupplierMessageTest(unittest.TestCase):
         init_database()
         seed_all()
 
-    def test_format_short_and_table(self):
+    def test_format_short(self):
         from app.services.order_message import format_order
-        short = format_order([("Riz", 8), ("Huile", 6)])
-        self.assertEqual(short, "Bonjour, je voudrais commander : Riz × 8, Huile × 6.")
-        table = format_order([(f"Produit {i}", i) for i in range(1, 8)])
-        self.assertIn("```", table)
-        self.assertIn("Produit 7", table)
-        self.assertGreater(len(table.splitlines()), 8)
+        self.assertEqual(format_order([("Riz", 8), ("Huile", 6)]), "Bonjour, je voudrais commander : Riz × 8, Huile × 6.")
 
     def test_dialog_order_and_send(self):
         from app.controllers.product_controller import ProductController as PC
@@ -36,12 +31,16 @@ class SupplierMessageTest(unittest.TestCase):
         for i in range(7):
             PC.create({"name": f"Art {i}", "sale_price": 10, "purchase_price": 5, "quantity": 0, "min_stock": 3, "supplier_id": sid})
         dlg = dm.SupplierMessageDialog(sid, "Fourn W", "+22670000009")
-        body = dlg.text.toPlainText()
-        self.assertIn("```", body)          # 7 produits → tableau
-        self.assertIn("Art 6", body)
-        with mock.patch.object(dm.QDesktopServices, "openUrl") as op:
+        self.assertNotIn("```", dlg.text.toPlainText())
+        self.assertIn("7 produits", dlg.text.toPlainText())   # beaucoup de produits → PDF en pièce jointe
+        self.assertTrue(dlg.attach.isChecked())
+        import app.ui.widgets.order_attach as oa
+        with mock.patch.object(oa.QDesktopServices, "openUrl") as op, mock.patch.object(oa, "info"):
             dlg._send()
             self.assertIn("wa.me/22670000009", op.call_args[0][0].toString())
+        from pathlib import Path
+        import tempfile
+        self.assertTrue((Path(tempfile.gettempdir()) / "commande.pdf").exists())
         # paiement : les crochets doivent être remplacés avant l'envoi
         dlg.model.setCurrentIndex(dlg.model.findData("paid"))
         with mock.patch.object(dm.QDesktopServices, "openUrl") as op, mock.patch.object(dm, "warn") as w:

@@ -358,13 +358,22 @@ class StockPage(QWidget):
         if isinstance(sid, int):
             sup = next((s for s in SupplierController.list() if s.id == sid), None)
             phone = (sup.phone if sup else '') or ''
+        from app.services import order_message
+        many = len(lines) >= order_message.PDF_FROM
+        text = order_message.pdf_intro(len(lines)) if many else self.order_text(lines)
         try:
-            url = whatsapp_link(phone, self.order_text(lines)) if phone else \
-                'https://wa.me/?text=' + __import__('urllib.parse', fromlist=['quote']).quote(self.order_text(lines), safe='')
+            url = whatsapp_link(phone, text) if phone else \
+                'https://wa.me/?text=' + __import__('urllib.parse', fromlist=['quote']).quote(text, safe='')
         except ValueError:
             warn(self, 'WhatsApp', t('Numéro de téléphone du fournisseur invalide.'))
             return
-        QDesktopServices.openUrl(QUrl(url))
+        if many:
+            from app.ui.widgets.order_attach import send_with_pdf
+            rows = [(n, u, s, format_quantity(q)) for n, u, s, q in lines]
+            sup_name = self.order_supplier.currentText() if isinstance(sid, int) else ''
+            send_with_pdf(self, rows, sup_name, url)
+        else:
+            QDesktopServices.openUrl(QUrl(url))
 
     def _inventory_products(self):
         return [p for p in ProductController.list(only_active=True) if not getattr(p, 'sell_without_stock', False)]

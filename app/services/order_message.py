@@ -5,8 +5,7 @@ from typing import Sequence
 
 from app.utils.helpers import format_quantity
 
-TABLE_FROM = 6          # à partir de 6 produits : tableau
-NAME_MAX = 26
+PDF_FROM = 6          # à partir de 6 produits : la liste part en PDF
 
 
 def suggested_quantity(product) -> float:
@@ -28,13 +27,9 @@ def products_to_order(supplier_id: int | None = None) -> list:
 
 
 def format_order(lines: Sequence[tuple[str, float]], intro: str = "Bonjour, je voudrais commander :") -> str:
-    """lines : (produit, quantité). Moins de 6 lignes : phrase ; sinon tableau en police fixe (```)."""
-    if len(lines) < TABLE_FROM:
-        return intro + " " + ", ".join(f"{n} × {format_quantity(q)}" for n, q in lines) + "."
-    names = [n if len(n) <= NAME_MAX else n[:NAME_MAX - 1] + "…" for n, _ in lines]
-    qtys = [format_quantity(q) for _, q in lines]
-    w = max(max(len(n) for n in names), len("Produit"))
-    qw = max(max(len(q) for q in qtys), len("Qté"))
-    rows = [f"{'Produit'.ljust(w)}  {'Qté'.rjust(qw)}", f"{'-' * w}  {'-' * qw}"]
-    rows += [f"{n.ljust(w)}  {q.rjust(qw)}" for n, q in zip(names, qtys)]
-    return intro + "\n```\n" + "\n".join(rows) + "\n```"
+    """lines : (produit, quantité) → « intro Riz × 8, Huile × 6. »"""
+    return intro + " " + ", ".join(f"{n} × {format_quantity(q)}" for n, q in lines) + "."
+
+
+def pdf_intro(count: int, intro: str = "Bonjour, voici ma commande") -> str:
+    return f"{intro} ({count} produits) en pièce jointe."
