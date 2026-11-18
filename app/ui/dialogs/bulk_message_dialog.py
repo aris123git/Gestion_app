@@ -234,7 +234,7 @@ class BulkMessageDialog(QDialog):
         body = self.template.currentData()
         if body:
             self.text.setPlainText(body)
-            if "{dette}" in body and self.segment.currentData() != ms.SEG_DEBT:
+            if "{dette}" in body and self.segment.currentData() not in (ms.SEG_DEBT, ms.SEG_OVERDUE):
                 self.segment.setCurrentIndex(self.segment.findData(ms.SEG_DEBT))
 
     def _save_limits(self) -> None:

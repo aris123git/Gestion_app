@@ -131,9 +131,12 @@ class DebtsPage(QWidget):
         self.wa_btn.clicked.connect(self._whatsapp)
         self.card_btn = QPushButton(t('Fiche client'))
         self.card_btn.clicked.connect(self._open_card)
+        self.invoices_btn = QPushButton(t('Factures'))
+        self.invoices_btn.setToolTip(t('Toutes les ventes du client (avec ou sans dette) : période, n° de facture, produit'))
+        self.invoices_btn.clicked.connect(self._open_invoices)
         self.history_btn = QPushButton(t('Historique'))
         self.history_btn.clicked.connect(self._open_history)
-        for b in (self.settle_btn, self.wa_btn, self.card_btn, self.history_btn):
+        for b in (self.settle_btn, self.wa_btn, self.invoices_btn, self.card_btn, self.history_btn):
             row.addWidget(b)
         side.addLayout(row)
         body.addLayout(side, 3)
@@ -229,7 +232,7 @@ class DebtsPage(QWidget):
 
     def _show_client(self) -> None:
         g = self._group()
-        for b in (self.settle_btn, self.wa_btn, self.card_btn, self.history_btn):
+        for b in (self.settle_btn, self.wa_btn, self.invoices_btn, self.card_btn, self.history_btn):
             b.setEnabled(bool(g))
         self.debts.blockSignals(True)
         if not g:
@@ -345,8 +348,15 @@ class DebtsPage(QWidget):
         from app.services import messaging_service as ms
         from app.ui.dialogs.bulk_message_dialog import BulkMessageDialog
         dlg = BulkMessageDialog(self, *self._user())
-        dlg.segment.setCurrentIndex(max(dlg.segment.findData(ms.SEG_DEBT), 0))
+        seg = ms.SEG_OVERDUE if self._mode == 'overdue' else ms.SEG_DEBT      # filtre « Échues » actif → relance des échues
+        dlg.segment.setCurrentIndex(max(dlg.segment.findData(seg), 0))
         dlg.exec()
+
+    def _open_invoices(self) -> None:
+        g = self._group()
+        if g:
+            from app.ui.dialogs.client_purchases_dialog import ClientPurchasesDialog
+            ClientPurchasesDialog(g['id'], g['name'], state=self.state, parent=self).exec()
 
     def _open_card(self) -> None:
         cid = self._current_client_id()

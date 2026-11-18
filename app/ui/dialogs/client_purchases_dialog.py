@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import List
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QAbstractItemView, QDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
 
 from app.controllers.sale_controller import SaleController
 from app.i18n import t
@@ -16,7 +16,7 @@ from app.utils.helpers import format_datetime, format_money
 class ClientPurchasesDialog(QDialog):
     """Liste les ventes d'un client ; double-clic ou bouton = réimpression."""
 
-    HEADERS = ['Date et heure', 'Ticket', 'Produits', 'Total', 'Statut']
+    HEADERS = ['Date et heure', 'Ticket', 'Produits', 'Total', 'Reste dû', 'Statut']
 
     def __init__(self, client_id: int, client_name: str, state=None, parent=None):
         super().__init__(parent)
@@ -41,6 +41,18 @@ class ClientPurchasesDialog(QDialog):
         self._timer.timeout.connect(self._load)
         self.search.textChanged.connect(lambda _t: self._timer.start())
         layout.addWidget(self.search)
+        from app.ui.widgets.period_picker import PeriodPicker
+        row = QHBoxLayout()
+        self.all_dates = QCheckBox(t('Toutes les dates'))
+        self.all_dates.setChecked(True)
+        self.picker = PeriodPicker()
+        self.picker.setEnabled(False)
+        self.all_dates.toggled.connect(lambda on: (self.picker.setEnabled(not on), self._load()))
+        self.picker.changed.connect(self._load)
+        row.addWidget(self.all_dates)
+        row.addWidget(self.picker)
+        row.addStretch()
+        layout.addLayout(row)
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels([t(h) for h in self.HEADERS])
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -65,7 +77,13 @@ class ClientPurchasesDialog(QDialog):
     def _load(self) -> None:
         currency = settings_service.get_currency()
         needle = self.search.text().strip().lower()
-        sales = SaleController.list(client_id=self.client_id, with_items=True, limit=5000)
+        d0, d1 = (None, None) if self.all_dates.isChecked() else self.picker.period()
+        sales = SaleController.list(client_id=self.client_id, with_items=True, limit=5000, start=d0, end=d1)
+        from app.services.debt_service import DebtService
+        owed: dict = {}
+        for d in DebtService.list_debts(client_id=self.client_id, only_active=True, limit=5000):
+            if d.sale_id:
+                owed[d.sale_id] = owed.get(d.sale_id, 0.0) + float(d.amount_remaining or 0)
         rows = []
         for sale in sales:
             names = ', '.join(f'{i.product_name} ×{float(i.quantity):g}' for i in sale.items)
@@ -76,7 +94,8 @@ class ClientPurchasesDialog(QDialog):
         self.table.setRowCount(len(rows))
         for r, (sale, names) in enumerate(rows):
             cancelled = sale.status == 'cancelled'
-            values = [format_datetime(sale.date), sale.ticket_number, names, format_money(sale.total, currency),
+            rest = owed.get(sale.id, 0.0)
+            values = [format_datetime(sale.date), sale.ticket_number, names, format_money(sale.total, currency), format_money(rest, currency) if rest > 0 else '—',
                       t('Annulée') if cancelled else (t('Terminée') if sale.status == 'completed' else str(sale.status))]
             for c, value in enumerate(values):
                 self.table.setItem(r, c, QTableWidgetItem(value))

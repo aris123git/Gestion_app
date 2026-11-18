@@ -34,12 +34,14 @@ SEG_ALL = "all"
 SEG_BOUGHT = "bought_between"
 SEG_INACTIVE = "inactive"
 SEG_DEBT = "with_debt"
+SEG_OVERDUE = "overdue_debt"
 SEG_CATEGORY = "bought_category"
 SEGMENT_LABELS = {
     SEG_ALL: "Tous les clients",
     SEG_BOUGHT: "Ont acheté entre deux dates",
     SEG_INACTIVE: "Sans achat depuis N jours (relance)",
     SEG_DEBT: "Avec une dette (rappel)",
+    SEG_OVERDUE: "Dette échue (relance)",
     SEG_CATEGORY: "Ont acheté un produit d'une catégorie (suggestion)",
 }
 OPT_OUT_FOOTER = "\n\nPour ne plus recevoir nos messages, répondez STOP."
@@ -135,6 +137,13 @@ def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = N
             in_category = {cid for (cid,) in session.execute(select(Sale.client_id).join(SaleItem, SaleItem.sale_id == Sale.id).join(
                 Product, Product.id == SaleItem.product_id).where(Sale.client_id.is_not(None), Sale.status == "completed",
                                                                   Product.category_id == category_id).distinct())}
+        overdue: set = set()
+        if segment == SEG_OVERDUE:
+            from datetime import date as _date
+            from app.models.debt import Debt, STATUS_OPEN, STATUS_PARTIAL
+            overdue = {cid for (cid,) in session.execute(select(Debt.client_id).where(
+                Debt.status.in_([STATUS_OPEN, STATUS_PARTIAL]), Debt.due_date.is_not(None), Debt.due_date < _date.today(),
+                Debt.amount_remaining > 0).distinct())}
         recent: set = set()
         gap = cfg_int("messaging_min_gap_days")
         if respect_gap and gap:
@@ -151,6 +160,8 @@ def find_recipients(segment: str, channel: str, *, start: Optional[datetime] = N
                 if last is None or last > now - timedelta(days=max(1, days)):
                     continue
             if segment == SEG_DEBT and float(c.debt or 0) <= 0:
+                continue
+            if segment == SEG_OVERDUE and c.id not in overdue:
                 continue
             if c.id in recent:
                 continue

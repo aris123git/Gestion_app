@@ -63,6 +63,24 @@ class DebtsTabTest(unittest.TestCase):
         g = [g for g in d._groups if g["name"] == "Zed Deux Dettes"][0]
         self.assertEqual(len(g["debts"]), 1)
 
+    def test_overdue_segment_and_invoice_history(self):
+        from datetime import datetime
+        from app.controllers.client_controller import ClientController as CC
+        from app.services import messaging_service as ms
+        from app.ui.dialogs.client_purchases_dialog import ClientPurchasesDialog
+
+        late = CC.create({"name": "Retard Seg", "phone": "+22670000007"}).id
+        ok = CC.create({"name": "Pas Retard Seg", "phone": "+22670000008"}).id
+        CC.add_debt(late, 1000, note="x", due_date=date.today() - timedelta(days=3))
+        CC.add_debt(ok, 1000, note="y", due_date=date.today() + timedelta(days=3))
+        names = [r.name for r in ms.find_recipients(ms.SEG_OVERDUE, ms.WHATSAPP, respect_gap=False)]
+        self.assertIn("Retard Seg", names)
+        self.assertNotIn("Pas Retard Seg", names)
+        dlg = ClientPurchasesDialog(late, "Retard Seg")
+        self.assertTrue(dlg.all_dates.isChecked())
+        dlg.all_dates.setChecked(False)          # période choisie : aujourd'hui seulement, aucune vente
+        self.assertEqual(dlg.table.rowCount(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
