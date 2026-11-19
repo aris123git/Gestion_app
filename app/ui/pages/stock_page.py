@@ -39,6 +39,12 @@ class StockPage(QWidget):
         self.tabs.currentChanged.connect(lambda _: (self._reload_history(), self._reload_inventory(), self._refresh_purchases()))
         layout.addWidget(self.tabs)
 
+    def select_tab(self, label: str) -> None:
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == t(label):
+                self.tabs.setCurrentIndex(i)
+                return
+
     ACTIONS = [
         ('in', 'Entrée +', 'Quantité reçue', ('supplier', 'invoice', 'cost', 'price', 'comment'), "Enregistrer l'entrée"),
         ('out', 'Sortie −', 'Quantité sortie', ('reason', 'comment'), 'Enregistrer la sortie'),
