@@ -30,11 +30,15 @@ def log_action(
         )
 
 
-def list_logs(limit: int = 500) -> List[AuditLog]:
-    """Retourne les derniers enregistrements du journal."""
+def list_logs(limit: int = 500, start=None, end=None) -> List[AuditLog]:
+    """Retourne les derniers enregistrements du journal, sur une période optionnelle."""
+    from datetime import datetime, time
     with session_scope() as session:
-        rows = session.scalars(
-            select(AuditLog).order_by(AuditLog.date.desc()).limit(limit)
-        ).all()
+        query = select(AuditLog).order_by(AuditLog.date.desc())
+        if start is not None:
+            query = query.where(AuditLog.date >= datetime.combine(start, time.min))
+        if end is not None:
+            query = query.where(AuditLog.date <= datetime.combine(end, time.max))
+        rows = session.scalars(query.limit(limit)).all()
         session.expunge_all()
         return list(rows)

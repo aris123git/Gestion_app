@@ -104,8 +104,6 @@ class SettingsPage(QWidget):
         add(self._tab_backup, t('Sauvegarde'))
         self._tab_portal = self._build_portal_tab()
         add(self._tab_portal, t('Portail web'))
-        self._tab_audit = self._build_audit_tab()
-        add(self._tab_audit, t("Journal d'audit"))
         self._tabs = tabs
         self._apply_enterprise_visibility()
         tabs.currentChanged.connect(self._on_tab)
@@ -2084,25 +2082,6 @@ class SettingsPage(QWidget):
             target = f'{url}/login?enterprise_id={quote(eid)}'
         webbrowser.open(target)
 
-    def _build_audit_tab(self) -> QWidget:
-        wrap = QWidget()
-        layout = QVBoxLayout(wrap)
-        self.audit_table = QTableWidget(0, 4)
-        self.audit_table.setHorizontalHeaderLabels([t('Date'), t('Utilisateur'), t('Action'), t('Détails')])
-        self.audit_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.audit_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.audit_table)
-        return wrap
-
-    def _reload_audit(self) -> None:
-        logs = audit_service.list_logs(limit=400)
-        self.audit_table.setRowCount(len(logs))
-        for row, log in enumerate(logs):
-            self.audit_table.setItem(row, 0, QTableWidgetItem(format_datetime(log.date)))
-            self.audit_table.setItem(row, 1, QTableWidgetItem(log.username))
-            self.audit_table.setItem(row, 2, QTableWidgetItem(log.action))
-            self.audit_table.setItem(row, 3, QTableWidgetItem(log.details))
-
     def _on_tab(self, index: int) -> None:
         tab = self._tabs.widget(index)
         tab = tab.widget() if isinstance(tab, QScrollArea) else tab
@@ -2113,8 +2092,6 @@ class SettingsPage(QWidget):
             self._reload_backups()
         elif tab is self._tab_portal:
             self._load_portal_ui()
-        elif tab is self._tab_audit:
-            self._reload_audit()
 
     def refresh(self) -> None:
         shop = settings_service.get_shop_info()
