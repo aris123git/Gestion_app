@@ -97,6 +97,7 @@ class SettingsPage(QWidget):
         docs_layout.addStretch()
         add(docs, t('Documents'))
         add(self._build_controls_tab(), t('Contrôles caisse'))
+        add(self._build_security_tab(), t('Sécurité'))
         if product_profile.supports_profit_loyalty():
             add(self._build_loyalty_tab(), t('Fidélité bénéfices'))
         self._tab_backup = self._build_backup_tab()
@@ -1541,6 +1542,49 @@ class SettingsPage(QWidget):
             warn(self, f'Impossible de générer l\'aperçu : {exc}')
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def _build_security_tab(self) -> QWidget:
+        from app.services import device_login
+        wrap = QWidget()
+        outer = QVBoxLayout(wrap)
+        card = QWidget()
+        form = QVBoxLayout(card)
+        form.setSpacing(8)
+        title = section_title(t('Connexion rapide sur cet ordinateur'))
+        hint = QLabel(t("Un code court propre à cet ordinateur, à la place du mot de passe complet. Il ne fonctionne que sur ce poste et peut être désactivé ici."))
+        hint.setWordWrap(True)
+        hint.setStyleSheet('color: #64748b;')
+        self.device_login_status = QLabel('')
+        form.addWidget(title)
+        form.addWidget(hint)
+        form.addWidget(self.device_login_status)
+        row = QHBoxLayout()
+        self.device_login_disable = QPushButton(t('Désactiver sur cet ordinateur'))
+        self.device_login_disable.setObjectName('DangerOutline')
+        self.device_login_disable.clicked.connect(self._disable_device_login)
+        row.addWidget(self.device_login_disable)
+        row.addStretch()
+        form.addLayout(row)
+        outer.addWidget(make_card(card))
+        outer.addStretch()
+        self._refresh_device_login_status()
+        return wrap
+
+    def _refresh_device_login_status(self) -> None:
+        from app.services import device_login
+        info = device_login.get_device_login()
+        if info:
+            self.device_login_status.setText(t('Activée pour le compte') + f" <b>{info['username']}</b>.")
+        else:
+            self.device_login_status.setText(t('Non activée. Proposée après la prochaine connexion par mot de passe.'))
+        self.device_login_disable.setVisible(bool(info))
+
+    def _disable_device_login(self) -> None:
+        from app.services import device_login
+        if not confirm(self, t('Désactiver la connexion rapide sur cet ordinateur ?')):
+            return
+        device_login.clear_device_login()
+        self._refresh_device_login_status()
 
     def _build_controls_tab(self) -> QWidget:
         from app.services import cash_controls

@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.i18n import t
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
+from app.services import device_login
 from app.services.auth_service import AuthService
 from app.ui.state import AppState
 from app.ui.widgets.helpers import activate_and_center
@@ -99,6 +100,8 @@ class LoginDialog(QDialog):
         self.forgot_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.forgot_button.setStyleSheet('QPushButton { border: none; color: #2563eb; background: transparent; }')
         self.forgot_button.clicked.connect(self._open_forgot_password)
+        self.remember = QCheckBox(t('Connexion rapide sur cet ordinateur (évite de retaper le mot de passe)'))
+        self.remember.setChecked(device_login.get_device_login() is None)
         self.hint = QLabel(t('Astuce : compte par défaut admin / admin'))
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hint.setStyleSheet('color: #94a3b8; font-size: 12px;')
@@ -112,6 +115,7 @@ class LoginDialog(QDialog):
         layout.addWidget(QLabel(t('Mot de passe')))
         layout.addWidget(self.password)
         layout.addWidget(self.show_password)
+        layout.addWidget(self.remember)
         layout.addSpacing(6)
         layout.addWidget(self.login_button)
         layout.addWidget(self.forgot_button)
@@ -121,6 +125,11 @@ class LoginDialog(QDialog):
     def _selected_username(self) -> str:
         """Retourne l'identifiant saisi sans énumérer les comptes existants."""
         return self.username.text().strip()
+
+    def _offer_quick_login(self, user) -> None:
+        from app.ui.dialogs.set_quick_code_dialog import SetQuickCodeDialog
+        dialog = SetQuickCodeDialog(user, self)
+        dialog.exec()
 
     def _toggle_password(self, checked: bool) -> None:
         self.password.setEchoMode(QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password)
@@ -158,6 +167,8 @@ class LoginDialog(QDialog):
                     self.password.clear()
                     self.password.setFocus()
                     return
+            if self.remember.isChecked() and device_login.get_device_login() is None:
+                self._offer_quick_login(user)
             self.accept()
         else:
             QMessageBox.critical(self, 'Connexion', 'Identifiants incorrects ou compte désactivé.')

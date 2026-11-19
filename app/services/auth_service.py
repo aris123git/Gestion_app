@@ -53,6 +53,21 @@ class AuthService:
             )
             return user
 
+    def login_device(self, user_id: int) -> Optional[User]:
+        """Ouvre la session d'un compte déjà connu, via le code rapide de cet ordinateur.
+
+        Le code lui-même a déjà été vérifié par ``device_login``. Un compte supprimé
+        ou désactivé entre-temps empêche toujours la connexion.
+        """
+        with session_scope() as session:
+            user = session.get(User, user_id)
+            if not user or not user.is_active:
+                return None
+            session.expunge(user)
+            self._current_user = user
+            audit_service.log_action("Connexion rapide", "User", f"{user.username}", user.id, user.username)
+            return user
+
     def _raise_if_blocked(self, key: str) -> None:
         blocked_until = self._blocked_until.get(key, 0)
         now = time.monotonic()

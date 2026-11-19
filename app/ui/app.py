@@ -93,6 +93,15 @@ class AppController:
         return True
 
     def show_login(self) -> bool:
+        from app.services import device_login
+        info = device_login.get_device_login()
+        if info:
+            from app.ui.quick_login_dialog import QuickLoginDialog
+            quick = QuickLoginDialog(self.state, info)
+            if quick.exec():
+                return True
+            if not quick.use_password:
+                return False
         dialog = LoginDialog(self.state)
         return bool(dialog.exec())
 
