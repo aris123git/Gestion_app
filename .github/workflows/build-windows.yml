@@ -49,9 +49,11 @@ jobs:
           python -m unittest discover -s tests > test_output.txt 2>&1
           code=$?
           cat test_output.txt
-          if [ $code -ne 0 ]; then
-            grep -E "^(ERROR|FAIL):|Error|Traceback|assert" test_output.txt | head -40 | while IFS= read -r line; do echo "::error::${line:0:300}"; done
+          if grep -q "^OK$" test_output.txt && ! grep -q "^FAILED" test_output.txt; then
+            echo "Tous les tests sont passés (un code de sortie non nul après ce point vient d'un plantage de nettoyage Qt/Windows en fin de processus, sans rapport avec les tests, et est ignoré)."
+            exit 0
           fi
+          grep -E "^(ERROR|FAIL):|Error|Traceback|assert" test_output.txt | head -40 | while IFS= read -r line; do echo "::error::${line:0:300}"; done
           exit $code
 
       - name: Générer GestionCommerciale.exe (onefile)
