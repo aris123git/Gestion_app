@@ -2,7 +2,8 @@
 from __future__ import annotations
 from app.i18n import t
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
+from app.services import device_login
 from app.services import device_login
 from app.services.auth_service import AuthService
 from app.ui.state import AppState
@@ -16,7 +17,7 @@ class ChangePasswordDialog(QDialog):
         self.user = user
         self.setWindowTitle(t('Changer le mot de passe'))
         self.setModal(True)
-        self.setFixedWidth(420)
+        self.setFixedWidth(460)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
@@ -32,6 +33,16 @@ class ChangePasswordDialog(QDialog):
         form.addRow(t('Nouveau mot de passe'), self.password)
         form.addRow(t('Confirmation'), self.confirm)
         layout.addLayout(form)
+        quick_hint = QLabel(t("Facultatif : un code court pour vous reconnecter plus vite sur cet ordinateur, à la place du mot de passe. Il ne fonctionne que sur ce poste."))
+        quick_hint.setWordWrap(True)
+        quick_hint.setStyleSheet('color: #64748b; font-size: 12px;')
+        layout.addWidget(quick_hint)
+        quick_form = QFormLayout()
+        self.quick_code = QLineEdit()
+        self.quick_code.setEchoMode(QLineEdit.EchoMode.Password)
+        self.quick_code.setPlaceholderText(t('Laisser vide pour ne pas l\'activer'))
+        quick_form.addRow(t('Code rapide (cet ordinateur)'), self.quick_code)
+        layout.addLayout(quick_form)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('Annuler'))
         cancel.clicked.connect(self.reject)
@@ -53,6 +64,12 @@ class ChangePasswordDialog(QDialog):
         except ValueError as exc:
             QMessageBox.warning(self, 'Mot de passe', str(exc))
             return
+        if self.quick_code.text():
+            try:
+                device_login.set_device_login(self.user.id, self.user.username, self.quick_code.text())
+            except ValueError as exc:
+                QMessageBox.warning(self, 'Code rapide', str(exc))
+                return
         self.accept()
 
 class LoginDialog(QDialog):
@@ -63,7 +80,7 @@ class LoginDialog(QDialog):
         self.state = state
         self.setWindowTitle(t('Connexion'))
         self.setModal(True)
-        self.setFixedWidth(420)
+        self.setFixedWidth(460)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(30, 30, 30, 30)
         outer.setSpacing(14)
@@ -82,10 +99,16 @@ class LoginDialog(QDialog):
         subtitle = QLabel(t('Veuillez vous connecter pour continuer'))
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet('color: #64748b;')
-        self.username = QLineEdit()
-        self.username.setPlaceholderText(t("Nom d'utilisateur"))
+        self.username = QComboBox()
+        self.username.setEditable(True)
+        self.username.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.username.lineEdit().setPlaceholderText(t("Nom d'utilisateur"))
         self.username.setMinimumHeight(38)
-        self.username.returnPressed.connect(lambda: self.password.setFocus())
+        for u in AuthService.list_users():
+            if u.is_active:
+                self.username.addItem(u.username)
+        self.username.setCurrentIndex(-1)
+        self.username.lineEdit().returnPressed.connect(lambda: self.password.setFocus())
         self.password = QLineEdit()
         self.password.setPlaceholderText(t('Mot de passe'))
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
@@ -100,7 +123,7 @@ class LoginDialog(QDialog):
         self.forgot_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.forgot_button.setStyleSheet('QPushButton { border: none; color: #2563eb; background: transparent; }')
         self.forgot_button.clicked.connect(self._open_forgot_password)
-        self.remember = QCheckBox(t('Connexion rapide sur cet ordinateur (évite de retaper le mot de passe)'))
+        self.remember = QCheckBox(t('Connexion rapide sur cet ordinateur'))
         self.remember.setChecked(device_login.get_device_login() is None)
         self.hint = QLabel(t('Astuce : compte par défaut admin / admin'))
         self.hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -123,8 +146,8 @@ class LoginDialog(QDialog):
         outer.addWidget(card)
 
     def _selected_username(self) -> str:
-        """Retourne l'identifiant saisi sans énumérer les comptes existants."""
-        return self.username.text().strip()
+        """Retourne l'identifiant choisi dans la liste ou saisi à la main."""
+        return self.username.currentText().strip()
 
     def _offer_quick_login(self, user) -> None:
         from app.ui.dialogs.set_quick_code_dialog import SetQuickCodeDialog

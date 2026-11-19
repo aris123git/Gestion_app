@@ -57,8 +57,8 @@ class KeyboardNavTests(unittest.TestCase):
         from app.ui.login_dialog import LoginDialog
         from app.ui.state import AppState
         dlg = LoginDialog(AppState()); dlg.show()
-        dlg.username.setText("admin"); dlg.username.setFocus()
-        QTest.keyClick(dlg.username, Qt.Key.Key_Return)
+        dlg.username.setEditText("admin"); dlg.username.setFocus()
+        QTest.keyClick(dlg.username.lineEdit(), Qt.Key.Key_Return)
         self.assertIs(dlg.focusWidget(), dlg.password)
         engine.dispose(); shutil.rmtree(d, ignore_errors=True)
 
