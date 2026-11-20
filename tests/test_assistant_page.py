@@ -37,9 +37,8 @@ class AssistantPageTest(unittest.TestCase):
         from app.i18n import t
         page = win._select_page_by_label(t("nav.assistant"))
         self.assertIsInstance(page, AssistantPage)
-        win.show()
         page.refresh()
-        self.assertTrue(any(w.isVisible() for w in page.section_cards.values()))
+        self.assertTrue(any(not w.isHidden() for w in page.section_cards.values()))
         rows = page.sections["danger"]
         self.assertGreater(rows.count(), 0)
         page._go_to("nav.stock", "À commander")
@@ -54,11 +53,10 @@ class AssistantPageTest(unittest.TestCase):
         state = AppState()
         with patch("app.ui.pages.assistant_page.AssistantService.recommendations", return_value=[]):
             page = AssistantPage(state)
-            page.show()
             page.refresh()
-        self.assertTrue(page.empty_label.isVisible())
+        self.assertFalse(page.empty_label.isHidden())
         for card in page.section_cards.values():
-            self.assertFalse(card.isVisible())
+            self.assertTrue(card.isHidden())
 
 
 if __name__ == "__main__":
