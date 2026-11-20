@@ -1,6 +1,4 @@
 import os
-import shutil
-import tempfile
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -9,11 +7,12 @@ os.environ.setdefault("NEXAPOS_SKIP_ACTIVATION", "1")
 
 class NavStateTest(unittest.TestCase):
     def setUp(self):
-        self._dir = tempfile.mkdtemp(prefix="gestion_nav_")
-        os.environ["GESTION_DATA_DIR"] = self._dir
+        from app.services import nav_state
+        nav_state.set_open_groups(set())
 
     def tearDown(self):
-        shutil.rmtree(self._dir, ignore_errors=True)
+        from app.services import nav_state
+        nav_state.set_open_groups(set())
 
     def test_round_trip(self):
         from app.services import nav_state
@@ -26,9 +25,8 @@ class NavStateTest(unittest.TestCase):
     def test_group_reopens_after_restart(self):
         from PySide6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
-        from app.database.connection import engine, init_database
+        from app.database.connection import init_database
         from app.database.seed import seed_all
-        engine.dispose()
         init_database()
         seed_all()
         from app.ui.main_window import MainWindow
