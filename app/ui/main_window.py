@@ -10,7 +10,7 @@ from app.ui.widgets.helpers import plainify
 from PySide6.QtWidgets import QApplication, QButtonGroup, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 from app import __version__
 from app.services import permissions as perms
-from app.services import product_profile, settings_service
+from app.services import nav_state, product_profile, settings_service
 from app.ui.pages.assistant_page import AssistantPage
 from app.ui.pages.audit_page import AuditPage
 from app.ui.pages.categories_page import CategoriesPage
@@ -299,6 +299,7 @@ class MainWindow(QWidget):
         self._nav_group = QButtonGroup(self)
         self._nav_group.setExclusive(True)
         self._groups: dict[str, dict] = {}
+        self._persisted_open_groups = nav_state.get_open_groups()
         self._nav_icons: dict[int, object] = {}
         for index, (label, icon, _page, permission) in enumerate(NAV_ITEMS):
             self._nav_meta.append((label, icon))
@@ -312,7 +313,7 @@ class MainWindow(QWidget):
                 header.setCursor(Qt.CursorShape.PointingHandCursor)
                 header.clicked.connect(lambda _=False, g=group: self._toggle_group(g))
                 nav_layout.addWidget(header)
-                self._groups[group] = {'header': header, 'buttons': [], 'open': False}
+                self._groups[group] = {'header': header, 'buttons': [], 'open': group in self._persisted_open_groups}
             nav_ic = nav_icon(icon)
             self._nav_icons[index] = nav_ic
             button = QPushButton(label if nav_ic is not None else f'{icon}  {label}')
@@ -376,6 +377,7 @@ class MainWindow(QWidget):
     def _toggle_group(self, group: str) -> None:
         self._groups[group]['open'] = not self._groups[group]['open']
         self._refresh_groups()
+        self._save_open_groups()
 
     def _refresh_groups(self) -> None:
         """Titres de groupe : visibles en menu complet (pages visibles si le groupe est ouvert) ; en menu à icônes, tout est visible."""
@@ -391,6 +393,10 @@ class MainWindow(QWidget):
         if group and group in self._groups and not self._groups[group]['open']:
             self._groups[group]['open'] = True
             self._refresh_groups()
+            self._save_open_groups()
+
+    def _save_open_groups(self) -> None:
+        nav_state.set_open_groups({g for g, info in self._groups.items() if info['open']})
 
     def _install_nav_shortcuts(self) -> None:
         """Ctrl+1…9 : aller directement à la n-ième rubrique visible du menu."""
