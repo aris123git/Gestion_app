@@ -264,6 +264,24 @@ class DashboardService:
             ).first()
             return (str(row[0]), float(row[1] or 0)) if row else None
 
+    @classmethod
+    def daily_trend(cls, days: int = 14) -> dict:
+        """CA encaissé et bénéfice net, jour par jour, sur les N derniers jours."""
+        today = date.today()
+        day_list = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
+        labels: List[str] = []
+        revenue: List[float] = []
+        net_profit: List[float] = []
+        with session_scope() as session:
+            for day in day_list:
+                labels.append(f"{day:%d/%m}")
+                cash = cls._cash_revenue(session, day, day) + cls._client_debt_payments(session, day, day)
+                profit = cls._profit(session, day, day)
+                expenses = cls._expenses(session, day, day)
+                revenue.append(round(cash, 2))
+                net_profit.append(round(profit - expenses, 2))
+        return {"labels": labels, "revenue": revenue, "net_profit": net_profit}
+
     @staticmethod
     def dormant_products(days: int = 30, limit: int = 20) -> List[Tuple[str, float]]:
         """Produits en stock sans vente sur la période."""
