@@ -42,10 +42,10 @@ class POSPage(QWidget):
         self._root.setSpacing(12)
         self._maquis_mode = product_profile.is_maquis()
         self._catalog = PosCatalogPanel(self)
+        self._catalog.product_chosen.connect(self._add_product)  # produits « montant libre »
         if self._maquis_mode:
-            self._catalog.product_chosen.connect(self._maquis_product_tap)
-        else:
-            self._catalog.product_chosen.connect(self._add_product)
+            self._catalog.product_quantity_chosen.connect(self._maquis_add_quantity)
+            self._catalog.finalize_requested.connect(self._save_maquis_order)
         self._waitress_combo: Optional[QComboBox] = None
         self._table_combo: Optional[QComboBox] = None
         self._save_order_btn: Optional[QPushButton] = None
@@ -342,14 +342,10 @@ class POSPage(QWidget):
         line.quantity = dlg.quantity
         self._render_cart()
 
-    def _maquis_product_tap(self, product) -> None:
-        from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
-
+    def _maquis_add_quantity(self, product, quantity: float) -> None:
+        """Ajout clavier (Maquis) : quantité tapée dans le champ du catalogue, pas de pavé tactile."""
         if getattr(product, "free_amount_sale", False):
             self._add_product(product)
-            return
-        dlg = QuantityPadDialog(product.name, parent=self)
-        if not dlg.exec() or dlg.quantity <= 0:
             return
         min_price = float(product.min_price or 0)
         sale_price = float(product.sale_price)
@@ -357,12 +353,12 @@ class POSPage(QWidget):
             warn(self, t("Prix minimum"))
             return
         available = self._available_stock(product.id)
-        if available + 0.0001 < dlg.quantity:
+        if available + 0.0001 < quantity:
             warn(self, t("Stock insuffisant"), t("Stock insuffisant"))
             return
         for line in self.cart:
             if line.product_id == product.id and (not line.free_amount) and (not line.loyalty_reward):
-                line.quantity += dlg.quantity
+                line.quantity += quantity
                 self._render_cart()
                 return
         self.cart.append(
@@ -370,7 +366,7 @@ class POSPage(QWidget):
                 product_id=product.id,
                 name=product.name,
                 unit_price=sale_price,
-                quantity=dlg.quantity,
+                quantity=quantity,
                 purchase_price=float(product.purchase_price),
             )
         )

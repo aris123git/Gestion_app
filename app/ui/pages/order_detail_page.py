@@ -50,7 +50,9 @@ class OrderDetailPage(QWidget):
         back_row.addStretch()
         top.addLayout(back_row)
         self.catalog = PosCatalogPanel(self, show_pos_title=False)
-        self.catalog.product_chosen.connect(self._on_product)
+        self.catalog.product_chosen.connect(self._on_product)  # produits « montant libre »
+        self.catalog.product_quantity_chosen.connect(self._on_product_quantity)
+        self.catalog.finalize_requested.connect(self._print_kitchen)
         top.addWidget(self.catalog, 1)
         root.addLayout(top, 5)
         right = QWidget()
@@ -252,22 +254,22 @@ class OrderDetailPage(QWidget):
             warn(self, str(exc))
 
     def _on_product(self, product) -> None:
+        """Signal product_chosen : uniquement les produits « montant libre »
+        (la quantité normale passe désormais par le champ clavier du catalogue)."""
         if not self.order_id:
             return
-        if getattr(product, "free_amount_sale", False):
-            self._add_free_amount(product)
-            return
-        from app.ui.dialogs.quantity_pad_dialog import QuantityPadDialog
+        self._add_free_amount(product)
 
-        dlg = QuantityPadDialog(product.name, parent=self)
-        if not dlg.exec() or dlg.quantity <= 0:
+    def _on_product_quantity(self, product, quantity: float) -> None:
+        """Quantité tapée au clavier dans le catalogue, confirmée par Entrée."""
+        if not self.order_id:
             return
         try:
             OrderService.add_item(
                 self.order_id,
                 product_id=product.id,
                 product_name=product.name,
-                quantity=float(dlg.quantity),
+                quantity=float(quantity),
                 unit_price=float(product.sale_price or 0),
             )
             self._reload_lines()

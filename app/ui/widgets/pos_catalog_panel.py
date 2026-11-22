@@ -36,6 +36,9 @@ class PosCatalogPanel(QFrame):
     """Sélection produits : identique POS / tablette (chips + grille ou liste)."""
 
     product_chosen = Signal(object)
+    # Maquis (restaurant) : saisie clavier de la quantité au lieu du pavé tactile.
+    product_quantity_chosen = Signal(object, float)
+    finalize_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None, *, show_pos_title: bool = True):
         super().__init__(parent)
@@ -69,6 +72,23 @@ class PosCatalogPanel(QFrame):
         filter_row.addWidget(self.search_input, 3)
         filter_row.addWidget(self.category_filter, 2)
         layout.addLayout(filter_row)
+        # Saisie clavier de la quantité (Maquis) : on clique un produit, on tape la
+        # quantité, Entrée ajoute au panier ; Entrée à nouveau sans reclic -> finalise.
+        self._pending_product = None
+        qty_row = QHBoxLayout()
+        self.quantity_hint = QLabel(t('Cliquez un produit…'))
+        self.quantity_hint.setStyleSheet('color: #64748b; font-size: 12px;')
+        qty_row.addWidget(self.quantity_hint, 1)
+        qty_row.addWidget(QLabel(t('Qté')))
+        self.quantity_input = QLineEdit('1')
+        self.quantity_input.setFixedWidth(70)
+        self.quantity_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.quantity_input.returnPressed.connect(self._confirm_quantity)
+        qty_row.addWidget(self.quantity_input)
+        self._quantity_row_widget = QWidget()
+        self._quantity_row_widget.setLayout(qty_row)
+        self._quantity_row_widget.setVisible(self._maquis)
+        layout.addWidget(self._quantity_row_widget)
         self.category_chips_scroll = QScrollArea()
         self.category_chips_scroll.setWidgetResizable(True)
         self.category_chips_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -276,7 +296,7 @@ class PosCatalogPanel(QFrame):
         def _click(_event=None, product_id=pid):
             product_obj = ProductController.get(product_id)
             if product_obj:
-                self._emit_product(product_obj)
+                self._select_product(product_obj)
 
         card.mousePressEvent = _click
         return card
@@ -332,7 +352,7 @@ class PosCatalogPanel(QFrame):
         if not product:
             warn(self, f'Aucun produit avec le code-barres « {code} ».')
             return
-        self._emit_product(product)
+        self._select_product(product)
 
     def _add_first_found(self) -> None:
         """Entrée dans la recherche : ajoute le premier produit trouvé."""
@@ -341,7 +361,7 @@ class PosCatalogPanel(QFrame):
             product = ProductController.find_by_barcode(text)
             if product:  # code-barres scanné dans le même champ
                 self.search_input.clear()
-                self._emit_product(product)
+                self._select_product(product)
                 return
         if self.product_table.rowCount() > 0 and text:
             self.product_table.selectRow(0)
@@ -351,7 +371,38 @@ class PosCatalogPanel(QFrame):
     def _add_selected_product(self) -> None:
         product = self.selected_product()
         if product:
+            self._select_product(product)
+
+    def _select_product(self, product) -> None:
+        """Sélection d'un produit : ajout direct, ou mise en attente de la quantité (Maquis)."""
+        if self._maquis and not getattr(product, 'free_amount_sale', False):
+            self._pending_product = product
+            self.quantity_hint.setText(product.name)
+            self.quantity_input.setText('1')
+            self.quantity_input.selectAll()
+            self.quantity_input.setFocus()
+        else:
             self._emit_product(product)
+
+    def _confirm_quantity(self) -> None:
+        """Entrée dans le champ Quantité : valide l'ajout, ou finalise si rien n'est en attente."""
+        if self._pending_product is None:
+            self.finalize_requested.emit()
+            return
+        text = self.quantity_input.text().strip().replace(',', '.')
+        try:
+            quantity = float(text) if text else 1.0
+        except ValueError:
+            quantity = 1.0
+        if quantity <= 0:
+            quantity = 1.0
+        product = self._pending_product
+        self._pending_product = None
+        self.quantity_input.setText('1')
+        self.quantity_hint.setText(t('Cliquez un produit…'))
+        if self._on_before_add is not None and not self._on_before_add(product):
+            return
+        self.product_quantity_chosen.emit(product, quantity)
 
     def _emit_product(self, product) -> None:
         if self._on_before_add is not None and not self._on_before_add(product):
