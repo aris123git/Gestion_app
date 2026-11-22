@@ -39,9 +39,16 @@ class RestaurantAccessoriesTest(unittest.TestCase):
         engine.dispose()
         init_database()
         seed_all()
+        # Le panier Maquis persiste sur disque (clé "user_id"), partagé entre tests
+        # tant que GESTION_DATA_DIR reste le même process (config.DATA_DIR est figé
+        # au premier import) : on repart d'un panier vide à chaque test.
+        from app.services import maquis_cart_store
+        maquis_cart_store.clear_cart(None)
 
     def tearDown(self):
         from app.database.connection import engine
+        from app.services import maquis_cart_store
+        maquis_cart_store.clear_cart(None)
         engine.dispose()
         os.environ.pop("NEXAGES_PRODUCT", None)
         shutil.rmtree(self._dir, ignore_errors=True)
