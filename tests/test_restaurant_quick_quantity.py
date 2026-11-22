@@ -64,26 +64,26 @@ class RestaurantQuickQuantityTest(unittest.TestCase):
         self.assertEqual(len(received), 1)  # pas de second ajout
 
     def test_pos_page_merges_quantity_into_existing_line(self):
-        from app.ui.pages.pos_page import PosPage
+        from app.ui.pages.pos_page import POSPage
         from app.ui.state import AppState
 
         product = self._product()
         state = AppState()
         state.can = lambda _p: True
-        page = PosPage(state)
+        page = POSPage(state)
         page._maquis_add_quantity(product, 2.0)
         page._maquis_add_quantity(product, 1.5)
         self.assertEqual(len(page.cart), 1)
         self.assertEqual(page.cart[0].quantity, 3.5)
 
     def test_pos_page_blocks_insufficient_stock(self):
-        from app.ui.pages.pos_page import PosPage
+        from app.ui.pages.pos_page import POSPage
         from app.ui.state import AppState
 
         product = self._product(quantity=1)
         state = AppState()
         state.can = lambda _p: True
-        page = PosPage(state)
+        page = POSPage(state)
         page._maquis_add_quantity(product, 5.0)
         self.assertEqual(len(page.cart), 0)
 
