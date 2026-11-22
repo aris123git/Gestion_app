@@ -75,39 +75,81 @@ class SettingsPage(QWidget):
             tabs.addTab(scroll, title)
             return scroll
 
-        add(self._build_shop_tab(), t('Commerce'))
-        # Onglet « Documents » : ticket, designs, facture/proforma et bons, chacun dans un bloc repliable.
-        docs = QWidget()
-        docs_layout = QVBoxLayout(docs)
-        docs_layout.setSpacing(12)
-
-        def doc_section(title: str, widget: QWidget, expanded: bool = False) -> CollapsibleSection:
-            sec = CollapsibleSection(title, expanded)
-            sec.body.addWidget(widget)
-            docs_layout.addWidget(sec)
-            return sec
-
-        doc_section(t('Ticket de caisse'), self._build_appearance_tab(), True)
-        self._tab_designs = self._build_designs_tab()
-        designs_sec = doc_section(t('Designs des tickets'), self._tab_designs)
-        designs_sec.toggle.toggled.connect(lambda opened: opened and self._load_designs_ui())
-        doc_section(t('Facture et proforma'), self._build_invoice_tab())
-        self._tab_bon = doc_section(t("Bon d'enlèvement"), self._build_bon_tab())
-        self._tab_bl = doc_section(t('Bon de livraison'), self._build_bl_tab())
-        docs_layout.addStretch()
-        add(docs, t('Documents'))
-        add(self._build_controls_tab(), t('Contrôles caisse'))
+        add(self._build_commerce_documents_tab(), t('Commerce & Documents'))
+        add(self._build_caisse_tab(), t('Caisse'))
         add(self._build_security_tab(), t('Sécurité'))
-        if product_profile.supports_profit_loyalty():
-            add(self._build_loyalty_tab(), t('Fidélité bénéfices'))
-        self._tab_backup = self._build_backup_tab()
-        add(self._tab_backup, t('Sauvegarde'))
-        self._tab_portal = self._build_portal_tab()
-        add(self._tab_portal, t('Portail web'))
+        add(self._build_systeme_tab(), t('Système'))
         self._tabs = tabs
         self._apply_enterprise_visibility()
-        tabs.currentChanged.connect(self._on_tab)
         layout.addWidget(tabs)
+
+    def _build_commerce_documents_tab(self) -> QWidget:
+        """Informations du commerce + tous les documents (ticket, designs,
+        facture/proforma, bons), chacun dans un bloc repliable uniforme."""
+        wrap = QWidget()
+        wrap_layout = QVBoxLayout(wrap)
+        wrap_layout.setSpacing(12)
+
+        def section(title: str, widget: QWidget, expanded: bool = False) -> CollapsibleSection:
+            sec = CollapsibleSection(title, expanded)
+            sec.body.addWidget(widget)
+            wrap_layout.addWidget(sec)
+            return sec
+
+        section(t('Informations commerce'), self._build_shop_tab(), True)
+        section(t('Ticket de caisse'), self._build_appearance_tab())
+        self._tab_designs = self._build_designs_tab()
+        designs_sec = section(t('Designs des tickets'), self._tab_designs)
+        designs_sec.toggle.toggled.connect(lambda opened: opened and self._load_designs_ui())
+        section(t('Facture et proforma'), self._build_invoice_tab())
+        self._tab_bon = section(t("Bon d'enlèvement"), self._build_bon_tab())
+        self._tab_bl = section(t('Bon de livraison'), self._build_bl_tab())
+        wrap_layout.addStretch()
+        return wrap
+
+    def _build_caisse_tab(self) -> QWidget:
+        """Contrôles caisse + fidélité bénéfices (si applicable)."""
+        wrap = QWidget()
+        wrap_layout = QVBoxLayout(wrap)
+        wrap_layout.setSpacing(12)
+
+        def section(title: str, widget: QWidget, expanded: bool = False) -> CollapsibleSection:
+            sec = CollapsibleSection(title, expanded)
+            sec.body.addWidget(widget)
+            wrap_layout.addWidget(sec)
+            return sec
+
+        section(t('Contrôles caisse'), self._build_controls_tab(), True)
+        if product_profile.supports_profit_loyalty():
+            section(t('Fidélité bénéfices'), self._build_loyalty_tab())
+        wrap_layout.addStretch()
+        return wrap
+
+    def _build_systeme_tab(self) -> QWidget:
+        """Sauvegarde + portail web, chacun dans un bloc repliable."""
+        wrap = QWidget()
+        wrap_layout = QVBoxLayout(wrap)
+        wrap_layout.setSpacing(12)
+
+        def section(title: str, widget: QWidget, expanded: bool = False) -> CollapsibleSection:
+            sec = CollapsibleSection(title, expanded)
+            sec.body.addWidget(widget)
+            wrap_layout.addWidget(sec)
+            return sec
+
+        self._tab_backup = self._build_backup_tab()
+        backup_sec = section(t('Sauvegarde'), self._tab_backup, True)
+        backup_sec.toggle.toggled.connect(lambda opened: opened and self._refresh_backup_ui())
+        self._refresh_backup_ui()
+        self._tab_portal = self._build_portal_tab()
+        portal_sec = section(t('Portail web'), self._tab_portal)
+        portal_sec.toggle.toggled.connect(lambda opened: opened and self._load_portal_ui())
+        wrap_layout.addStretch()
+        return wrap
+
+    def _refresh_backup_ui(self) -> None:
+        self._load_auto_options()
+        self._reload_backups()
 
     def _reset_product_secret_clicks(self) -> None:
         self._product_secret_clicks = 0
@@ -2081,17 +2123,6 @@ class SettingsPage(QWidget):
             from urllib.parse import quote
             target = f'{url}/login?enterprise_id={quote(eid)}'
         webbrowser.open(target)
-
-    def _on_tab(self, index: int) -> None:
-        tab = self._tabs.widget(index)
-        tab = tab.widget() if isinstance(tab, QScrollArea) else tab
-        if tab is self._tab_designs:
-            self._load_designs_ui()
-        elif tab is self._tab_backup:
-            self._load_auto_options()
-            self._reload_backups()
-        elif tab is self._tab_portal:
-            self._load_portal_ui()
 
     def refresh(self) -> None:
         shop = settings_service.get_shop_info()
