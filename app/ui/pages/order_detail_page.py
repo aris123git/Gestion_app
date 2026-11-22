@@ -52,6 +52,7 @@ class OrderDetailPage(QWidget):
         self.catalog = PosCatalogPanel(self, show_pos_title=False)
         self.catalog.product_chosen.connect(self._on_product)  # produits « montant libre »
         self.catalog.product_quantity_chosen.connect(self._on_product_quantity)
+        self.catalog.product_combo_chosen.connect(self._on_product_combo)
         self.catalog.finalize_requested.connect(self._print_kitchen)
         top.addWidget(self.catalog, 1)
         root.addLayout(top, 5)
@@ -271,6 +272,27 @@ class OrderDetailPage(QWidget):
                 product_name=product.name,
                 quantity=float(quantity),
                 unit_price=float(product.sale_price or 0),
+            )
+            self._reload_lines()
+            self.state.notify_data_changed()
+        except Exception as exc:
+            warn(self, str(exc))
+
+    def _on_product_combo(self, product, accessories: list, quantity: float) -> None:
+        """Plat de base + accessoires cochés (attiéké, alloco, frites...) -> une
+        seule ligne de commande au prix additionné."""
+        if not self.order_id:
+            return
+        extra = sum(float(item.get("price") or 0) for item in accessories)
+        unit_price = float(product.sale_price or 0) + extra
+        label = " + ".join([product.name] + [str(item.get("name") or "") for item in accessories])
+        try:
+            OrderService.add_item(
+                self.order_id,
+                product_id=product.id,
+                product_name=label,
+                quantity=float(quantity),
+                unit_price=unit_price,
             )
             self._reload_lines()
             self.state.notify_data_changed()

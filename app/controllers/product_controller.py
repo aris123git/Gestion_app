@@ -156,6 +156,8 @@ class ProductController:
                 image_path=str(data.get("image_path") or "").strip(),
                 is_active=bool(data.get("is_active", True)),
             )
+            if "accessories" in data:
+                product.set_accessories(data.get("accessories") or [])
             session.add(product)
             session.flush()
             ProductController._record_quantity_adjustment(
@@ -232,6 +234,8 @@ class ProductController:
                 product.sell_without_stock = bool(data.get("sell_without_stock"))
             if "image_path" in data:
                 product.image_path = str(data.get("image_path") or "").strip()
+            if "accessories" in data:
+                product.set_accessories(data.get("accessories") or [])
             product.is_active = bool(data.get("is_active", True))
             ProductController._record_quantity_adjustment(
                 session,

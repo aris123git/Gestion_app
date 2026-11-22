@@ -45,6 +45,7 @@ class POSPage(QWidget):
         self._catalog.product_chosen.connect(self._add_product)  # produits « montant libre »
         if self._maquis_mode:
             self._catalog.product_quantity_chosen.connect(self._maquis_add_quantity)
+            self._catalog.product_combo_chosen.connect(self._maquis_add_combo)
             self._catalog.finalize_requested.connect(self._save_maquis_order)
         self._waitress_combo: Optional[QComboBox] = None
         self._table_combo: Optional[QComboBox] = None
@@ -366,6 +367,28 @@ class POSPage(QWidget):
                 product_id=product.id,
                 name=product.name,
                 unit_price=sale_price,
+                quantity=quantity,
+                purchase_price=float(product.purchase_price),
+            )
+        )
+        self._render_cart()
+
+    def _maquis_add_combo(self, product, accessories: list, quantity: float) -> None:
+        """Plat de base + accessoires cochés (attiéké, alloco, frites...) -> une
+        seule ligne de ticket au prix additionné. Le stock n'est déduit que sur
+        le produit de base (les accessoires n'ont pas de stock propre)."""
+        available = self._available_stock(product.id)
+        if available + 0.0001 < quantity:
+            warn(self, t("Stock insuffisant"), t("Stock insuffisant"))
+            return
+        extra = sum(float(item.get("price") or 0) for item in accessories)
+        unit_price = float(product.sale_price) + extra
+        label = " + ".join([product.name] + [str(item.get("name") or "") for item in accessories])
+        self.cart.append(
+            CartLine(
+                product_id=product.id,
+                name=label,
+                unit_price=unit_price,
                 quantity=quantity,
                 purchase_price=float(product.purchase_price),
             )

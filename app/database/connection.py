@@ -78,7 +78,7 @@ def init_database() -> None:
 
 
 # Version du schéma : à incrémenter à chaque ajout de colonne dans ``_migrate_schema``.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 _PRE_MIGRATION_KEEP = 3
 
 
@@ -171,6 +171,7 @@ def _migrate_schema() -> None:
             "image_path": "VARCHAR(500) DEFAULT ''",
             "tax_rate": "NUMERIC(6, 3) DEFAULT 0",
             "sell_without_stock": "BOOLEAN DEFAULT 0",
+            "accessories_json": "TEXT DEFAULT ''",
         },
         "sale_items": {
             "tax_rate": "NUMERIC(6, 3) DEFAULT 0",

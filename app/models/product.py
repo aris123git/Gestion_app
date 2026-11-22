@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.connection import Base
@@ -55,6 +56,12 @@ class Product(Base, TimestampMixin):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Accessoires rapides (Maquis) : pour composer un plat de base en un clic
+    # (ex. Poisson braisé + attiéké 300 + alloco 200 + frites 500), sans passer
+    # par la vente au montant libre. Stocké en JSON : [{"name": ..., "price": ...}].
+    # Pas de stock propre sur les accessoires : seul le produit de base en a un.
+    accessories_json: Mapped[str] = mapped_column(Text, default="")
+
     category: Mapped[Optional["Category"]] = relationship(  # noqa: F821
         back_populates="products"
     )
@@ -63,6 +70,40 @@ class Product(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_products_name_barcode", "name", "barcode"),
     )
+
+    @property
+    def accessories(self) -> list[dict]:
+        """Accessoires rapides configurés sur ce produit : [{"name": str, "price": float}]."""
+        if not self.accessories_json:
+            return []
+        try:
+            data = json.loads(self.accessories_json)
+        except (TypeError, ValueError):
+            return []
+        if not isinstance(data, list):
+            return []
+        out = []
+        for item in data:
+            if isinstance(item, dict) and str(item.get("name") or "").strip():
+                try:
+                    price = float(item.get("price") or 0)
+                except (TypeError, ValueError):
+                    price = 0.0
+                out.append({"name": str(item["name"]).strip(), "price": price})
+        return out
+
+    def set_accessories(self, items: list[dict]) -> None:
+        clean = []
+        for item in items or []:
+            name = str(item.get("name", "")).strip()
+            if not name:
+                continue
+            try:
+                price = float(item.get("price") or 0)
+            except (TypeError, ValueError):
+                price = 0.0
+            clean.append({"name": name, "price": price})
+        self.accessories_json = json.dumps(clean, ensure_ascii=False)
 
     @property
     def is_low_stock(self) -> bool:

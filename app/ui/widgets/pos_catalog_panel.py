@@ -39,6 +39,8 @@ class PosCatalogPanel(QFrame):
     # Maquis (restaurant) : saisie clavier de la quantité au lieu du pavé tactile.
     product_quantity_chosen = Signal(object, float)
     finalize_requested = Signal()
+    # Plat de base + accessoires cochés (ex. attiéké/alloco/frites) -> une seule ligne.
+    product_combo_chosen = Signal(object, list, float)
 
     def __init__(self, parent: QWidget | None = None, *, show_pos_title: bool = True):
         super().__init__(parent)
@@ -374,8 +376,13 @@ class PosCatalogPanel(QFrame):
             self._select_product(product)
 
     def _select_product(self, product) -> None:
-        """Sélection d'un produit : ajout direct, ou mise en attente de la quantité (Maquis)."""
+        """Sélection d'un produit : ajout direct, mise en attente de la quantité
+        (Maquis), ou composition plat + accessoires si le produit en a."""
         if self._maquis and not getattr(product, 'free_amount_sale', False):
+            accessories = getattr(product, 'accessories', None) or []
+            if accessories:
+                self._open_accessory_picker(product, accessories)
+                return
             self._pending_product = product
             self.quantity_hint.setText(product.name)
             self.quantity_input.setText('1')
@@ -383,6 +390,18 @@ class PosCatalogPanel(QFrame):
             self.quantity_input.setFocus()
         else:
             self._emit_product(product)
+
+    def _open_accessory_picker(self, product, accessories: list[dict]) -> None:
+        """Plat de base avec accessoires rapides configurés (ex. attiéké, alloco,
+        frites) : on coche ce qu'on veut, le plat seul reste possible aussi."""
+        from app.ui.dialogs.accessory_picker_dialog import AccessoryPickerDialog
+
+        currency = settings_service.get_currency()
+        dialog = AccessoryPickerDialog(product.name, float(product.sale_price), accessories, currency, parent=self)
+        if self._on_before_add is not None and not self._on_before_add(product):
+            return
+        if dialog.exec():
+            self.product_combo_chosen.emit(product, dialog.selected, dialog.quantity)
 
     def _confirm_quantity(self) -> None:
         """Entrée dans le champ Quantité : valide l'ajout, ou finalise si rien n'est en attente."""

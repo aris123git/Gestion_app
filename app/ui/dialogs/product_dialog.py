@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
 from app import config
 from app.controllers.category_controller import CategoryController
 from app.controllers.unit_controller import UnitController
@@ -108,6 +108,25 @@ class ProductDialog(QDialog):
         form.addRow(t('Mode de vente'), self.free_amount_sale)
         form.addRow('', self.sell_without_stock)
         form.addRow('', self.free_hint)
+        if self._maquis:
+            self.accessories_table = QTableWidget(0, 2)
+            self.accessories_table.setHorizontalHeaderLabels([t('Nom'), t('Prix')])
+            self.accessories_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+            self.accessories_table.setMaximumHeight(140)
+            acc_hint = QLabel(t("Pour composer un plat en un clic en caisse (ex. attiéké +300, alloco +200, frites +500). Le plat seul reste possible — laissez vide s'il n'y a pas d'accessoire."))
+            acc_hint.setWordWrap(True)
+            acc_hint.setStyleSheet('color: #64748b; font-size: 12px;')
+            acc_btns = QHBoxLayout()
+            add_acc = QPushButton('+ ' + t('Ajouter'))
+            add_acc.clicked.connect(self._add_accessory_row)
+            remove_acc = QPushButton(t('Supprimer la ligne'))
+            remove_acc.clicked.connect(self._remove_accessory_row)
+            acc_btns.addWidget(add_acc)
+            acc_btns.addWidget(remove_acc)
+            acc_btns.addStretch(1)
+            form.addRow(t('Accessoires rapides'), self.accessories_table)
+            form.addRow('', acc_hint)
+            form.addRow('', acc_btns)
         form.addRow(t('Statut'), self.is_active)
         self._image_preview = QLabel(t('product.no_image'))
         self._image_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -179,6 +198,32 @@ class ProductDialog(QDialog):
         self.free_hint.setVisible(bool(enabled))
         # Sans stock, rien à convertir : le contenu estimatif reste facultatif (coût estimé seulement s'il est renseigné).
         self.pack_content.setEnabled(bool(enabled) or self.pack_content.value() > 0)
+
+    def _add_accessory_row(self) -> None:
+        row = self.accessories_table.rowCount()
+        self.accessories_table.insertRow(row)
+        self.accessories_table.setItem(row, 0, QTableWidgetItem(''))
+        self.accessories_table.setItem(row, 1, QTableWidgetItem('0'))
+
+    def _remove_accessory_row(self) -> None:
+        row = self.accessories_table.currentRow()
+        if row >= 0:
+            self.accessories_table.removeRow(row)
+
+    def _collect_accessories(self) -> list[dict]:
+        items = []
+        for row in range(self.accessories_table.rowCount()):
+            name_item = self.accessories_table.item(row, 0)
+            price_item = self.accessories_table.item(row, 1)
+            name = name_item.text().strip() if name_item else ''
+            if not name:
+                continue
+            try:
+                price = float((price_item.text() if price_item else '0').replace(',', '.').strip() or 0)
+            except ValueError:
+                price = 0.0
+            items.append({'name': name, 'price': price})
+        return items
 
     def _apply_catalog_feature_ui(self) -> None:
         """Met en avant upload / catégorie si les options caisse sont actives."""
@@ -283,6 +328,12 @@ class ProductDialog(QDialog):
         self.is_active.setChecked(bool(product.is_active))
         self._image_path = str(getattr(product, 'image_path', '') or '')
         self._show_image_preview(self._image_path)
+        if self._maquis:
+            for item in getattr(product, 'accessories', None) or []:
+                row = self.accessories_table.rowCount()
+                self.accessories_table.insertRow(row)
+                self.accessories_table.setItem(row, 0, QTableWidgetItem(item['name']))
+                self.accessories_table.setItem(row, 1, QTableWidgetItem(f"{item['price']:g}"))
 
     def _save(self) -> None:
         if not self.name.text().strip():
@@ -295,5 +346,5 @@ class ProductDialog(QDialog):
             if self.pack_content.value() <= 0 and not self.sell_without_stock.isChecked():
                 warn(self, t('Indiquez le contenu estimatif (ex. 10 kg par carton) pour convertir le stock et estimer le coût.'))
                 return
-        self.data = {'name': self.name.text().strip(), 'barcode': self.barcode.text().strip(), 'reference': self.reference.text().strip(), 'category_id': self.category.currentData(), 'supplier_id': self.supplier.currentData(), 'unit_id': self.unit.currentData(), 'purchase_price': self.purchase_price.value(), 'sale_price': self.sale_price.value(), 'min_price': self.min_price.value(), 'tax_rate': self.tax_rate.value(), 'pack_content': self.pack_content.value(), 'quantity': self.quantity.value(), 'min_stock': self.min_stock.value(), 'free_amount_sale': self.free_amount_sale.isChecked(), 'sell_without_stock': self.sell_without_stock.isChecked(), 'image_path': self._image_path, 'is_active': self.is_active.isChecked()}
+        self.data = {'name': self.name.text().strip(), 'barcode': self.barcode.text().strip(), 'reference': self.reference.text().strip(), 'category_id': self.category.currentData(), 'supplier_id': self.supplier.currentData(), 'unit_id': self.unit.currentData(), 'purchase_price': self.purchase_price.value(), 'sale_price': self.sale_price.value(), 'min_price': self.min_price.value(), 'tax_rate': self.tax_rate.value(), 'pack_content': self.pack_content.value(), 'quantity': self.quantity.value(), 'min_stock': self.min_stock.value(), 'free_amount_sale': self.free_amount_sale.isChecked(), 'sell_without_stock': self.sell_without_stock.isChecked(), 'image_path': self._image_path, 'is_active': self.is_active.isChecked(), 'accessories': self._collect_accessories() if self._maquis else []}
         self.accept()
