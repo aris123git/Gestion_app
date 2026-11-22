@@ -77,6 +77,7 @@ class RestaurantQuickQuantityTest(unittest.TestCase):
         self.assertEqual(page.cart[0].quantity, 3.5)
 
     def test_pos_page_blocks_insufficient_stock(self):
+        from unittest.mock import patch
         from app.ui.pages.pos_page import POSPage
         from app.ui.state import AppState
 
@@ -84,7 +85,10 @@ class RestaurantQuickQuantityTest(unittest.TestCase):
         state = AppState()
         state.can = lambda _p: True
         page = POSPage(state)
-        page._maquis_add_quantity(product, 5.0)
+        # warn() est modale (QMessageBox) : neutralisée, sinon bloque en CI.
+        with patch("app.ui.pages.pos_page.warn") as warn_box:
+            page._maquis_add_quantity(product, 5.0)
+            warn_box.assert_called_once()
         self.assertEqual(len(page.cart), 0)
 
     def test_order_detail_quantity_and_finalize_print(self):
@@ -107,9 +111,13 @@ class RestaurantQuickQuantityTest(unittest.TestCase):
         self.assertEqual(len(lines.items), 1)
         self.assertEqual(lines.items[0].quantity, 4.0)
 
-        with patch("app.ui.pages.order_detail_page.print_kitchen_for_order", return_value=(True, "ok")) as printer:
+        # info()/QMessageBox.information() est modale : on la neutralise, sinon elle
+        # bloque indéfiniment en CI (pas d'utilisateur pour cliquer OK).
+        with patch("app.ui.pages.order_detail_page.print_kitchen_for_order", return_value=(True, "ok")) as printer, \
+                patch("app.ui.pages.order_detail_page.info") as info_box:
             page.catalog.finalize_requested.emit()
             printer.assert_called_once()
+            info_box.assert_called_once()
 
 
 if __name__ == "__main__":
