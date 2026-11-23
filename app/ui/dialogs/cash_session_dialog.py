@@ -2,12 +2,30 @@
 from __future__ import annotations
 from app.i18n import t
 from typing import Optional
-from PySide6.QtWidgets import QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
 from app.services import settings_service
 from app.services.cash_session_service import CashSessionService
 from app.ui.widgets.helpers import info, warn
 from app.utils.helpers import format_money
 from app.ui.widgets.money_spin import MoneySpinBox
+
+
+def _header_banner(caption: str, detail: str = '') -> QFrame:
+    banner = QFrame()
+    banner.setObjectName('DialogHeaderBanner')
+    banner_layout = QVBoxLayout(banner)
+    banner_layout.setContentsMargins(20, 14, 20, 16)
+    banner_layout.setSpacing(2)
+    title = QLabel(caption)
+    title.setStyleSheet('font-size: 18px; font-weight: 800;')
+    banner_layout.addWidget(title)
+    if detail:
+        sub = QLabel(detail)
+        sub.setStyleSheet('font-size: 12px;')
+        sub.setWordWrap(True)
+        banner_layout.addWidget(sub)
+    return banner
+
 
 class OpenCashSessionDialog(QDialog):
 
@@ -15,19 +33,27 @@ class OpenCashSessionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(t('Ouverture de caisse'))
         self.setModal(True)
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(420)
         self.opening_float: Optional[float] = None
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(_header_banner(t('Ouverture de caisse'), t('Indiquez le fond de caisse (espèces déjà dans le tiroir) avant de commencer.')))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        layout.setSpacing(12)
+        outer.addLayout(layout, 1)
         currency = settings_service.get_currency()
-        layout.addWidget(QLabel(t('Indiquez le <b>fond de caisse</b> (espèces déjà dans le tiroir) avant de commencer.')))
-        form = QFormLayout()
+        card = QFrame()
+        card.setObjectName('Card')
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         self.amount = MoneySpinBox()
         self.amount.setRange(0, 1000000000)
         self.amount.setDecimals(3)
         self.amount.setSuffix(f' {currency}')
         form.addRow(t('Fond de caisse'), self.amount)
-        layout.addLayout(form)
+        layout.addWidget(card)
         buttons = QHBoxLayout()
         ok = QPushButton(t('Ouvrir la caisse'))
         ok.setObjectName('Primary')
@@ -46,15 +72,27 @@ class CloseCashSessionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(t('Fermeture de caisse'))
         self.setModal(True)
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(460)
         self.session_id = session_id
         self.expected = expected
         self.result_data: Optional[dict] = None
         currency = settings_service.get_currency()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.addWidget(QLabel(f'Montant attendu (fond + encaissements espèces/Mobile Money − dépenses) : <b>{format_money(expected, currency)}</b><br/>Comptez tout (tiroir + Mobile Money) et saisissez le total trouvé.'))
-        form = QFormLayout()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(_header_banner(
+            t('Fermeture de caisse'),
+            f"{t('Montant attendu')} (fond + encaissements espèces/Mobile Money − dépenses) : {format_money(expected, currency)}",
+        ))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        layout.setSpacing(12)
+        outer.addLayout(layout, 1)
+        layout.addWidget(QLabel(t('Comptez tout (tiroir + Mobile Money) et saisissez le total trouvé.')))
+        card = QFrame()
+        card.setObjectName('Card')
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         self.counted = MoneySpinBox()
         self.counted.setRange(0, 1000000000)
         self.counted.setDecimals(3)
@@ -64,9 +102,14 @@ class CloseCashSessionDialog(QDialog):
         self.note.setPlaceholderText(t('Commentaire (obligatoire si écart important)'))
         form.addRow(t('Montant compté'), self.counted)
         form.addRow(t('Note'), self.note)
-        layout.addLayout(form)
+        layout.addWidget(card)
+        variance_banner = QFrame()
+        variance_banner.setObjectName('DialogSummaryBanner')
+        variance_layout = QVBoxLayout(variance_banner)
+        variance_layout.setContentsMargins(14, 10, 14, 10)
         self.variance_label = QLabel('')
-        layout.addWidget(self.variance_label)
+        variance_layout.addWidget(self.variance_label)
+        layout.addWidget(variance_banner)
         self.counted.valueChanged.connect(self._update_variance)
         self._update_variance()
         buttons = QHBoxLayout()
@@ -83,7 +126,7 @@ class CloseCashSessionDialog(QDialog):
     def _update_variance(self) -> None:
         currency = settings_service.get_currency()
         variance = float(self.counted.value()) - self.expected
-        color = '#16a34a' if abs(variance) < 0.01 else '#dc2626'
+        color = '#4ade80' if abs(variance) < 0.01 else '#f87171'
         self.variance_label.setText(f"<span style='color:{color};'>Écart : {format_money(variance, currency)}</span>")
 
     def _save(self) -> None:
