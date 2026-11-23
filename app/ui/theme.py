@@ -283,6 +283,22 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
     QPushButton#Success {{ background-color: {SUCCESS}; color: #ffffff; border: none; }}
     QPushButton#Danger {{ background-color: {DANGER}; color: #ffffff; border: none; }}
     QPushButton:disabled {{ color: {c['muted']}; }}
+    /* Puces (choix de mode de paiement, etc.) */
+    QPushButton#Chip {{
+        background-color: {c['surface_alt']};
+        border: 1px solid {c['border']};
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-weight: 700;
+    }}
+    QPushButton#ChipActive {{
+        background-color: {primary};
+        color: #ffffff;
+        border: 1px solid {primary};
+        border-radius: 999px;
+        padding: 8px 14px;
+        font-weight: 700;
+    }}
 
     /* Tables */
     QTableWidget, QTableView {{

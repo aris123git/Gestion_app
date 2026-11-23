@@ -15,7 +15,7 @@ from app.printers.half_a4_invoice import PAPER_HALF_A4, build_invoice_pdf, is_ha
 from app.printers.printer_targets import describe_destinations, get_default_paper, get_default_printer_kind, printer_for_paper
 from app.services import settings_service
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import info, warn
+from app.ui.widgets.helpers import dialog_header_banner, info, warn
 
 class TicketDialog(QDialog):
     """Après encaissement : imprime le défaut, autre destination en option."""
@@ -28,9 +28,9 @@ class TicketDialog(QDialog):
         self.setWindowTitle(f'Impression — {sale.ticket_number}')
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=360, min_height=320, preferred_width=520, preferred_height=640)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         thermal_name, invoice_name = describe_destinations()
         default_paper = get_default_paper()
         default_kind = get_default_printer_kind()
@@ -39,8 +39,17 @@ class TicketDialog(QDialog):
         else:
             width = '58' if default_paper == '58mm' else '80'
             default_label = f'Ticket thermique {width} mm → {thermal_name}'
-        intro = QLabel(f"<b>Deux destinations</b> (Paramètres) :<br/>• Thermique : {thermal_name}<br/>• Encre / laser : {invoice_name}<br/><br/><b>Impression par défaut</b> : {default_label}<br/><br/>Cliquez sur <b>Imprimer</b> : le ticket part <b>uniquement</b> vers l'imprimante installée et sélectionnée (pas de redirection PDF / autre file). Changez la destination ci-dessous seulement pour l'autre type.")
+        outer.addWidget(dialog_header_banner(
+            f'{t("Ticket")} {sale.ticket_number}',
+            f'{t("Impression par défaut")} : {default_label}',
+        ))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+        outer.addLayout(layout, 1)
+        intro = QLabel(f"<b>Deux destinations</b> (Paramètres) :<br/>• Thermique : {thermal_name}<br/>• Encre / laser : {invoice_name}<br/><br/>Cliquez sur <b>Imprimer</b> : le ticket part <b>uniquement</b> vers l'imprimante installée et sélectionnée (pas de redirection PDF / autre file). Changez la destination ci-dessous seulement pour l'autre type.")
         intro.setWordWrap(True)
+        intro.setStyleSheet('color: #64748b; font-size: 12px;')
         layout.addWidget(intro)
         dest_row = QHBoxLayout()
         dest_row.addWidget(QLabel(t('Destination :')))

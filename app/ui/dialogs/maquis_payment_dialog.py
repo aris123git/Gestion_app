@@ -45,6 +45,7 @@ from app.services.maquis_payment import (
 )
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
+from app.ui.widgets.helpers import dialog_header_banner, dialog_summary_banner
 from app.ui.widgets.numeric_keypad import NumericKeypad
 from app.utils.helpers import format_money
 
@@ -88,31 +89,32 @@ class MaquisPaymentDialog(QDialog):
         fit_dialog_to_screen(self, min_width=420, min_height=520, preferred_width=520, preferred_height=720)
         self.currency = settings_service.get_currency()
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(dialog_header_banner(format_money(self.total, self.currency), t("TOTAL À PAYER")))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
         layout = QVBoxLayout(body)
-        self._total_label = QLabel(
-            f"{t('Total')} : {format_money(self.total, self.currency)}"
-        )
-        self._total_label.setObjectName("PageTitle")
-        self._total_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._total_label)
-        self._change_label = QLabel("")
-        self._change_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self._change_label)
+        layout.setContentsMargins(12, 12, 12, 12)
+        summary_label = QLabel("")
+        summary_label.setWordWrap(True)
+        self._change_label = summary_label
+        layout.addWidget(dialog_summary_banner(summary_label))
         self._error = QLabel("")
         self._error.setStyleSheet("color: #dc2626;")
         self._error.setWordWrap(True)
         layout.addWidget(self._error)
         modes = QGridLayout()
+        modes.setSpacing(8)
         self._mode_buttons: dict[str, QPushButton] = {}
         all_modes = list(PAYMENT_CHOICES)
         if allow_credit:
             all_modes.append(MODE_DEBT)
         for i, mode in enumerate(all_modes):
             b = QPushButton(mode)
+            b.setObjectName("Chip")
             b.clicked.connect(lambda _=False, m=mode: self._select_mode(m))
             self._mode_buttons[mode] = b
             modes.addWidget(b, i // 3, i % 3)
@@ -129,6 +131,7 @@ class MaquisPaymentDialog(QDialog):
         self._mixed_chips: dict[str, QPushButton] = {}
         for field, label in self._mixed_labels.items():
             chip = QPushButton(label)
+            chip.setObjectName("Chip")
             chip.clicked.connect(lambda _=False, f=field: self._select_field(f))
             self._mixed_chips[field] = chip
             mp.addWidget(chip)
@@ -195,9 +198,9 @@ class MaquisPaymentDialog(QDialog):
         else:
             self._active_field = FIELD_TENDERED
         for m, btn in self._mode_buttons.items():
-            btn.setStyleSheet(
-                "font-weight: 700;" if m == mode else ""
-            )
+            btn.setObjectName("ChipActive" if m == mode else "Chip")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
         self._mixed_panel.setVisible(mode == MODE_MIXED)
         self._client_row.setVisible(mode in (MODE_DEBT, MODE_MIXED) or (self._debt_rest_cb and self._debt_rest_cb.isChecked()))
         partial = self._partial_cb and self._partial_cb.isChecked()
@@ -288,7 +291,9 @@ class MaquisPaymentDialog(QDialog):
             base = self._mixed_labels.get(field, "")
             suffix = format_money(amt, self.currency) if amt > 0 or val not in ("", "—") else val or "0"
             chip.setText(f"{base} : {suffix}")
-            chip.setStyleSheet("font-weight: 700;" if field == self._active_field else "")
+            chip.setObjectName("ChipActive" if field == self._active_field else "Chip")
+            chip.style().unpolish(chip)
+            chip.style().polish(chip)
         partial = self._partial_cb and self._partial_cb.isChecked()
         try:
             if partial:
@@ -298,8 +303,8 @@ class MaquisPaymentDialog(QDialog):
                     br = simple_pay(self.total, MODE_CASH, pay, pay)
                     change = br.change_amount
                 self._change_label.setText(
-                    f"{t('Partiel')} : {format_money(pay, self.currency)}"
-                    + (f" — {t('Monnaie')} : {format_money(change, self.currency)}" if change else "")
+                    f"<span style='color:#e2e8f0;'>{t('Partiel')} : {format_money(pay, self.currency)}</span>"
+                    + (f"<br><span style='color:#93c5fd; font-weight:700;'>{t('Monnaie')} : {format_money(change, self.currency)}</span>" if change else "")
                 )
                 self._keypad.set_confirm_enabled(pay > 0)
             else:
@@ -307,14 +312,14 @@ class MaquisPaymentDialog(QDialog):
                 change = preview_change(self.total, inp)
                 if self._mode == MODE_CASH:
                     self._change_label.setText(
-                        f"{t('Monnaie')} : {format_money(change, self.currency)}"
+                        f"<span style='color:#93c5fd; font-weight:700;'>{t('Monnaie')} : {format_money(change, self.currency)}</span>"
                     )
                 elif self._mode == MODE_MIXED and change > 0:
                     self._change_label.setText(
-                        f"{t('Monnaie espèces')} : {format_money(change, self.currency)}"
+                        f"<span style='color:#93c5fd; font-weight:700;'>{t('Monnaie espèces')} : {format_money(change, self.currency)}</span>"
                     )
                 else:
-                    self._change_label.setText("")
+                    self._change_label.setText(f"<span style='color:#e2e8f0;'>{t('Encaissement')}</span>")
                 validate(self.total, inp)
                 self._keypad.set_confirm_enabled(True)
                 self._error.setText("")
