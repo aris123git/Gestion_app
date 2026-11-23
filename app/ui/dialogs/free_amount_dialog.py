@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -34,23 +35,35 @@ class FreeAmountDialog(QDialog):
         self.sale_price = float(sale_price or 0)
         presets = cash_controls.get_free_amount_presets()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
+        header_banner = QFrame()
+        header_banner.setObjectName("DialogHeaderBanner")
+        header_layout = QVBoxLayout(header_banner)
+        header_layout.setContentsMargins(20, 14, 20, 16)
+        header_layout.setSpacing(2)
         title = QLabel(product_name)
-        title.setObjectName("PageTitle")
+        title.setStyleSheet("font-size: 18px; font-weight: 800;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-
+        header_layout.addWidget(title)
         if self.sale_price > 0:
-            hint = QLabel(
+            ref = QLabel(
                 f"{t('Prix de référence')} : "
-                f"{format_money(self.sale_price, self.currency)} / {t('unité')}\n"
-                f"{t('Saisissez le montant demandé par le client.')}"
+                f"{format_money(self.sale_price, self.currency)} / {t('unité')}"
             )
-        else:
-            hint = QLabel(t("Saisissez le montant demandé par le client."))
+            ref.setStyleSheet("font-size: 12px;")
+            ref.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            header_layout.addWidget(ref)
+        outer.addWidget(header_banner)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        layout.setSpacing(12)
+        outer.addLayout(layout, 1)
+
+        hint = QLabel(t("Saisissez le montant demandé par le client."))
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("color: #64748b;")
         hint.setWordWrap(True)
@@ -62,6 +75,7 @@ class FreeAmountDialog(QDialog):
             for index, value in enumerate(presets):
                 button = QPushButton(format_money(value, self.currency))
                 button.setMinimumHeight(44)
+                button.setObjectName("Primary")
                 button.clicked.connect(lambda _=False, v=value: self._choose(v))
                 grid.addWidget(button, index // 3, index % 3)
         else:
@@ -70,6 +84,11 @@ class FreeAmountDialog(QDialog):
             grid.addWidget(empty, 0, 0)
         layout.addLayout(grid)
 
+        custom_card = QFrame()
+        custom_card.setObjectName("SmallCard")
+        custom_layout = QVBoxLayout(custom_card)
+        custom_layout.setContentsMargins(12, 10, 12, 10)
+        custom_layout.setSpacing(6)
         other_row = QHBoxLayout()
         other_row.addWidget(QLabel(t("Autre montant :")))
         self.custom = MoneySpinBox()
@@ -78,12 +97,13 @@ class FreeAmountDialog(QDialog):
         self.custom.setSingleStep(50)
         self.custom.setSuffix(f" {self.currency}")
         other_row.addWidget(self.custom, 1)
-        layout.addLayout(other_row)
+        custom_layout.addLayout(other_row)
 
         self.estimate = QLabel("")
         self.estimate.setStyleSheet("color: #64748b; font-size: 12px;")
         self.estimate.setWordWrap(True)
-        layout.addWidget(self.estimate)
+        custom_layout.addWidget(self.estimate)
+        layout.addWidget(custom_card)
 
         buttons = QHBoxLayout()
         cancel = QPushButton(t("Annuler"))
