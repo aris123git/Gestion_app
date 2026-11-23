@@ -202,8 +202,8 @@ class MaquisPaymentDialog(QDialog):
             btn.style().unpolish(btn)
             btn.style().polish(btn)
         self._mixed_panel.setVisible(mode == MODE_MIXED)
-        self._client_row.setVisible(mode in (MODE_DEBT, MODE_MIXED) or (self._debt_rest_cb and self._debt_rest_cb.isChecked()))
-        partial = self._partial_cb and self._partial_cb.isChecked()
+        self._client_row.setVisible(bool(mode in (MODE_DEBT, MODE_MIXED) or (self._debt_rest_cb and self._debt_rest_cb.isChecked())))
+        partial = bool(self._partial_cb and self._partial_cb.isChecked())
         needs_keypad = mode in (MODE_CASH, MODE_MIXED) or partial
         self._keypad.setVisible(needs_keypad)
         self._confirm_simple.setVisible(not needs_keypad)
@@ -329,7 +329,7 @@ class MaquisPaymentDialog(QDialog):
         show_client = self._mode == MODE_DEBT or (
             self._mode == MODE_MIXED and self._parse(self._debt) > 0
         ) or (partial and self._debt_rest_cb and self._debt_rest_cb.isChecked())
-        self._client_row.setVisible(show_client)
+        self._client_row.setVisible(bool(show_client))
 
     def _confirm(self) -> None:
         partial = self._partial_cb and self._partial_cb.isChecked()
