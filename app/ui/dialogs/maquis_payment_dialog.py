@@ -70,7 +70,7 @@ class MaquisPaymentDialog(QDialog):
         allow_credit: bool = True,
     ):
         super().__init__(parent)
-        self.total = _round(total)
+        self.total = self._round(total)
         self.allow_partial = allow_partial
         self.allow_credit = allow_credit
         self.result_data: Optional[MaquisPaymentResult] = None
