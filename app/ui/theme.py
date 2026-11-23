@@ -181,6 +181,34 @@ def build_stylesheet(dark: bool = False, *, maquis: bool = False) -> str:
         border: 1px solid {c['border']};
         border-radius: 14px;
     }}
+    #SmallCard, QFrame#SmallCard {{
+        background-color: {c['surface_alt']};
+        border: 1px solid {c['border']};
+        border-radius: 10px;
+    }}
+    #SmallCardActive, QFrame#SmallCardActive {{
+        background-color: {c['surface']};
+        border: 2px solid {primary};
+        border-radius: 10px;
+    }}
+    #AmberCard, QFrame#AmberCard {{
+        background-color: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 10px;
+    }}
+    /* Bandeau d'en-tête coloré (ex. total à payer dans un dialogue) */
+    #DialogHeaderBanner {{
+        background-color: {primary};
+        border-top-left-radius: 12px;
+        border-top-right-radius: 12px;
+    }}
+    #DialogHeaderBanner QLabel {{ color: #ffffff; background: transparent; }}
+    /* Bandeau de résumé sombre (ex. encaissé / monnaie / dette) */
+    #DialogSummaryBanner {{
+        background-color: #0f172a;
+        border-radius: 12px;
+    }}
+    #DialogSummaryBanner QLabel {{ color: #e2e8f0; background: transparent; }}
     #StatCard {{ border-radius: 14px; }}
     #StatValue {{ font-size: 26px; font-weight: 700; }}
     #StatTitle {{ font-size: 13px; }}
