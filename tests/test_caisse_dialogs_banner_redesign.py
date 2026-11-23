@@ -1,6 +1,8 @@
 """Caisse : fenêtres « commande enregistrée » et session de caisse — nouvel
 habillage visuel (bandeaux), logique de validation/écart inchangée."""
 import os
+import shutil
+import tempfile
 import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -22,10 +24,23 @@ class SavedOrderPromptDialogTest(unittest.TestCase):
 
 
 class CashSessionDialogsTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
+    # CloseCashSessionDialog/OpenCashSessionDialog lisent settings_service.get_currency()
+    # (accès DB) : il faut une base isolée et initialisée, comme les autres tests.
+    def setUp(self):
+        self._dir = tempfile.mkdtemp(prefix="gestion_cash_session_dialog_")
+        os.environ["GESTION_DATA_DIR"] = self._dir
         from PySide6.QtWidgets import QApplication
-        cls.app = QApplication.instance() or QApplication([])
+        self.app = QApplication.instance() or QApplication([])
+        from app.database.connection import engine, init_database
+        from app.database.seed import seed_all
+        engine.dispose()
+        init_database()
+        seed_all()
+
+    def tearDown(self):
+        from app.database.connection import engine
+        engine.dispose()
+        shutil.rmtree(self._dir, ignore_errors=True)
 
     def test_open_session_reads_amount(self):
         from app.ui.dialogs.cash_session_dialog import OpenCashSessionDialog

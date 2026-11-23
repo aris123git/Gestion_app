@@ -46,6 +46,38 @@ def make_card(child: QWidget | None = None) -> QFrame:
     return card
 
 
+def dialog_header_banner(caption: str, detail: str = "", *, background: str | None = None) -> QFrame:
+    """Bandeau d'en-tête coloré utilisé en haut des fenêtres pop-up (titre + sous-titre),
+    dans le même esprit que le Tableau de bord et les Paramètres."""
+    banner = QFrame()
+    banner.setObjectName("DialogHeaderBanner")
+    if background:
+        banner.setStyleSheet(f"background-color: {background};")
+    layout = QVBoxLayout(banner)
+    layout.setContentsMargins(20, 14, 20, 16)
+    layout.setSpacing(2)
+    title = QLabel(caption)
+    title.setStyleSheet("font-size: 18px; font-weight: 800;")
+    layout.addWidget(title)
+    if detail:
+        sub = QLabel(detail)
+        sub.setStyleSheet("font-size: 12px;")
+        sub.setWordWrap(True)
+        layout.addWidget(sub)
+    return banner
+
+
+def dialog_summary_banner(label: QLabel) -> QFrame:
+    """Bandeau sombre de résumé (ex. encaissé / monnaie / écart) placé en bas d'un dialogue."""
+    banner = QFrame()
+    banner.setObjectName("DialogSummaryBanner")
+    layout = QVBoxLayout(banner)
+    layout.setContentsMargins(14, 12, 14, 12)
+    label.setWordWrap(True)
+    layout.addWidget(label)
+    return banner
+
+
 def page_title(text: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName("PageTitle")
