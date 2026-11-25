@@ -6,13 +6,13 @@ from pathlib import Path
 from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
 from app.controllers.category_controller import CategoryController
 from app.controllers.unit_controller import UnitController
 from app.i18n import t
 from app.services import catalog_features, product_profile
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.ui.widgets.money_spin import MoneySpinBox
 
 class ProductDialog(QDialog):
@@ -27,9 +27,20 @@ class ProductDialog(QDialog):
         self.setMinimumWidth(480 if self._maquis else 520)
         self.data: Optional[dict] = None
         self._image_path = ''
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        form = QFormLayout()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t('pos.product')))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(20, 16, 20, 16)
+        card = QFrame()
+        card.setObjectName('Card')
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         form.setSpacing(10)
         self.name = QLineEdit()
         self.barcode = QLineEdit()
@@ -158,8 +169,11 @@ class ProductDialog(QDialog):
             # Masquer aussi les labels de ligne FormLayout
             self.barcode.hide()
             self.reference.hide()
-        layout.addLayout(form)
+        layout.addWidget(card)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(20, 10, 20, 16)
         cancel = QPushButton(t('common.cancel'))
         cancel.clicked.connect(self.reject)
         save = QPushButton(t('common.save'))
@@ -168,7 +182,7 @@ class ProductDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addStretch()
         buttons.addWidget(save)
-        layout.addLayout(buttons)
+        outer.addLayout(buttons)
         if product:
             self._fill(product)
         self._toggle_free_mode(self.free_amount_sale.isChecked())

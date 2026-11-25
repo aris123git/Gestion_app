@@ -7,6 +7,7 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLineEdit,
     QPushButton,
@@ -15,22 +16,29 @@ from PySide6.QtWidgets import (
 )
 
 from app.i18n import t
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 
 
 class CategoryDialog(QDialog):
     def __init__(self, category=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(
-            t("categories.edit") if category else t("categories.new")
-        )
+        title = t("categories.edit") if category else t("categories.new")
+        self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(420)
         self.data: Optional[dict] = None
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        form = QFormLayout()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(title))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        outer.addLayout(layout, 1)
+        card = QFrame()
+        card.setObjectName("Card")
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         self.name = QLineEdit()
         self.name.setPlaceholderText(t("categories.name"))
         self.description = QTextEdit()
@@ -38,7 +46,7 @@ class CategoryDialog(QDialog):
         self.description.setMaximumHeight(100)
         form.addRow(t("categories.name") + " *", self.name)
         form.addRow(t("categories.description"), self.description)
-        layout.addLayout(form)
+        layout.addWidget(card)
 
         if category:
             self.name.setText(category.name or "")
