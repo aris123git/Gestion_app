@@ -24,6 +24,7 @@ from app.printers import chantier_docs as docs
 from app.services import audit_service, chantier_service as cs, permissions as perms, settings_service
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
 from app.ui.widgets.helpers import confirm, info, make_card, section_title, warn
+from PySide6.QtWidgets import QFrame
 from app.ui.widgets.money_spin import MoneySpinBox
 from app.utils.helpers import format_money
 
@@ -100,11 +101,22 @@ class ChantierDialog(QDialog):
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=720, min_height=520, preferred_width=1040, preferred_height=720)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        header = QFrame()
+        header.setObjectName("DialogHeaderBanner")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(20, 14, 20, 16)
         self.title = QLabel()
-        self.title.setStyleSheet("font-size: 18px; font-weight: 700;")
-        layout.addWidget(self.title)
+        self.title.setStyleSheet("font-size: 18px; font-weight: 800;")
+        self.title.setWordWrap(True)
+        header_layout.addWidget(self.title)
+        layout.addWidget(header)
+        body = QVBoxLayout()
+        body.setContentsMargins(20, 16, 20, 16)
+        layout.addLayout(body, 1)
         self.tabs = QTabWidget()
-        layout.addWidget(self.tabs, 1)
+        body.addWidget(self.tabs, 1)
         self.tab_summary = self._build_summary()
         self.tabs.addTab(_scroll(self.tab_summary), t("Résumé"))
         self.tab_expenses = self._build_expenses()
@@ -128,7 +140,7 @@ class ChantierDialog(QDialog):
         row = QHBoxLayout()
         row.addStretch()
         row.addWidget(close)
-        layout.addLayout(row)
+        body.addLayout(row)
         self.refresh()
 
     # -- utilitaires -------------------------------------------------------------

@@ -7,12 +7,12 @@ from urllib.parse import quote
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QFormLayout, QFrame, QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton, QLabel, QVBoxLayout
 
 from app.i18n import t
 from app.services import messaging_service as ms
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import info, warn
+from app.ui.widgets.helpers import dialog_header_banner, info, warn
 
 
 class SendDocumentDialog(QDialog):
@@ -26,8 +26,17 @@ class SendDocumentDialog(QDialog):
         self.pdf = Path(str(pdf_path))
         self.setWindowTitle(t(title))
         fit_dialog_to_screen(self, min_width=460, min_height=360, preferred_width=560, preferred_height=460)
-        v = QVBoxLayout(self)
-        form = QFormLayout()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t(title), t("Document : {name}").format(name=self.pdf.name)))
+        v = QVBoxLayout()
+        v.setContentsMargins(20, 16, 20, 20)
+        outer.addLayout(v, 1)
+        card = QFrame()
+        card.setObjectName("Card")
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         self.phone = QLineEdit(phone)
         self.email = QLineEdit(email)
         self.subject = QLineEdit(subject)
@@ -36,8 +45,7 @@ class SendDocumentDialog(QDialog):
         form.addRow(t("E-mail"), self.email)
         form.addRow(t("Objet"), self.subject)
         form.addRow(t("Message"), self.message)
-        v.addLayout(form)
-        v.addWidget(QLabel(t("Document : {name}").format(name=self.pdf.name)))
+        v.addWidget(card)
         row = QHBoxLayout()
         self.wa_button = QPushButton("WhatsApp")
         self.wa_button.setObjectName("Primary")

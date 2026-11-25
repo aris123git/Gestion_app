@@ -16,7 +16,7 @@ from app.services import audit_service, pickup_service as ps, settings_service, 
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.dialogs.pickups_dialog import _name_combo
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.ui.widgets.money_spin import MoneySpinBox
 from app.utils.helpers import format_money
 
@@ -34,6 +34,13 @@ class OrderDialog(QDialog):
         fit_dialog_to_screen(self, min_width=760, min_height=560, preferred_width=900, preferred_height=660)
         self._products = [p for p in ProductController.list() if getattr(p, "active", True)]
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(dialog_header_banner(t("Commande client"), t("Crée le bon d'enlèvement, l'achat et la vente en une seule saisie")))
+        body = QVBoxLayout()
+        body.setContentsMargins(20, 16, 20, 16)
+        root.addLayout(body, 1)
+        root = body
         form = QFormLayout()
         self.client = ClientSearchField(placeholder=t("Client de la commande (nom ou téléphone)…"))
         self.supplier = QComboBox()
