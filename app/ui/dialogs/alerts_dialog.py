@@ -6,13 +6,13 @@ from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QPushButton, QVBoxLayout,
+    QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
 
 from app.i18n import t
 from app.services import notification_service as ns
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import confirm, warn
+from app.ui.widgets.helpers import confirm, dialog_header_banner, warn
 
 ICONS = {ns.KIND_STOCK: "📦", ns.KIND_DEBT: "💳", ns.KIND_PROSPECT: "🛵", ns.KIND_REMINDER: "⏰"}
 
@@ -21,7 +21,14 @@ class ReminderDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(t("Nouveau rappel"))
-        form = QFormLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t("Nouveau rappel")))
+        body = QWidget()
+        form = QFormLayout(body)
+        form.setContentsMargins(20, 16, 20, 20)
+        outer.addWidget(body, 1)
         self.text = QLineEdit()
         self.text.setPlaceholderText(t("ex. Payer le loyer"))
         self.due = QDateEdit(QDate.currentDate())
@@ -51,10 +58,20 @@ class AlertsDialog(QDialog):
         self.target = None            # (page, ref_id) à ouvrir après fermeture
         self.setWindowTitle(t("Alertes et rappels"))
         fit_dialog_to_screen(self, min_width=520, min_height=460, preferred_width=620, preferred_height=560)
-        v = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        header = QWidget()
+        header.setObjectName("DialogHeaderBanner")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(20, 14, 20, 16)
         self.title = QLabel()
-        self.title.setStyleSheet("font-size: 16px; font-weight: 700;")
-        v.addWidget(self.title)
+        self.title.setStyleSheet("font-size: 16px; font-weight: 800;")
+        header_layout.addWidget(self.title)
+        outer.addWidget(header)
+        v = QVBoxLayout()
+        v.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(v, 1)
         self.list = QListWidget()
         self.list.setStyleSheet('QListWidget::item { padding: 8px 6px; }')
         self.list.itemSelectionChanged.connect(self._sync_buttons)

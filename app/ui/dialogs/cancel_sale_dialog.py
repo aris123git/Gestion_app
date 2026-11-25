@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.i18n import t
 from typing import Optional
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.utils.cancel_reason import MIN_CANCEL_REASON_LETTERS, count_letters, validate_cancel_reason
 
 class CancelSaleDialog(QDialog):
@@ -15,13 +15,18 @@ class CancelSaleDialog(QDialog):
         self.setModal(True)
         self.setMinimumWidth(460)
         self.reason: Optional[str] = None
-        layout = QVBoxLayout(self)
+        title = f"Annuler {many} ventes ?" if many > 1 else f"Annuler la vente {ticket_number} ?"
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(title, background="#b45309"))
+        layout = QVBoxLayout()
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
-        title = f"Annuler {many} ventes ?" if many > 1 else f"Annuler la vente {ticket_number} ?"
-        info = QLabel(f"<b>{title}</b><br/><br/>Les articles seront remis en stock et la vente ne comptera plus dans le chiffre d'affaires.<br/><br/>Un <b>motif obligatoire</b> (au moins 10 lettres) est requis.")
+        info = QLabel("Les articles seront remis en stock et la vente ne comptera plus dans le chiffre d'affaires.<br/><br/>Un <b>motif obligatoire</b> (au moins 10 lettres) est requis.")
         info.setWordWrap(True)
         layout.addWidget(info)
+        outer.addLayout(layout, 1)
         layout.addWidget(QLabel(t("Motif de l'annulation")))
         self.motif = QPlainTextEdit()
         self.motif.setPlaceholderText(t("Ex. : erreur de saisie, client a changé d'avis, doublon…"))

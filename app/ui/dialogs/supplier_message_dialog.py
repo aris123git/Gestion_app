@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxL
 from app.i18n import t
 from app.services import messaging_service as ms
 from app.services import order_message, settings_service
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 
 
 class SupplierMessageDialog(QDialog):
@@ -31,8 +31,13 @@ class SupplierMessageDialog(QDialog):
             'paid': f"Bonjour {name}, j'ai réglé [montant] pour la facture [n° facture]. Merci de confirmer la réception.{sign}",
             'free': '',
         }
-        root = QVBoxLayout(self)
-        root.addWidget(QLabel(f"<b>{name}</b> · {phone or t('pas de numéro')}"))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(name, phone or t('pas de numéro')))
+        root = QVBoxLayout()
+        root.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(root, 1)
         form = QFormLayout()
         self.model = QComboBox()
         self.model.addItem(t('Commande'), 'order')

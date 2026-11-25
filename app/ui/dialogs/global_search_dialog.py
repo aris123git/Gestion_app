@@ -4,6 +4,7 @@ from app.i18n import t
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout
 from app.services.search_service import SearchService
+from app.ui.widgets.helpers import dialog_header_banner
 
 class GlobalSearchDialog(QDialog):
 
@@ -14,8 +15,13 @@ class GlobalSearchDialog(QDialog):
         self.setModal(True)
         self.resize(560, 420)
         self.selected_hit = None
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t('Recherche universelle')))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        outer.addLayout(layout, 1)
         self.query = QLineEdit()
         self.query.setPlaceholderText(t('Client, téléphone, produit, facture, dette, fournisseur…'))
         self._search_timer = QTimer(self)

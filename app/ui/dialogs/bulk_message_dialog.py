@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 from app.i18n import t
 from app.services import audit_service, messaging_service as ms, settings_service
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import confirm, info, warn
+from app.ui.widgets.helpers import confirm, dialog_header_banner, info, warn
 
 DEFAULT_TEXT = "Bonjour {prenom}, merci pour votre confiance. [Votre message ici] — {entreprise}"
 
@@ -25,7 +25,14 @@ class EmailConfigDialog(QDialog):
         self.setWindowTitle(t("Compte e-mail d'envoi"))
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=460, min_height=360, preferred_width=540, preferred_height=430)
-        form = QFormLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t("Compte e-mail d'envoi")))
+        body = QWidget()
+        form = QFormLayout(body)
+        form.setContentsMargins(20, 16, 20, 20)
+        outer.addWidget(body, 1)
         hint = QLabel(t("Ex. Gmail : serveur smtp.gmail.com, port 465, sécurité SSL, et un « mot de passe d'application » (pas votre mot de passe habituel)."))
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #64748b;")
@@ -96,7 +103,13 @@ class BulkMessageDialog(QDialog):
         self.worker = None
         self.shop = settings_service.get_shop_info()
         self.currency = self.shop.currency or "FCFA"
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t("Message groupé aux clients")))
+        root = QVBoxLayout()
+        root.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(root, 1)
         self.stack = QStackedWidget()
         root.addWidget(self.stack)
         self.stack.addWidget(self._build_setup())
