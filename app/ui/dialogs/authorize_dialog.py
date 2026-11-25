@@ -1,9 +1,9 @@
 """Dialogue d'autorisation : mot de passe administrateur pour actions sensibles."""
 from __future__ import annotations
 from app.i18n import t
-from PySide6.QtWidgets import QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
 from app.services.auth_service import AuthService
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 
 class AuthorizeDialog(QDialog):
     """Demande les identifiants d'un administrateur pour lever une restriction.
@@ -18,13 +18,22 @@ class AuthorizeDialog(QDialog):
         self.setModal(True)
         self.setMinimumWidth(420)
         self.authorized_username: str = ''
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(
+            t('Autorisation requise'),
+            reason or "Cette action nécessite l'autorisation d'un administrateur.",
+            background='#b45309',
+        ))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
         layout.setSpacing(12)
-        intro = QLabel(reason or "Cette action nécessite l'autorisation d'un administrateur.")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-        form = QFormLayout()
+        outer.addLayout(layout, 1)
+        card = QFrame()
+        card.setObjectName('Card')
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         form.setSpacing(10)
         self.username = QLineEdit()
         self.username.setPlaceholderText(t("Nom d'utilisateur administrateur"))
@@ -33,7 +42,7 @@ class AuthorizeDialog(QDialog):
         self.password.setPlaceholderText(t('Mot de passe'))
         form.addRow(t('Administrateur'), self.username)
         form.addRow(t('Mot de passe'), self.password)
-        layout.addLayout(form)
+        layout.addWidget(card)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('Annuler'))
         cancel.clicked.connect(self.reject)

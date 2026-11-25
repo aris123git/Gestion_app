@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QDialog, QHBoxLayout
 from app.controllers.sale_controller import SaleController
 from app.i18n import t
 from app.services import audit_service, settings_service
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.utils.helpers import format_datetime, format_money
 
 
@@ -26,9 +26,14 @@ class ClientPurchasesDialog(QDialog):
         self.setModal(True)
         self.resize(980, 560)
         self._sale_ids: List[int] = []
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(client_name, t('Historique des achats')))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
         layout.setSpacing(10)
+        outer.addLayout(layout, 1)
         self.summary = QLabel('')
         self.summary.setStyleSheet('font-weight: 600;')
         layout.addWidget(self.summary)

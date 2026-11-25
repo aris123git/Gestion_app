@@ -3,8 +3,8 @@ from __future__ import annotations
 from app.i18n import t
 from typing import Optional
 from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QCheckBox, QDateEdit, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout
-from app.ui.widgets.helpers import warn
+from PySide6.QtWidgets import QCheckBox, QDateEdit, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLineEdit, QPlainTextEdit, QPushButton, QVBoxLayout
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.ui.widgets.money_spin import MoneySpinBox
 
 class ContactDialog(QDialog):
@@ -19,9 +19,17 @@ class ContactDialog(QDialog):
         self.with_fiscal = with_fiscal
         self.fiscal = {}
         self.data: Optional[dict] = None
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        form = QFormLayout()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(title))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        outer.addLayout(layout, 1)
+        card = QFrame()
+        card.setObjectName('Card')
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         form.setSpacing(10)
         self.name = QLineEdit()
         self.phone = QLineEdit()
@@ -64,7 +72,7 @@ class ContactDialog(QDialog):
             self.no_marketing = QCheckBox(t('Ne souhaite plus recevoir de messages (WhatsApp / e-mail)'))
             self.no_marketing.setChecked(bool(getattr(contact, 'no_marketing', False)))
             form.addRow('', self.no_marketing)
-        layout.addLayout(form)
+        layout.addWidget(card)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('Annuler'))
         cancel.clicked.connect(self.reject)

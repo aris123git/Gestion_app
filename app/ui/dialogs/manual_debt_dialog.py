@@ -3,11 +3,11 @@ from __future__ import annotations
 from app.i18n import t
 from typing import Optional
 from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QCheckBox, QDateEdit, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QDateEdit, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout
 from app.controllers.client_controller import ClientController
 from app.ui.dialogs.contact_dialog import ContactDialog
 from app.ui.widgets.client_search import ClientSearchField
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.ui.widgets.money_spin import MoneySpinBox
 
 class ManualDebtDialog(QDialog):
@@ -19,14 +19,22 @@ class ManualDebtDialog(QDialog):
         self.setModal(True)
         self.setMinimumWidth(480)
         self.result_data: Optional[dict] = None
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(
+            t('Nouvelle dette (hors caisse)'),
+            t("Saisie libre réservée à l'administrateur — sans passer par la caisse."),
+            background='#b45309',
+        ))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
         layout.setSpacing(12)
-        hint = QLabel(t("Saisie libre réservée à l'administrateur — sans passer par la caisse."))
-        hint.setWordWrap(True)
-        hint.setStyleSheet('color: #64748b;')
-        layout.addWidget(hint)
-        form = QFormLayout()
+        outer.addLayout(layout, 1)
+        card = QFrame()
+        card.setObjectName('Card')
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         form.setSpacing(10)
         self.client_search = ClientSearchField(self)
         form.addRow(t('Client'), self.client_search)
@@ -47,7 +55,7 @@ class ManualDebtDialog(QDialog):
         self.note = QLineEdit()
         self.note.setPlaceholderText(t('Motif / commentaire (facultatif)'))
         form.addRow(t('Note'), self.note)
-        layout.addLayout(form)
+        layout.addWidget(card)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('Annuler'))
         cancel.clicked.connect(self.reject)

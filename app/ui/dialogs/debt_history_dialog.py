@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QAbstractItemView, QComboBox, QDialog, QHBoxLayout
 from app.models.debt import STATUS_CANCELLED, STATUS_OPEN, STATUS_PAID, STATUS_PARTIAL
 from app.services import settings_service
 from app.services.debt_service import DebtService
+from app.ui.widgets.helpers import dialog_header_banner
 from app.utils.helpers import format_datetime, format_money
 STATUS_LABELS = {STATUS_OPEN: 'En cours', STATUS_PARTIAL: 'Partiellement payée', STATUS_PAID: 'Soldée', STATUS_CANCELLED: 'Annulée'}
 DEBT_TABS = (('Non payées', 'unpaid'), ('Payées', 'paid'), ('Échues', 'overdue'), ('Tout', 'all'))
@@ -25,12 +26,21 @@ class DebtHistoryDialog(QDialog):
         self._debt_ids: List[int] = []
         self._selected_debt_id: Optional[int] = None
         self._current_sort = 'recent'
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         summary = DebtService.client_summary(client_id)
         currency = settings_service.get_currency()
-        self.summary_label = QLabel(f'Solde : <b>{format_money(summary['total_remaining'], currency)}</b> — {summary['active_count']} dette(s) active(s) — {summary['overdue_count']} échéance(s) dépassée(s)')
+        self.summary_label = QLabel(f'{summary["active_count"]} dette(s) active(s) — {summary["overdue_count"]} échéance(s) dépassée(s)')
+        outer.addWidget(dialog_header_banner(
+            f'{client_name} — {format_money(summary["total_remaining"], currency)}',
+            '',
+            background='#b45309',
+        ))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        layout.setSpacing(12)
+        outer.addLayout(layout, 1)
         layout.addWidget(self.summary_label)
         main_tabs = QTabWidget()
         debts_wrap = QWidget()

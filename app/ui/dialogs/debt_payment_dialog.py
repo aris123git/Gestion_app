@@ -2,10 +2,10 @@
 from __future__ import annotations
 from app.i18n import t
 from typing import Optional
-from PySide6.QtWidgets import QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
 from app import config
 from app.services import settings_service
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.utils.helpers import format_money
 from app.ui.widgets.money_spin import MoneySpinBox
 
@@ -19,14 +19,19 @@ class DebtPaymentDialog(QDialog):
         self.setMinimumWidth(420)
         self.result_data: Optional[dict] = None
         ceiling = float(max_amount if max_amount is not None else balance)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(12)
         currency = settings_service.get_currency()
-        info = QLabel(f'<b>{client_name}</b><br/>Solde dû : {format_money(balance, currency)}')
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        form = QFormLayout()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(client_name, f"{t('Solde dû')} : {format_money(balance, currency)}", background='#b45309'))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        layout.setSpacing(12)
+        outer.addLayout(layout, 1)
+        card = QFrame()
+        card.setObjectName('Card')
+        form = QFormLayout(card)
+        form.setContentsMargins(14, 14, 14, 14)
         form.setSpacing(10)
         self.amount = MoneySpinBox()
         self.amount.setRange(0, max(ceiling, 0))
@@ -39,7 +44,7 @@ class DebtPaymentDialog(QDialog):
         form.addRow(t('Montant'), self.amount)
         form.addRow(t('Mode de paiement'), self.method)
         form.addRow(t('Note'), self.note)
-        layout.addLayout(form)
+        layout.addWidget(card)
         buttons = QHBoxLayout()
         pay_all = QPushButton(t('Tout régler'))
         pay_all.clicked.connect(lambda: self.amount.setValue(ceiling))

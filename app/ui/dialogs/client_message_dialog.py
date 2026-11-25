@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QComboBox, QDialog, QFormLayout, QHBoxLayout, QLab
 from app.i18n import t
 from app.services import messaging_service as ms
 from app.services import settings_service
-from app.ui.widgets.helpers import warn
+from app.ui.widgets.helpers import dialog_header_banner, warn
 from app.utils.helpers import format_money
 
 
@@ -24,8 +24,13 @@ class ClientMessageDialog(QDialog):
             'free': '',
             'debt': f"Bonjour {name}, ceci est un rappel : vous avez un solde de {format_money(debt, cur)} chez {shop}. Merci de passer le régler quand vous pouvez.".replace(' chez .', '.'),
         }
-        root = QVBoxLayout(self)
-        root.addWidget(QLabel(f"<b>{name}</b> · {phone or t('pas de numéro')}"))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(name, phone or t('pas de numéro'), background='#16a34a'))
+        root = QVBoxLayout()
+        root.setContentsMargins(20, 16, 20, 20)
+        outer.addLayout(root, 1)
         if no_marketing:
             note = QLabel(t("Ce client a demandé à ne plus recevoir de messages promotionnels."))
             note.setStyleSheet('color: #b45309;')
