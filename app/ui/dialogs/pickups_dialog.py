@@ -22,7 +22,7 @@ from app.models.pickup import STATUS_CLOSED, STATUS_DRAFT, STATUS_LABELS, STATUS
 from app.services import audit_service, pickup_service as ps, settings_service, transport_service
 from app.ui.widgets.client_search import ClientSearchField
 from app.ui.widgets.dialog_fit import fit_dialog_to_screen
-from app.ui.widgets.helpers import confirm, info, warn
+from app.ui.widgets.helpers import confirm, dialog_header_banner, info, warn
 from app.ui.widgets.money_spin import MoneySpinBox
 from app.utils.helpers import format_datetime, format_money
 
@@ -56,7 +56,13 @@ class PickupEditDialog(QDialog):
         self.driver_text = self.truck_text = self.reference_text = ""
         self.tax_rate, self.tax_label = 0.0, ''
         self._products = ProductController.list()
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t("Bon d'enlèvement")))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(layout, 1)
         form = QFormLayout()
         self.supplier = QComboBox()
         self.supplier.addItem(t('— Choisir le fournisseur —'), None)
@@ -223,7 +229,13 @@ class ValidatePickupDialog(QDialog):
         self.setWindowTitle(t("Valider l'enlèvement"))
         self.setModal(True)
         self.signed_file = ''
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t("Valider l'enlèvement"), background="#16a34a"))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(layout, 1)
         layout.addWidget(QLabel(t("Le fournisseur a signé et validé le bon. Le stock va entrer par un achat de {total}.").format(total=format_money(total, settings_service.get_currency()))))
         form = QFormLayout()
         self.paid = MoneySpinBox()
@@ -264,7 +276,13 @@ class DeliverDialog(QDialog):
         self.setWindowTitle(t('Livrer à une station'))
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=560, min_height=380, preferred_width=760, preferred_height=480)
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t('Livrer à une station')))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(layout, 1)
         self.client = ClientSearchField(placeholder=t('Station (nom ou téléphone)…'))
         layout.addWidget(QLabel(t('Station livrée')))
         layout.addWidget(self.client)
@@ -364,7 +382,13 @@ class ClosePickupDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(t("Clôturer l'enlèvement"))
         self.setModal(True)
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t("Clôturer l'enlèvement"), background="#b45309"))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(layout, 1)
         left = [r for r in (rows or []) if r.left > 0]
         if left:
             text = t("Le reste non livré devient une perte (sortie de stock + charge comptable) :") + "<br>" + "<br>".join(
@@ -423,7 +447,13 @@ class PickupsDialog(QDialog):
         self.setModal(True)
         fit_dialog_to_screen(self, min_width=760, min_height=480, preferred_width=1100, preferred_height=640)
         self._rows: list[ps.PickupRow] = []
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(t('Enlèvements')))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 16)
+        outer.addLayout(layout, 1)
         top = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText(t('Rechercher (n°, fournisseur)…'))

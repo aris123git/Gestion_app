@@ -46,8 +46,8 @@ jobs:
         shell: bash
         run: |
           set +e
-          python -u -m unittest discover -s tests -v 2>&1 | tee test_output.txt
-          code=${PIPESTATUS[0]}
+          python -m unittest discover -s tests > test_output.txt 2>&1
+          code=$?
           cat test_output.txt
           if grep -q "^OK$" test_output.txt && ! grep -q "^FAILED" test_output.txt; then
             echo "Tous les tests sont passés (un code de sortie non nul après ce point vient d'un plantage de nettoyage Qt/Windows en fin de processus, sans rapport avec les tests, et est ignoré)."

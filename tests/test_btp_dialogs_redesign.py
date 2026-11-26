@@ -66,7 +66,9 @@ class SendDocumentDialogHeaderTest(_DBTestCase):
         pdf = Path(self._dir) / "doc.pdf"
         pdf.write_bytes(b"%PDF-1.4 test")
         opened = []
-        with mock.patch("app.ui.dialogs.send_document_dialog.QDesktopServices.openUrl", lambda url: opened.append(url.toString())):
+        with mock.patch("app.ui.dialogs.send_document_dialog.QDesktopServices.openUrl", lambda url: opened.append(url.toString())), \
+                mock.patch("app.ui.dialogs.send_document_dialog.info", lambda *a, **k: None), \
+                mock.patch("app.ui.dialogs.send_document_dialog.warn", lambda *a, **k: None):
             dialog = SendDocumentDialog(None, pdf, "70112233", "client@example.com", "Objet", "Bonjour")
             headers = [f for f in dialog.findChildren(QFrame) if f.objectName() == "DialogHeaderBanner"]
             self.assertEqual(len(headers), 1)

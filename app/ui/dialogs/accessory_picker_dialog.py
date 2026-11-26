@@ -2,6 +2,7 @@
 from __future__ import annotations
 from PySide6.QtWidgets import QCheckBox, QDialog, QDoubleSpinBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 from app.i18n import t
+from app.ui.widgets.helpers import dialog_header_banner
 from app.utils.helpers import format_money
 
 
@@ -20,8 +21,13 @@ class AccessoryPickerDialog(QDialog):
         self.selected: list[dict] = []
         self.quantity = 1.0
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"<b>{product_name}</b> — {format_money(self._base_price, currency)}"))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(product_name, format_money(self._base_price, currency)))
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 16, 20, 20)
+        outer.addLayout(layout, 1)
 
         self._checks: list[tuple[QCheckBox, dict]] = []
         for item in accessories:

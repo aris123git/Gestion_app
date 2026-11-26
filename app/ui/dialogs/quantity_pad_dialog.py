@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from app.i18n import t
+from app.ui.widgets.helpers import dialog_header_banner
 
 
 class QuantityPadDialog(QDialog):
@@ -19,14 +20,14 @@ class QuantityPadDialog(QDialog):
         self.setMinimumSize(320, 420)
         self.quantity = float(initial) if initial > 0 else 1.0
         self._value = self._fmt(self.quantity)
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(dialog_header_banner(product_name))
+        layout = QVBoxLayout()
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(14)
-        title = QLabel(product_name)
-        title.setObjectName("SectionTitle")
-        title.setWordWrap(True)
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        outer.addLayout(layout, 1)
         hint = QLabel(t("Quantité"))
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("color: #64748b;")
