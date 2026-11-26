@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QComboBox, QDialog, QFileDialog, QFormLayout, QHBo
 from app import config
 from app.services import settings_service
 from app.ui.widgets.helpers import activate_and_center
-SHOP_TYPES = ['Boutique', 'Entreprise', 'Maquis / Restaurant', 'Restaurant', 'Buvette / Bar', 'Poissonnerie', 'Pharmacie', 'Quincaillerie', 'Boucherie', 'Boulangerie', 'Supérette', "Magasin d'électronique", 'Autre commerce']
+SHOP_TYPES = ['Boutique', 'Entreprise', 'Maquis', 'Restaurant', 'Maquis / Restaurant', 'Buvette / Bar', 'Poissonnerie', 'Pharmacie', 'Quincaillerie', 'Boucherie', 'Boulangerie', 'Supérette', "Magasin d'électronique", 'Autre commerce']
 CURRENCIES = ['FCFA', 'XOF (UEMOA)', 'XAF (CEMAC)', 'EUR', 'USD', 'MAD', 'DZD', 'TND', 'GNF']
 
 class SetupWizard(QDialog):

@@ -4,7 +4,7 @@ from app.i18n import t
 from datetime import date
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor
-from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QComboBox, QDialog, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from app import config
 from app.services import permissions as perms, product_profile
 from app.services.auth_service import AuthService
@@ -43,6 +43,11 @@ class UserDialog(QDialog):
         self.active.setChecked(True)
         self.waitress = QCheckBox(t('Serveuse (caisse Maquis)'))
         self.waitress.setVisible(product_profile.is_maquis())
+        self.commission_rate = QDoubleSpinBox()
+        self.commission_rate.setRange(0, 100)
+        self.commission_rate.setDecimals(1)
+        self.commission_rate.setSuffix(' %')
+        self.commission_row_label = QLabel(t('Commission / pourboire'))
         form.addRow(t("Nom d'utilisateur *"), self.username)
         form.addRow(t('Nom complet'), self.full_name)
         password_label = 'Mot de passe *' if not user else 'Nouveau mot de passe'
@@ -51,6 +56,9 @@ class UserDialog(QDialog):
         form.addRow('', self.active)
         if product_profile.is_maquis():
             form.addRow('', self.waitress)
+            form.addRow(self.commission_row_label, self.commission_rate)
+            self.waitress.toggled.connect(self._sync_commission_visibility)
+            self._sync_commission_visibility(self.waitress.isChecked())
         layout.addLayout(form)
         buttons = QHBoxLayout()
         cancel = QPushButton(t('Annuler'))
@@ -69,7 +77,12 @@ class UserDialog(QDialog):
             self.role.setCurrentText(user.role)
             self.active.setChecked(user.is_active)
             self.waitress.setChecked(bool(getattr(user, 'is_waitress', False)))
+            self.commission_rate.setValue(float(getattr(user, 'commission_rate', 0) or 0))
             self.password.setPlaceholderText(t('Laisser vide pour ne pas changer'))
+
+    def _sync_commission_visibility(self, checked: bool) -> None:
+        self.commission_row_label.setVisible(bool(checked))
+        self.commission_rate.setVisible(bool(checked))
 
     def _save(self) -> None:
         if not self.username.text().strip():
@@ -91,6 +104,7 @@ class UserDialog(QDialog):
             'role': self.role.currentText(),
             'is_active': self.active.isChecked(),
             'is_waitress': self.waitress.isChecked(),
+            'commission_rate': self.commission_rate.value(),
         }
         self.accept()
 
@@ -325,7 +339,7 @@ class UsersPage(QWidget):
         dialog = UserDialog(parent=self)
         if dialog.exec() and dialog.data:
             try:
-                AuthService.create_user(dialog.data['username'], dialog.data['password'], dialog.data['full_name'], dialog.data['role'], is_waitress=dialog.data.get('is_waitress', False), **self._audit())
+                AuthService.create_user(dialog.data['username'], dialog.data['password'], dialog.data['full_name'], dialog.data['role'], is_waitress=dialog.data.get('is_waitress', False), commission_rate=dialog.data.get('commission_rate', 0), **self._audit())
             except ValueError as exc:
                 warn(self, str(exc))
                 return
@@ -341,7 +355,7 @@ class UsersPage(QWidget):
         dialog = UserDialog(user=user, parent=self)
         if dialog.exec() and dialog.data:
             try:
-                AuthService.update_user(user.id, full_name=dialog.data['full_name'], role=dialog.data['role'], is_active=dialog.data['is_active'], is_waitress=dialog.data.get('is_waitress', False), password=dialog.data['password'] or None, **self._audit())
+                AuthService.update_user(user.id, full_name=dialog.data['full_name'], role=dialog.data['role'], is_active=dialog.data['is_active'], is_waitress=dialog.data.get('is_waitress', False), commission_rate=dialog.data.get('commission_rate', 0), password=dialog.data['password'] or None, **self._audit())
             except ValueError as exc:
                 warn(self, str(exc))
                 return

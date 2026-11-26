@@ -29,6 +29,7 @@ def build_maquis_nav_items() -> List[NavEntry]:
     from app.ui.pages.stock_page import StockPage
     from app.ui.pages.tables_page import TablesPage
     from app.ui.pages.users_page import UsersPage
+    from app.ui.pages.waitress_report_page import WaitressReportPage
 
     if not product_profile.is_maquis():
         return []
@@ -47,6 +48,7 @@ def build_maquis_nav_items() -> List[NavEntry]:
         (t("nav.stock"), "📥", StockPage, perms.MANAGE_STOCK),
         (t("Inventaire"), "📒", MaquisInventairePage, perms.MANAGE_STOCK),
         (t("Relève"), "💵", CaisseSessionPage, perms.VIEW_REPORTS),
+        (t("Rapport serveuses"), "🧑‍🍳", WaitressReportPage, perms.VIEW_REPORTS),
         (t("nav.debts"), "💳", DebtsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("nav.credits"), "🎟️", AvoirsPage, perms.MANAGE_CLIENT_DEBTS),
         (t("Mouvements"), "↔️", StockMovementsPage, perms.MANAGE_STOCK),

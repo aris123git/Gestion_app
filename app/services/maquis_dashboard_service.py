@@ -16,6 +16,7 @@ from app.models.expense import Expense
 from app.models.open_order import STATUS_CANCELLED, STATUS_OPEN, STATUS_PAID, STATUS_SERVED, STATUS_UNPAID, OpenOrder
 from app.models.open_order_payment import OpenOrderPayment
 from app.models.product import Product
+from app.models.user import User
 from app.services.cash_session_service import CashSessionService
 
 
@@ -361,3 +362,47 @@ def today_stats(user_id: Optional[int] = None) -> MaquisDashboardStats:
 def month_stats(user_id: Optional[int] = None) -> MaquisDashboardStats:
     start, end = _month_bounds()
     return dashboard_stats(start=start, end=end, user_id=user_id)
+
+
+@dataclass
+class WaitressCommissionRow:
+    """Une ligne du rapport serveuses : ventes/encaissements + commission."""
+
+    waitress_id: Optional[int]
+    waitress_name: str
+    order_count: int
+    ca_generated: float
+    ca_collected: float
+    to_collect: float
+    commission_rate: float
+    commission_amount: float
+
+
+def waitress_commission_report(
+    *, start: Optional[datetime] = None, end: Optional[datetime] = None
+) -> List[WaitressCommissionRow]:
+    """Ventes/encaissements et commission (ou pourboire) par serveuse sur la période."""
+    if start is None or end is None:
+        start, end = _today_bounds()
+    stats = dashboard_stats(start=start, end=end)
+    with session_scope() as session:
+        rates = {
+            u.id: float(u.commission_rate or 0)
+            for u in session.scalars(select(User).where(User.is_waitress == True))  # noqa: E712
+        }
+    rows: List[WaitressCommissionRow] = []
+    for w in stats.waitress_stats:
+        rate = rates.get(w.waitress_id, 0.0)
+        rows.append(
+            WaitressCommissionRow(
+                waitress_id=w.waitress_id,
+                waitress_name=w.waitress_name,
+                order_count=w.order_count,
+                ca_generated=w.ca_generated,
+                ca_collected=w.ca_collected,
+                to_collect=w.to_collect,
+                commission_rate=rate,
+                commission_amount=round(w.ca_collected * rate / 100, 3),
+            )
+        )
+    return rows

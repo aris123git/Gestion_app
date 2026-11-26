@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Integer, String
+from sqlalchemy import Boolean, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.connection import Base
@@ -21,6 +21,7 @@ class User(Base, TimestampMixin):
     role: Mapped[str] = mapped_column(String(50), default="Caissier")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_waitress: Mapped[bool] = mapped_column(Boolean, default=False)
+    commission_rate: Mapped[float] = mapped_column(Numeric(6, 3), default=0)
 
     @property
     def is_admin(self) -> bool:

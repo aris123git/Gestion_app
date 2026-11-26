@@ -207,6 +207,7 @@ def _migrate_schema() -> None:
         },
         "users": {
             "is_waitress": "BOOLEAN DEFAULT 0",
+            "commission_rate": "NUMERIC(6, 3) DEFAULT 0",
         },
         "pickups": {
             "loss_bearer": "VARCHAR(20) DEFAULT ''",

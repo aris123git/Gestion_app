@@ -214,6 +214,7 @@ class AuthService:
         role: str = "Caissier",
         *,
         is_waitress: bool = False,
+        commission_rate: float = 0.0,
         audit_user_id: Optional[int] = None,
         audit_username: str = "",
     ) -> User:
@@ -234,6 +235,7 @@ class AuthService:
                 role=role,
                 is_active=True,
                 is_waitress=bool(is_waitress),
+                commission_rate=max(0.0, float(commission_rate or 0)),
             )
             session.add(user)
             try:
@@ -257,6 +259,7 @@ class AuthService:
         role: Optional[str] = None,
         is_active: Optional[bool] = None,
         is_waitress: Optional[bool] = None,
+        commission_rate: Optional[float] = None,
         password: Optional[str] = None,
         *,
         audit_user_id: Optional[int] = None,
@@ -281,6 +284,8 @@ class AuthService:
                 user.is_active = is_active
             if is_waitress is not None:
                 user.is_waitress = is_waitress
+            if commission_rate is not None:
+                user.commission_rate = max(0.0, float(commission_rate or 0))
             if password is not None:
                 user.password_hash = hash_password(password)
             target_username = user.username
