@@ -36,6 +36,21 @@ class _DBTestCase(unittest.TestCase):
         self._env_patch.stop()
         shutil.rmtree(self._dir, ignore_errors=True)
 
+    def _seed_paid_order(self, waitress_id, waitress_name, total):
+        from app.database.connection import session_scope
+        from app.models.open_order import STATUS_PAID, OpenOrder
+
+        with session_scope() as session:
+            order = OpenOrder(
+                public_id="CMD-TEST",
+                status=STATUS_PAID,
+                waitress_id=waitress_id,
+                waitress_name=waitress_name,
+                total=total,
+                paid_amount=total,
+            )
+            session.add(order)
+
 
 class ShopTypeChoiceTest(unittest.TestCase):
     def test_maquis_is_a_standalone_shop_type(self):
@@ -62,21 +77,6 @@ class WaitressCommissionRateTest(_DBTestCase):
 
 
 class WaitressCommissionReportTest(_DBTestCase):
-    def _seed_paid_order(self, waitress_id, waitress_name, total):
-        from app.database.connection import session_scope
-        from app.models.open_order import STATUS_PAID, OpenOrder
-
-        with session_scope() as session:
-            order = OpenOrder(
-                public_id="CMD-TEST",
-                status=STATUS_PAID,
-                waitress_id=waitress_id,
-                waitress_name=waitress_name,
-                total=total,
-                paid_amount=total,
-            )
-            session.add(order)
-
     def test_report_computes_commission_from_user_rate(self):
         from app.services.auth_service import AuthService
         from app.services.maquis_dashboard_service import waitress_commission_report
