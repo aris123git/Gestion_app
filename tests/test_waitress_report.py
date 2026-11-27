@@ -132,11 +132,13 @@ class UserDialogCommissionFieldTest(_DBTestCase):
         from app.ui.pages.users_page import UserDialog
 
         dialog = UserDialog()
-        if not dialog.waitress.isVisible():
+        # isVisible() est toujours False ici (le dialogue n'est jamais show()/exec()
+        # dans ce test headless) : isHidden() est le bon test de visibilité voulue.
+        if dialog.waitress.isHidden():
             self.skipTest("Champ serveuse non visible hors mode Maquis")
-        self.assertFalse(dialog.commission_rate.isVisible())
+        self.assertTrue(dialog.commission_rate.isHidden())
         dialog.waitress.setChecked(True)
-        self.assertTrue(dialog.commission_rate.isVisible())
+        self.assertFalse(dialog.commission_rate.isHidden())
         dialog.commission_rate.setValue(12.5)
         dialog.username.setText("sara")
         dialog.password.setText("secret123")
